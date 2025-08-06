@@ -1,6 +1,7 @@
 
 fastapi
 
+
 uvicorn[standard]
 
 
@@ -14,8 +15,8 @@ python-dotenv
 pydantic
 pydantic-settings
 
-
-passlib[bcrypt]
-
-
+Para gerar e validar tokens JWT
 python-jose[cryptography]
+
+
+email-validator
