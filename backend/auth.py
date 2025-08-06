@@ -1,9 +1,9 @@
 # backend/auth.py
 
+import hashlib
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from typing import Optional
@@ -12,23 +12,23 @@ from typing import Optional
 from . import models, schemas
 from .config import settings, get_db
 
-# Crio um contexto para o hashing de senhas. Digo para usar o bcrypt.
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-# Defino o esquema de segurança. O tokenUrl aponta para a rota de login que vamos criar.
+# Defino o esquema de segurança. O tokenUrl aponta para a rota de login.
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/token")
-
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """
-    Compara a senha que o usuário enviou com a senha hashada no banco.
-    """
-    return pwd_context.verify(plain_password, hashed_password)
 
 def get_password_hash(password: str) -> str:
     """
-    Gera um hash a partir de uma senha em texto plano.
+    Gera um hash sha256 a partir de uma senha, exatamente como no sistema original.
     """
-    return pwd_context.hash(password)
+    return hashlib.sha256(password.encode('utf-8')).hexdigest()
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    """
+    Verifica a senha comparando o hash da senha enviada com o hash do banco.
+    """
+    # Crio o hash da senha que o usuário digitou
+    password_hash_to_check = get_password_hash(plain_password)
+    # Comparo os dois hashes
+    return password_hash_to_check == hashed_password
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     """
@@ -38,8 +38,8 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     if expires_delta:
         expire = datetime.utcnow() + expires_delta
     else:
-        # Se o tempo de expiração não for passado, uso 15 minutos como padrão.
-        expire = datetime.utcnow() + timedelta(minutes=15)
+        # Se o tempo de expiração não for passado, uso o valor do .env.
+        expire = datetime.utcnow() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
