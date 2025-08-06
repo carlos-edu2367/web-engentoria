@@ -1,6 +1,8 @@
 # backend/main.py
-
-from fastapi import FastAPI
+import os
+from fastapi import FastAPI, HTTPException
+from fastapi.staticfiles import StaticFiles
+from starlette.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 # Importo os roteadores que criei
@@ -9,7 +11,6 @@ from . import models
 from .config import engine
 
 # Crio as tabelas no banco de dados (se elas não existirem)
-# Em um ambiente de produção real, eu poderia usar Alembic para migrações.
 models.Base.metadata.create_all(bind=engine)
 
 # Crio a instância principal do FastAPI
@@ -20,33 +21,38 @@ app = FastAPI(
 )
 
 # Configuro o CORS (Cross-Origin Resource Sharing)
-# Isso é essencial para permitir que o meu frontend (que estará em outro "domínio")
-# possa fazer requisições para esta API.
-origins = [
-    "http://localhost",
-    "http://localhost:8080", # Exemplo se eu usar um servidor de desenvolvimento para o frontend
-    "http://127.0.0.1:5500", # Exemplo para o Live Server do VS Code
-    # Adicionar aqui o domínio do site em produção
-]
+origins = ["*"] # Para o deploy, é mais seguro permitir tudo inicialmente
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
     allow_credentials=True,
-    allow_methods=["*"], # Permite todos os métodos (GET, POST, etc.)
-    allow_headers=["*"], # Permite todos os cabeçalhos
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
-# Incluo os roteadores na aplicação principal, definindo um prefixo para a API.
+# Incluo os roteadores da API, mantendo o prefixo para organização.
 app.include_router(auth_routes.router, prefix="/api/v1")
 app.include_router(agenda_routes.router, prefix="/api/v1")
 app.include_router(suporte_routes.router, prefix="/api/v1")
 
+# --- SERVINDO O FRONTEND ---
 
-@app.get("/", tags=["Root"])
-def read_root():
-    """
-    Endpoint raiz para verificar se a API está no ar.
-    """
-    return {"message": "Bem-vindo à API da Engentoria para Vistoriadores!"}
+# 1. Monto a pasta 'assets' para que o HTML possa encontrar o CSS e o JS.
+# Qualquer requisição para /assets/... será servida a partir da pasta frontend/assets.
+app.mount("/assets", StaticFiles(directory="frontend/assets"), name="assets")
 
+# 2. Crio rotas para servir os arquivos HTML.
+@app.get("/{page_name}.html", include_in_schema=False)
+async def read_html_page(page_name: str):
+    file_path = f'frontend/{page_name}.html'
+    if os.path.exists(file_path):
+        return FileResponse(file_path)
+    raise HTTPException(status_code=404, detail="Página não encontrada")
+
+@app.get("/", include_in_schema=False)
+async def read_root():
+    """
+    Endpoint raiz agora serve o index.html.
+    """
+    return FileResponse('frontend/index.html')
