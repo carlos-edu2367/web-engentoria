@@ -17,13 +17,15 @@ router = APIRouter(
 
 @router.get("/", response_model=List[schemas.Vistoria])
 def read_agenda_do_vistoriador(
-    periodo: Optional[str] = Query(None, description="Filtre por 'hoje', 'amanha', 'semana', ou 'mes'"),
+    periodo: Optional[str] = Query("hoje", description="Filtre por 'hoje', 'amanha', 'semana', 'mes' ou 'semana_passada'"),
+    status_filtro: Optional[str] = Query(None, description="Filtre por 'agendados' ou 'livres'"),
     db: Session = Depends(get_db), 
     current_user: models.Usuario = Depends(auth.get_current_active_vistoriador)
 ):
     """
     Endpoint principal que retorna a agenda do vistoriador logado.
     Ele é protegido e só pode ser acessado com um token válido.
+    Agora com filtros avançados de período e status.
     """
     # Construo a query base para buscar as vistorias.
     query = db.query(models.Agenda).filter(models.Agenda.vistoriador_id == current_user.id, models.Agenda.is_deleted == False)
@@ -36,7 +38,15 @@ def read_agenda_do_vistoriador(
         joinedload(models.Agenda.vistoriador)
     )
 
-    # Aplico os filtros de data com base no parâmetro 'periodo'.
+    # Aplico o filtro de STATUS primeiro
+    if status_filtro == "agendados":
+        # Considera como agendado qualquer tipo que não seja 'LIVRE' ou 'FECHADO'
+        tipos_agendados = ['ENTRADA', 'SAIDA', 'CONFERENCIA', 'AVERIGUACAO', 'COMPLEMENTO_VISITA', 'IMPRODUTIVA']
+        query = query.filter(models.Agenda.tipo.in_(tipos_agendados))
+    elif status_filtro == "livres":
+        query = query.filter(models.Agenda.tipo == 'LIVRE')
+
+    # Aplico os filtros de PERÍODO
     today = date.today()
     if periodo == "hoje":
         query = query.filter(models.Agenda.data == today)
@@ -44,19 +54,20 @@ def read_agenda_do_vistoriador(
         tomorrow = today + timedelta(days=1)
         query = query.filter(models.Agenda.data == tomorrow)
     elif periodo == "semana":
-        # Do dia de hoje até os próximos 7 dias.
         end_of_week = today + timedelta(days=7)
         query = query.filter(models.Agenda.data.between(today, end_of_week))
     elif periodo == "mes":
-        # Do dia de hoje até os próximos 30 dias.
         end_of_month = today + timedelta(days=30)
         query = query.filter(models.Agenda.data.between(today, end_of_month))
-
+    elif periodo == "semana_passada":
+        start_of_last_week = today - timedelta(days=today.weekday() + 7)
+        end_of_last_week = start_of_last_week + timedelta(days=6)
+        query = query.filter(models.Agenda.data.between(start_of_last_week, end_of_last_week))
+    
     # Ordeno os resultados por data e horário.
     vistorias = query.order_by(models.Agenda.data, models.Agenda.horario).all()
 
     # Preparo a lista de resultados para o formato do schema.
-    # Isso é necessário para montar a estrutura aninhada do JSON de resposta.
     results = []
     for vistoria in vistorias:
         vistoria_data = {

@@ -53,24 +53,30 @@
             <p class="text-gray-400 mt-1" id="welcome-message">Bem-vindo(a) de volta!</p>
 
             <!-- Filtros -->
-            <div class="my-6 flex flex-wrap gap-2" id="filter-buttons">
-                <button data-period="hoje" class="filter-btn bg-green-500 text-gray-900 font-semibold py-2 px-4 rounded-lg shadow-md transition-transform transform hover:scale-105">Hoje</button>
-                <button data-period="amanha" class="filter-btn bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition-colors">Amanhã</button>
-                <button data-period="semana" class="filter-btn bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition-colors">Esta Semana</button>
-                <button data-period="mes" class="filter-btn bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition-colors">Este Mês</button>
+            <div class="mt-6 space-y-4">
+                <div>
+                    <h3 class="text-sm font-semibold text-gray-400 mb-2">Filtrar por Período</h3>
+                    <div class="flex flex-wrap gap-2" id="period-filter-buttons">
+                        <button data-period="semana_passada" class="period-filter-btn bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition-colors">Semana Passada</button>
+                        <button data-period="hoje" class="period-filter-btn bg-green-500 text-gray-900 font-semibold py-2 px-4 rounded-lg shadow-md transition-transform transform hover:scale-105">Hoje</button>
+                        <button data-period="amanha" class="period-filter-btn bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition-colors">Amanhã</button>
+                        <button data-period="semana" class="period-filter-btn bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition-colors">Esta Semana</button>
+                        <button data-period="mes" class="period-filter-btn bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition-colors">Este Mês</button>
+                    </div>
+                </div>
+                <div>
+                    <h3 class="text-sm font-semibold text-gray-400 mb-2">Filtrar por Status</h3>
+                    <div class="flex flex-wrap gap-2" id="status-filter-buttons">
+                        <button data-status="todos" class="status-filter-btn bg-green-500 text-gray-900 font-semibold py-2 px-4 rounded-lg shadow-md transition-transform transform hover:scale-105">Todos</button>
+                        <button data-status="agendados" class="status-filter-btn bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition-colors">Agendados</button>
+                        <button data-status="livres" class="status-filter-btn bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition-colors">Livres</button>
+                    </div>
+                </div>
             </div>
 
             <!-- Container da Agenda -->
-            <div id="agenda-container" class="space-y-4">
+            <div id="agenda-container" class="mt-6 space-y-4">
                 <!-- O conteúdo será inserido aqui pelo JavaScript -->
-                <!-- Exemplo de loader -->
-                <div id="loader" class="text-center py-10">
-                    <svg class="animate-spin h-8 w-8 text-green-400 mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    <p class="mt-2 text-gray-400">Carregando vistorias...</p>
-                </div>
             </div>
         </div>
     </main>

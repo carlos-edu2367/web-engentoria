@@ -3,6 +3,12 @@
 // URL base da nossa API. Altere se o backend estiver em outro endereço.
 const API_BASE_URL = 'http://127.0.0.1:8000/api/v1';
 
+// Objeto para manter o estado atual dos filtros
+let currentFilters = {
+    period: 'hoje',
+    status: 'todos'
+};
+
 document.addEventListener('DOMContentLoaded', () => {
     const currentPage = window.location.pathname.split('/').pop();
 
@@ -34,7 +40,6 @@ function setupLoginPage() {
         errorMessageDiv.classList.add('hidden');
 
         const formData = new FormData(loginForm);
-        // O backend espera 'username' e 'password' no form data
         const body = new URLSearchParams();
         body.append('username', formData.get('email'));
         body.append('password', formData.get('password'));
@@ -65,24 +70,30 @@ function setupLoginPage() {
  * Configura a lógica da página da Agenda.
  */
 function setupAgendaPage() {
-    const agendaContainer = document.getElementById('agenda-container');
-    const filterButtons = document.getElementById('filter-buttons');
-    const welcomeMessage = document.getElementById('welcome-message');
+    const periodFilterContainer = document.getElementById('period-filter-buttons');
+    const statusFilterContainer = document.getElementById('status-filter-buttons');
 
-    // Função para buscar e renderizar as vistorias
-    const fetchAndRenderAgenda = async (period = 'hoje') => {
+    // Função para buscar e renderizar as vistorias com base nos filtros atuais
+    const fetchAndRenderAgenda = async () => {
+        const agendaContainer = document.getElementById('agenda-container');
         agendaContainer.innerHTML = `
             <div id="loader" class="text-center py-10">
                 <svg class="animate-spin h-8 w-8 text-green-400 mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                     <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                     <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                 </svg>
-                <p class="mt-2 text-gray-400">Carregando vistorias para '${period}'...</p>
+                <p class="mt-2 text-gray-400">Carregando vistorias...</p>
             </div>`;
+        
+        // Monta a URL da API com os parâmetros de filtro
+        let url = `${API_BASE_URL}/agenda/?periodo=${currentFilters.period}`;
+        if (currentFilters.status !== 'todos') {
+            url += `&status_filtro=${currentFilters.status}`;
+        }
 
         try {
             const token = getToken();
-            const response = await fetch(`${API_BASE_URL}/agenda/?periodo=${period}`, {
+            const response = await fetch(url, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
 
@@ -100,25 +111,40 @@ function setupAgendaPage() {
         }
     };
 
-    // Adiciona eventos de clique nos botões de filtro
-    filterButtons.addEventListener('click', (event) => {
-        if (event.target.classList.contains('filter-btn')) {
-            // Remove a classe ativa de todos os botões
-            document.querySelectorAll('.filter-btn').forEach(btn => {
-                btn.classList.remove('bg-green-500', 'text-gray-900');
-                btn.classList.add('bg-gray-700', 'hover:bg-gray-600', 'text-white');
-            });
-            // Adiciona a classe ativa ao botão clicado
-            event.target.classList.add('bg-green-500', 'text-gray-900');
-            event.target.classList.remove('bg-gray-700', 'hover:bg-gray-600', 'text-white');
-            
-            const period = event.target.dataset.period;
-            fetchAndRenderAgenda(period);
+    // Função para atualizar a classe ativa dos botões
+    const updateFilterButtons = (container, activeClass, dataAttribute) => {
+        container.querySelectorAll('button').forEach(btn => {
+            btn.classList.remove('bg-green-500', 'text-gray-900');
+            btn.classList.add('bg-gray-700', 'hover:bg-gray-600', 'text-white');
+            if (btn.dataset[dataAttribute] === currentFilters[dataAttribute]) {
+                btn.classList.add('bg-green-500', 'text-gray-900');
+                btn.classList.remove('bg-gray-700', 'hover:bg-gray-600', 'text-white');
+            }
+        });
+    };
+
+    // Adiciona eventos de clique nos botões de filtro de PERÍODO
+    periodFilterContainer.addEventListener('click', (event) => {
+        const button = event.target.closest('button');
+        if (button && button.classList.contains('period-filter-btn')) {
+            currentFilters.period = button.dataset.period;
+            updateFilterButtons(periodFilterContainer, 'period-filter-btn', 'period');
+            fetchAndRenderAgenda();
         }
     });
 
-    // Carrega a agenda inicial (hoje)
-    fetchAndRenderAgenda('hoje');
+    // Adiciona eventos de clique nos botões de filtro de STATUS
+    statusFilterContainer.addEventListener('click', (event) => {
+        const button = event.target.closest('button');
+        if (button && button.classList.contains('status-filter-btn')) {
+            currentFilters.status = button.dataset.status;
+            updateFilterButtons(statusFilterContainer, 'status-filter-btn', 'status');
+            fetchAndRenderAgenda();
+        }
+    });
+
+    // Carrega a agenda inicial
+    fetchAndRenderAgenda();
 }
 
 /**
@@ -129,7 +155,7 @@ function renderAgenda(vistorias) {
     agendaContainer.innerHTML = ''; // Limpa o container
 
     if (vistorias.length === 0) {
-        agendaContainer.innerHTML = `<div class="text-center text-gray-400 bg-gray-800 p-6 rounded-lg">Nenhuma vistoria encontrada para este período.</div>`;
+        agendaContainer.innerHTML = `<div class="text-center text-gray-400 bg-gray-800 p-6 rounded-lg">Nenhuma vistoria encontrada para os filtros selecionados.</div>`;
         return;
     }
 
@@ -178,21 +204,21 @@ function renderAgenda(vistorias) {
 function createVistoriaCard(vistoria) {
     const { horario, tipo_vistoria, imovel, cliente } = vistoria;
     
-    // Formata os detalhes para exibição
+    // Formata os detalhes para exibição, adicionando verificações para evitar erros.
     const detalhesImovel = imovel ? `
         <h4 class="font-semibold text-green-300 mt-4 border-t border-gray-600 pt-3">--- Detalhes do Imóvel ---</h4>
-        <p><strong>Código:</strong> ${imovel['Código']}</p>
-        <p><strong>Endereço:</strong> ${imovel['Endereço']}</p>
-        <p><strong>CEP:</strong> ${imovel['CEP']}</p>
-        <p><strong>Referência:</strong> ${imovel['Referência']}</p>
-        <p><strong>Tamanho:</strong> ${imovel['Tamanho']}m²</p>
-        <p><strong>Mobília:</strong> ${imovel['Mobília'].replace('_', ' ')}</p>
-        <p><strong>Imobiliária:</strong> ${imovel.imobiliaria.nome}</p>
-    ` : '';
+        <p><strong>Código:</strong> ${imovel['Código'] || 'N/D'}</p>
+        <p><strong>Endereço:</strong> ${imovel['Endereço'] || 'N/D'}</p>
+        <p><strong>CEP:</strong> ${imovel['CEP'] || 'N/D'}</p>
+        <p><strong>Referência:</strong> ${imovel['Referência'] || 'N/D'}</p>
+        <p><strong>Tamanho:</strong> ${imovel['Tamanho'] ? imovel['Tamanho'] + 'm²' : 'N/D'}</p>
+        <p><strong>Mobília:</strong> ${(imovel['Mobília'] || '').replace(/_/g, ' ')}</p>
+        <p><strong>Imobiliária:</strong> ${imovel.imobiliaria ? imovel.imobiliaria.nome : 'N/D'}</p>
+    ` : '<p class="text-gray-400 mt-2">Horário livre.</p>';
 
     const detalhesCliente = cliente ? `
         <h4 class="font-semibold text-green-300 mt-4 border-t border-gray-600 pt-3">--- Detalhes do Cliente ---</h4>
-        <p><strong>Nome:</strong> ${cliente.nome}</p>
+        <p><strong>Nome:</strong> ${cliente.nome || 'N/D'}</p>
         <p><strong>Email:</strong> ${cliente.email || 'N/D'}</p>
         <p><strong>Telefone 1:</strong> ${cliente['Telefone 1'] || 'N/D'}</p>
         <p><strong>Telefone 2:</strong> ${cliente['Telefone 2'] || 'N/D'}</p>
@@ -202,17 +228,21 @@ function createVistoriaCard(vistoria) {
         <div class="vistoria-card bg-gray-700/50 rounded-lg p-4">
             <div class="flex justify-between items-center">
                 <div>
-                    <p class="text-xl font-bold">${horario}</p>
-                    <p class="text-green-400 font-semibold">${tipo_vistoria}</p>
+                    <p class="text-xl font-bold">${horario || 'N/D'}</p>
+                    <p class="text-green-400 font-semibold">${(tipo_vistoria || 'N/D').replace(/_/g, ' ')}</p>
                 </div>
+                ${imovel ? `
                 <button class="expand-btn p-2 rounded-full hover:bg-gray-600 transition">
                     <svg class="h-6 w-6 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
                 </button>
+                ` : ''}
             </div>
+            ${imovel ? `
             <div class="details hidden mt-4 space-y-1 text-sm text-gray-300">
                 ${detalhesImovel}
                 ${detalhesCliente}
             </div>
+            ` : ''}
         </div>
     `;
 }
@@ -226,7 +256,7 @@ function setupAjudaPage() {
 
     supportForm.addEventListener('submit', async (event) => {
         event.preventDefault();
-        formMessageDiv.classList.add('hidden');
+        formMessageDiv.className = 'hidden';
 
         const formData = new FormData(supportForm);
         const body = Object.fromEntries(formData.entries());
