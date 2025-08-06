@@ -97,3 +97,11 @@ class ChamadoCreate(BaseModel):
     descricao: str = Field(..., min_length=10)
     categoria: str
     prioridade: str
+
+class LoginAjudaCreate(BaseModel):
+    """
+    Schema para o formulário público de ajuda com o login.
+    """
+    email: EmailStr
+    descricao: str = Field(..., min_length=10)
+

@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ajuda com Login - Engentoria</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+    </style>
+</head>
+<body class="bg-gray-900 flex items-center justify-center min-h-screen p-4">
+
+    <div class="w-full max-w-lg bg-gray-800 rounded-2xl shadow-2xl p-8 border border-gray-700">
+        <h1 class="text-3xl font-bold text-center text-green-400 mb-2">Ajuda com o Acesso</h1>
+        <p class="text-center text-gray-400 mb-8">Não se preocupe, vamos te ajudar a resolver.</p>
+
+        <!-- Formulário de Ajuda -->
+        <form id="login-help-form" class="space-y-6">
+            <div>
+                <label for="email" class="block text-sm font-medium text-gray-300">Seu Email de Cadastro</label>
+                <input type="email" id="email" name="email" required placeholder="Digite o email que você usa para logar"
+                       class="mt-1 block w-full bg-gray-700 border-gray-600 text-white rounded-md shadow-sm py-3 px-4 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 transition">
+            </div>
+            
+            <div>
+                <label for="descricao" class="block text-sm font-medium text-gray-300">Descreva seu problema</label>
+                <textarea id="descricao" name="descricao" rows="4" required placeholder="Ex: Esqueci minha senha, meu email não é reconhecido, etc."
+                          class="mt-1 block w-full bg-gray-700 border-gray-600 text-white rounded-md shadow-sm py-3 px-4 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 transition"></textarea>
+            </div>
+
+            <div>
+                <button type="submit" id="login-help-button"
+                        class="w-full flex justify-center py-3 px-4 border border-transparent rounded-md shadow-sm text-sm font-bold text-gray-900 bg-green-500 hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 focus:ring-offset-gray-800 transition-all duration-300 transform hover:scale-105">
+                    Pedir Ajuda
+                </button>
+            </div>
+        </form>
+        <!-- Fim do Formulário -->
+
+        <!-- Mensagem de Sucesso/Erro -->
+        <div id="form-message" class="hidden mt-4 text-center p-3 rounded-md"></div>
+
+        <div class="text-center mt-6">
+            <a href="login.html" class="text-sm text-green-400 hover:text-green-300 hover:underline">
+                &larr; Voltar para o Login
+            </a>
+        </div>
+    </div>
+
+    <script src="./assets/auth.js"></script>
+    <script src="./assets/main.js"></script>
+</body>
+</html>

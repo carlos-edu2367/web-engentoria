@@ -40,9 +40,11 @@ function logout() {
  */
 function protectPage() {
     const currentPage = window.location.pathname.split('/').pop();
-    const protectedPages = ['agenda.html', 'ajuda.html'];
+    // Adicionei 'login-ajuda.html' à lista de páginas que NÃO precisam de login
+    const publicPages = ['index.html', 'login.html', 'login-ajuda.html'];
+    const isProtectedPage = !publicPages.includes(currentPage);
 
-    if (protectedPages.includes(currentPage) && !isUserLoggedIn()) {
+    if (isProtectedPage && !isUserLoggedIn()) {
         // Se tentar acessar uma página protegida sem token, redireciona para o login.
         window.location.href = 'login.html';
     } else if (currentPage === 'login.html' && isUserLoggedIn()) {

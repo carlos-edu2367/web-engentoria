@@ -19,6 +19,8 @@ document.addEventListener('DOMContentLoaded', () => {
         setupAgendaPage();
     } else if (currentPage === 'ajuda.html') {
         setupAjudaPage();
+    } else if (currentPage === 'login-ajuda.html') {
+        setupLoginAjudaPage();
     }
 
     // Adiciona evento de clique para todos os botões de logout
@@ -95,6 +97,45 @@ function setupLoginPage() {
         }
     });
 }
+
+/**
+ * Configura a lógica da página de Ajuda com Login.
+ */
+function setupLoginAjudaPage() {
+    const helpForm = document.getElementById('login-help-form');
+    const formMessageDiv = document.getElementById('form-message');
+
+    helpForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        formMessageDiv.className = 'hidden';
+
+        const formData = new FormData(helpForm);
+        const body = Object.fromEntries(formData.entries());
+
+        try {
+            const response = await fetch(`${API_BASE_URL}/suporte/login-problema`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            });
+            
+            const result = await response.json();
+
+            if (!response.ok) {
+                throw new Error(result.detail || 'Ocorreu um erro.');
+            }
+
+            formMessageDiv.textContent = result.message;
+            formMessageDiv.className = 'block mt-4 text-center p-3 rounded-md bg-green-900/70 text-green-300';
+            helpForm.reset();
+
+        } catch (error) {
+            formMessageDiv.textContent = error.message;
+            formMessageDiv.className = 'block mt-4 text-center p-3 rounded-md bg-red-900/70 text-red-400';
+        }
+    });
+}
+
 
 /**
  * Configura a lógica da página da Agenda.
@@ -286,7 +327,7 @@ function createVistoriaCard(vistoria) {
 }
 
 /**
- * Configura a lógica da página de Ajuda.
+ * Configura a lógica da página de Ajuda logada.
  */
 function setupAjudaPage() {
     const supportForm = document.getElementById('support-form');
