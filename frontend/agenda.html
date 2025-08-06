@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Minha Agenda - Portal Engentoria</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        /* Estilo para a barra de rolagem */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #1f2937; }
+        ::-webkit-scrollbar-thumb { background: #4ade80; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #22c55e; }
+        /* Animação de fade-in */
+        .fade-in { animation: fadeIn 0.5s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-200">
+
+    <!-- Barra Lateral (Sidebar) -->
+    <aside class="fixed top-0 left-0 h-full w-16 md:w-64 bg-gray-800 border-r border-gray-700 flex flex-col transition-all duration-300">
+        <div class="flex items-center justify-center h-20 border-b border-gray-700">
+            <h1 class="text-2xl font-bold text-green-400 hidden md:block">Engentoria</h1>
+            <span class="text-3xl md:hidden">E</span>
+        </div>
+        <nav class="flex-grow p-4 space-y-2">
+            <a href="#" class="flex items-center p-3 rounded-lg bg-green-500/20 text-green-300">
+                <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                <span class="ml-4 hidden md:block">Minha Agenda</span>
+            </a>
+            <a href="ajuda.html" class="flex items-center p-3 rounded-lg hover:bg-gray-700 transition-colors">
+                <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.546-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                <span class="ml-4 hidden md:block">Ajuda e Suporte</span>
+            </a>
+        </nav>
+        <div class="p-4 border-t border-gray-700">
+            <button id="logout-button" class="w-full flex items-center p-3 rounded-lg hover:bg-red-500/20 text-red-400 transition-colors">
+                <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
+                <span class="ml-4 hidden md:block">Sair</span>
+            </button>
+        </div>
+    </aside>
+
+    <!-- Conteúdo Principal -->
+    <main class="ml-16 md:ml-64 p-4 md:p-8 transition-all duration-300">
+        <div class="max-w-7xl mx-auto">
+            <h1 class="text-3xl font-bold text-white">Minha Agenda</h1>
+            <p class="text-gray-400 mt-1" id="welcome-message">Bem-vindo(a) de volta!</p>
+
+            <!-- Filtros -->
+            <div class="my-6 flex flex-wrap gap-2" id="filter-buttons">
+                <button data-period="hoje" class="filter-btn bg-green-500 text-gray-900 font-semibold py-2 px-4 rounded-lg shadow-md transition-transform transform hover:scale-105">Hoje</button>
+                <button data-period="amanha" class="filter-btn bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition-colors">Amanhã</button>
+                <button data-period="semana" class="filter-btn bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition-colors">Esta Semana</button>
+                <button data-period="mes" class="filter-btn bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition-colors">Este Mês</button>
+            </div>
+
+            <!-- Container da Agenda -->
+            <div id="agenda-container" class="space-y-4">
+                <!-- O conteúdo será inserido aqui pelo JavaScript -->
+                <!-- Exemplo de loader -->
+                <div id="loader" class="text-center py-10">
+                    <svg class="animate-spin h-8 w-8 text-green-400 mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <p class="mt-2 text-gray-400">Carregando vistorias...</p>
+                </div>
+            </div>
+        </div>
+    </main>
+    
+    <script src="./assets/auth.js"></script>
+    <script src="./assets/main.js"></script>
+</body>
+</html>
