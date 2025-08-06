@@ -26,7 +26,37 @@ document.addEventListener('DOMContentLoaded', () => {
     if (logoutButton) {
         logoutButton.addEventListener('click', logout);
     }
+    
+    // Configura a lógica da sidebar em todas as páginas que a possuem
+    setupSidebar();
 });
+
+/**
+ * Configura a lógica da barra lateral expansível para mobile.
+ */
+function setupSidebar() {
+    const sidebar = document.getElementById('sidebar');
+    const overlay = document.getElementById('sidebar-overlay');
+    const openBtn = document.getElementById('open-sidebar-btn');
+    const closeBtn = document.getElementById('close-sidebar-btn');
+
+    // Checa se os elementos da sidebar existem na página atual
+    if (sidebar && overlay && openBtn && closeBtn) {
+        const openSidebar = () => {
+            sidebar.classList.remove('-translate-x-full');
+            overlay.classList.remove('hidden');
+        };
+
+        const closeSidebar = () => {
+            sidebar.classList.add('-translate-x-full');
+            overlay.classList.add('hidden');
+        };
+
+        openBtn.addEventListener('click', openSidebar);
+        closeBtn.addEventListener('click', closeSidebar);
+        overlay.addEventListener('click', closeSidebar);
+    }
+}
 
 /**
  * Configura a lógica da página de Login.
@@ -204,9 +234,17 @@ function renderAgenda(vistorias) {
 function createVistoriaCard(vistoria) {
     const { horario, tipo_vistoria, imovel, cliente } = vistoria;
     
-    // Formata os detalhes para exibição, adicionando verificações para evitar erros.
-    const detalhesImovel = imovel ? `
+    // Define a diferenciação visual e o subtítulo com base no status do horário
+    const isBooked = !!imovel;
+    const cardBgClass = isBooked ? 'bg-green-900/20 border-l-4 border-green-500' : 'bg-gray-700/50';
+    const subtitleHTML = isBooked 
+        ? `<p class="text-sm text-gray-300">Cód. Imóvel: ${imovel['Código']}</p>`
+        : `<p class="text-sm text-blue-400">Horário Livre</p>`;
+
+    // Monta os detalhes que aparecerão quando o card for expandido
+    const detalhesImovelHTML = isBooked ? `
         <h4 class="font-semibold text-green-300 mt-4 border-t border-gray-600 pt-3">--- Detalhes do Imóvel ---</h4>
+        <p><strong>Tipo de Vistoria:</strong> ${(tipo_vistoria || 'N/D').replace(/_/g, ' ')}</p>
         <p><strong>Código:</strong> ${imovel['Código'] || 'N/D'}</p>
         <p><strong>Endereço:</strong> ${imovel['Endereço'] || 'N/D'}</p>
         <p><strong>CEP:</strong> ${imovel['CEP'] || 'N/D'}</p>
@@ -214,9 +252,9 @@ function createVistoriaCard(vistoria) {
         <p><strong>Tamanho:</strong> ${imovel['Tamanho'] ? imovel['Tamanho'] + 'm²' : 'N/D'}</p>
         <p><strong>Mobília:</strong> ${(imovel['Mobília'] || '').replace(/_/g, ' ')}</p>
         <p><strong>Imobiliária:</strong> ${imovel.imobiliaria ? imovel.imobiliaria.nome : 'N/D'}</p>
-    ` : '<p class="text-gray-400 mt-2">Horário livre.</p>';
+    ` : '';
 
-    const detalhesCliente = cliente ? `
+    const detalhesClienteHTML = cliente ? `
         <h4 class="font-semibold text-green-300 mt-4 border-t border-gray-600 pt-3">--- Detalhes do Cliente ---</h4>
         <p><strong>Nome:</strong> ${cliente.nome || 'N/D'}</p>
         <p><strong>Email:</strong> ${cliente.email || 'N/D'}</p>
@@ -225,22 +263,22 @@ function createVistoriaCard(vistoria) {
     ` : '';
 
     return `
-        <div class="vistoria-card bg-gray-700/50 rounded-lg p-4">
+        <div class="vistoria-card ${cardBgClass} rounded-lg p-4">
             <div class="flex justify-between items-center">
                 <div>
                     <p class="text-xl font-bold">${horario || 'N/D'}</p>
-                    <p class="text-green-400 font-semibold">${(tipo_vistoria || 'N/D').replace(/_/g, ' ')}</p>
+                    ${subtitleHTML}
                 </div>
-                ${imovel ? `
+                ${isBooked ? `
                 <button class="expand-btn p-2 rounded-full hover:bg-gray-600 transition">
                     <svg class="h-6 w-6 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
                 </button>
                 ` : ''}
             </div>
-            ${imovel ? `
+            ${isBooked ? `
             <div class="details hidden mt-4 space-y-1 text-sm text-gray-300">
-                ${detalhesImovel}
-                ${detalhesCliente}
+                ${detalhesImovelHTML}
+                ${detalhesClienteHTML}
             </div>
             ` : ''}
         </div>
