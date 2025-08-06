@@ -15,7 +15,6 @@ python-dotenv
 pydantic
 pydantic-settings
 
-Para gerar e validar tokens JWT
 python-jose[cryptography]
 
 
