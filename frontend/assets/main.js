@@ -1,7 +1,11 @@
 // frontend/assets/main.js
 
-// URL base da nossa API. Altere se o backend estiver em outro endereço.
-const API_BASE_URL = 'http://127.0.0.1:8000/api/v1';
+// Lógica para definir a URL da API dinamicamente
+const isLocal = window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost';
+// Se estiver rodando localmente, aponta para o backend local.
+// Se estiver em produção (na Railway), aponta para a API no mesmo domínio.
+const API_BASE_URL = isLocal ? 'http://127.0.0.1:8000/api/v1' : '/api/v1';
+
 
 // Objeto para manter o estado atual dos filtros
 let currentFilters = {
