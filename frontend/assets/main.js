@@ -148,7 +148,7 @@ async function setupAgendaPage() {
                     <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                     <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                 </svg>
-                <p class="mt-2 text-gray-400">A carregar vistorias...</p>
+                <p class="mt-2 text-gray-400">Carregando vistorias...</p>
             </div>`;
         
         let url = new URL(`${API_BASE_URL}/agenda/`);
@@ -167,13 +167,17 @@ async function setupAgendaPage() {
                 logout();
                 return;
             }
-            if (!response.ok) throw new Error('Não foi possível carregar a agenda.');
+            if (!response.ok) {
+                 const errorData = await response.json().catch(() => ({ detail: 'Não foi possível obter detalhes do erro.' }));
+                throw new Error(errorData.detail || `Não foi possível carregar a agenda (Status: ${response.status}).`);
+            }
 
             const vistorias = await response.json();
             renderAgenda(vistorias);
 
         } catch (error) {
-            agendaContainer.innerHTML = `<div class="text-center text-red-400 bg-red-900/50 p-4 rounded-md">${error.message}</div>`;
+            console.error("Erro detalhado ao buscar agenda:", error);
+            agendaContainer.innerHTML = `<div class="text-center text-red-400 bg-red-900/50 p-4 rounded-md"><strong>Erro:</strong> ${error.message}</div>`;
         }
     };
 
