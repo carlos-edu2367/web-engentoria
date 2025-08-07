@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import func, desc, and_, inspect, text
+from sqlalchemy import func, desc, and_, inspect, text, case
 from typing import List, Optional, Dict, Any
 from uuid import UUID
 from datetime import datetime, date
@@ -190,10 +190,36 @@ def soft_delete_user(table: str, user_id: UUID, db: Session = Depends(get_db)):
     summary="Lista todos os chamados de suporte do sistema"
 )
 def get_all_chamados(db: Session = Depends(get_db)):
-    chamados = db.query(models.Chamado).options(joinedload(models.Chamado.usuario)).filter(models.Chamado.is_deleted == False).order_by(func.nullslast(desc(models.Chamado.status)), models.Chamado.data_abertura).all()
+    """
+    Busca todos os chamados que não foram deletados, juntando com os dados do usuário
+    que abriu o chamado. A ordenação prioriza os chamados abertos e mais antigos.
+    """
+    order_logic = case(
+        (models.Chamado.status == 'Aberto', 1),
+        (models.Chamado.status == 'Reaberto', 2),
+        (models.Chamado.status == 'Resolvido', 3),
+        else_=4
+    )
+
+    chamados = db.query(models.Chamado)\
+        .options(joinedload(models.Chamado.usuario))\
+        .filter(models.Chamado.is_deleted == False)\
+        .order_by(order_logic, models.Chamado.data_abertura.asc())\
+        .all()
+
     response = []
     for c in chamados:
-        response.append(schemas.ChamadoAdminDisplay(id=c.id, titulo=c.titulo, status=c.status, prioridade=c.prioridade, categoria=c.categoria, nome_usuario=c.usuario.nome if c.usuario else "Usuário não encontrado", data_abertura=c.data_abertura, descricao=c.descricao, comentario_conclusao=c.comentario_conclusao))
+        response.append(schemas.ChamadoAdminDisplay(
+            id=c.id,
+            titulo=c.titulo,
+            status=c.status,
+            prioridade=c.prioridade,
+            categoria=c.categoria,
+            nome_usuario=c.usuario.nome if c.usuario else "Usuário não encontrado",
+            data_abertura=c.data_abertura,
+            descricao=c.descricao,
+            comentario_conclusao=c.comentario_conclusao
+        ))
     return response
 
 @router.post(
@@ -306,14 +332,14 @@ def get_deleted_records(db: Session = Depends(get_db)):
     """
     deleted_records = []
     for table_name, model in TABLE_MODEL_MAP.items():
-        # Coluna preferencial para exibição (nome, título, etc.)
         display_column_attr = getattr(model, 'nome', getattr(model, 'titulo', getattr(model, 'cod_imovel', None)))
         
         records = db.query(model).filter(model.is_deleted == True).all()
         for record in records:
             display_info = str(record.id)
             if display_column_attr:
-                display_info = getattr(record, display_column_attr.__name__, str(record.id))
+                # CORREÇÃO: Acessa o nome da coluna usando .key em vez de .__name__
+                display_info = getattr(record, display_column_attr.key, str(record.id))
 
             deleted_records.append(schemas.DeletedRecordInfo(
                 id=record.id,
@@ -322,7 +348,6 @@ def get_deleted_records(db: Session = Depends(get_db)):
                 tabela=table_name
             ))
     
-    # Ordena a lista final por data de deleção, da mais recente para a mais antiga
     deleted_records.sort(key=lambda r: r.data_delecao, reverse=True)
     return deleted_records
 
@@ -378,8 +403,6 @@ def permanently_delete_records(db: Session = Depends(get_db)):
     que estão marcados com `is_deleted = True`.
     A ordem de exclusão respeita as dependências para evitar erros de chave estrangeira.
     """
-    # Ordem de limpeza para respeitar as restrições de chave estrangeira (FK)
-    # Itens que dependem de outros são limpos primeiro.
     cleanup_order = [
         "vistorias_improdutivas", "agenda", "feedbacks", "chamados",
         "imoveis", "clientes", "usuarios", "imobiliarias"
@@ -417,15 +440,12 @@ def update_app_version(version_data: schemas.AppVersionUpdate, db: Session = Dep
             detail="A nova versão não pode ser vazia."
         )
 
-    # Tenta encontrar o registro de versão existente
     db_version = db.query(models.AppVersion).filter(models.AppVersion.id == 1).first()
 
     if db_version:
-        # Se existe, atualiza
         db_version.version_tag = version_data.new_version.strip()
         db_version.updated_at = datetime.utcnow()
     else:
-        # Se não existe, cria um novo
         db_version = models.AppVersion(
             id=1,
             version_tag=version_data.new_version.strip()

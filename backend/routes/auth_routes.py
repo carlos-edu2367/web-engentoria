@@ -5,7 +5,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from datetime import timedelta
 
-from .. import schemas, auth
+from .. import models, schemas, auth
 from ..config import settings, get_db
 
 # Crio um "roteador". É como um mini-app FastAPI que posso incluir no principal.
@@ -31,10 +31,19 @@ def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db:
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+    # --- ATUALIZAÇÃO: Define o tipo de dashboard para o token ---
+    dashboard_type = "vistoriador" # Padrão
+    if isinstance(user, models.UsuarioTI):
+        dashboard_type = "ti"
+    elif isinstance(user, models.Usuario) and user.tipo == 'admin':
+        dashboard_type = "admin"
+
+
     # Se deu tudo certo, crio o token de acesso.
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = auth.create_access_token(
-        data={"sub": user.email}, expires_delta=access_token_expires
+        data={"sub": user.email, "dashboard": dashboard_type}, 
+        expires_delta=access_token_expires
     )
 
     # Retorno o token no formato definido no schema.

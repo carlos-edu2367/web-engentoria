@@ -1,6 +1,7 @@
 # backend/auth.py
 
 import bcrypt
+import hashlib # Importa a biblioteca original de hashing
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
@@ -25,11 +26,19 @@ def get_password_hash(password: str) -> str:
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """
-    Verifica a senha comparando a senha em texto plano com o hash do banco.
+    Verifica a senha de forma compatível.
+    Primeiro tenta com bcrypt (novo sistema) e, se falhar, tenta com SHA256 (sistema antigo).
     """
-    password_byte_enc = plain_password.encode('utf-8')
-    hashed_password_byte_enc = hashed_password.encode('utf-8')
-    return bcrypt.checkpw(password_byte_enc, hashed_password_byte_enc)
+    try:
+        # Tenta verificar com o novo método (bcrypt)
+        password_byte_enc = plain_password.encode('utf-8')
+        hashed_password_byte_enc = hashed_password.encode('utf-8')
+        return bcrypt.checkpw(password_byte_enc, hashed_password_byte_enc)
+    except ValueError:
+        # Se o hash não for válido para bcrypt (ex: é um hash antigo SHA256),
+        # um ValueError é lançado. Nesse caso, usamos o método antigo.
+        old_system_hash = hashlib.sha256(plain_password.encode('utf-8')).hexdigest()
+        return old_system_hash == hashed_password
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     """

@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Painel de Gestão TI - Engentoria</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #1f2937; }
+        ::-webkit-scrollbar-thumb { background: #f97316; border-radius: 4px; }
+        .fade-in { animation: fadeIn 0.5s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-200">
+
+    <!-- Sidebar -->
+    <aside class="fixed top-0 left-0 h-full w-64 bg-gray-800 border-r border-gray-700 flex flex-col z-40">
+        <div class="flex items-center justify-center h-20 border-b border-gray-700">
+            <h1 class="text-2xl font-bold text-orange-400">Gestão TI</h1>
+        </div>
+        <nav class="flex-grow p-4 space-y-2" id="admin-nav">
+            <a href="#dashboard" class="nav-link flex items-center p-3 rounded-lg bg-orange-500/20 text-orange-300">
+                <span>📊</span><span class="ml-4">Dashboard</span>
+            </a>
+            <a href="#users" class="nav-link flex items-center p-3 rounded-lg hover:bg-gray-700">
+                <span>👥</span><span class="ml-4">Usuários</span>
+            </a>
+            <a href="#chamados" class="nav-link flex items-center p-3 rounded-lg hover:bg-gray-700">
+                <span>🎫</span><span class="ml-4">Chamados</span>
+            </a>
+            <a href="#feedbacks" class="nav-link flex items-center p-3 rounded-lg hover:bg-gray-700">
+                <span>⭐</span><span class="ml-4">Feedbacks</span>
+            </a>
+            <a href="#improdutivas" class="nav-link flex items-center p-3 rounded-lg hover:bg-gray-700">
+                <span>🚫</span><span class="ml-4">Improdutivas</span>
+            </a>
+            <a href="#restore" class="nav-link flex items-center p-3 rounded-lg hover:bg-gray-700">
+                <span>♻️</span><span class="ml-4">Restaurar</span>
+            </a>
+            <a href="#maintenance" class="nav-link flex items-center p-3 rounded-lg hover:bg-gray-700">
+                <span>🛠️</span><span class="ml-4">Manutenção</span>
+            </a>
+        </nav>
+        <div class="p-4 border-t border-gray-700">
+            <button id="logout-button" class="w-full flex items-center p-3 rounded-lg hover:bg-red-500/20 text-red-400 transition-colors">
+                <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
+                <span class="ml-4">Sair</span>
+            </button>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="ml-64 p-8">
+        <div id="page-content" class="fade-in">
+            <!-- Conteúdo dinâmico será carregado aqui -->
+        </div>
+    </main>
+    
+    <!-- Modal Genérico -->
+    <div id="generic-modal" class="fixed inset-0 bg-black/70 z-50 hidden items-center justify-center">
+        <div id="modal-content" class="bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-md border border-gray-700">
+            <!-- Conteúdo do modal será inserido aqui -->
+        </div>
+    </div>
+
+    <script src="./assets/auth.js"></script>
+    <script src="./assets/admin.js"></script>
+</body>
+</html>

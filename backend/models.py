@@ -154,10 +154,11 @@ class VistoriaImprodutiva(Base):
     cliente = relationship("Cliente", back_populates="vistorias_improdutivas")
     imovel = relationship("Imovel")
 
-# --- NOVO: Modelo para a tabela de Versão do App ---
+# --- Modelo para a tabela de Versão do App ---
 class AppVersion(Base):
     __tablename__ = "app_version"
 
     id = Column(Integer, primary_key=True, default=1)
     version_tag = Column(String, nullable=False)
-    updated_at = Column(DateTime(timezone=True), default=func.now(), onupdate=func.now())
+    # CORREÇÃO: A coluna 'updated_at' foi removida para corresponder à base de dados.
+    # A lógica de atualização foi movida para o endpoint.

@@ -11,6 +11,10 @@ router = APIRouter(
     tags=["Suporte"]
 )
 
+# =================================================================
+# --- Endpoints Públicos ---
+# =================================================================
+
 @router.post(
     "/login-problema",
     status_code=status.HTTP_201_CREATED,
@@ -44,6 +48,21 @@ def create_login_help_request(
     
     return {"message": "Seu pedido de ajuda foi enviado com sucesso. Nossa equipe entrará em contato em breve."}
 
+@router.get(
+    "/app-version",
+    response_model=schemas.AppVersionInfo,
+    summary="Obtém a versão atual do aplicativo"
+)
+def get_app_version(db: Session = Depends(get_db)):
+    """Endpoint público para obter a versão atual do app."""
+    version = db.query(models.AppVersion).filter(models.AppVersion.id == 1).first()
+    if not version:
+        raise HTTPException(status_code=404, detail="Versão do aplicativo não definida.")
+    return version
+
+# =================================================================
+# --- Endpoints Protegidos (Usuário Logado) ---
+# =================================================================
 
 @router.post(
     "/chamados", 
@@ -69,3 +88,53 @@ def create_chamado(
     db.refresh(db_chamado)
     
     return db_chamado
+
+@router.get(
+    "/feedbacks/check-status",
+    response_model=schemas.FeedbackCheck,
+    summary="Verifica se o usuário já enviou feedback para a versão atual"
+)
+def check_feedback_status(
+    app_version: str,
+    db: Session = Depends(get_db),
+    current_user: models.Usuario = Depends(auth.get_current_user)
+):
+    """Verifica se já existe um feedback do usuário logado para a versão especificada."""
+    feedback = db.query(models.Feedback).filter(
+        models.Feedback.usuario_id == current_user.id,
+        models.Feedback.app_version == app_version
+    ).first()
+    return {"has_submitted": feedback is not None}
+
+
+@router.post(
+    "/feedbacks",
+    status_code=status.HTTP_201_CREATED,
+    summary="Envia um novo feedback"
+)
+def submit_feedback(
+    feedback_data: schemas.FeedbackCreate,
+    db: Session = Depends(get_db),
+    current_user: models.Usuario = Depends(auth.get_current_user)
+):
+    """Endpoint para um usuário logado enviar um feedback sobre a versão do app."""
+    
+    # Verifica se já não existe um feedback para esta versão
+    existing_feedback = db.query(models.Feedback).filter(
+        models.Feedback.usuario_id == current_user.id,
+        models.Feedback.app_version == feedback_data.app_version
+    ).first()
+
+    if existing_feedback:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Você já enviou um feedback para esta versão do aplicativo."
+        )
+
+    new_feedback = models.Feedback(
+        **feedback_data.model_dump(),
+        usuario_id=current_user.id
+    )
+    db.add(new_feedback)
+    db.commit()
+    return {"message": "Seu feedback foi enviado com sucesso. Obrigado!"}
