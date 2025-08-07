@@ -9,3 +9,5 @@ python-jose[cryptography]
 email-validator
 python-multipart
 aiofiles
+passlib[bcrypt]
+bcrypt
