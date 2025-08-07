@@ -10,7 +10,24 @@ import uuid
 # Importo a Base que declarei no config.py
 from .config import Base
 
-# --- Modelo para a tabela de Usuários (Vistoriadores/ADM) ---
+# --- NOVO: Modelo para a tabela de Usuários de TI (Gestores) ---
+class UsuarioTI(Base):
+    """
+    Nova tabela para usuários do sistema de gestão (TI),
+    com acesso a funcionalidades administrativas.
+    """
+    __tablename__ = "usuarios_ti"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    nome = Column(String, nullable=False)
+    email = Column(String, unique=True, nullable=False, index=True)
+    senha = Column(String, nullable=False)
+    nivel_acesso = Column(String, nullable=False, default='gestor') # Ex: 'gestor', 'suporte_n1'
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), default=func.now(), onupdate=func.now())
+
+
+# --- Modelo para a tabela de Usuários (Vistoriadores/ADM do App) ---
 class Usuario(Base):
     __tablename__ = "usuarios"
 
@@ -20,7 +37,7 @@ class Usuario(Base):
     email = Column(String, unique=True, nullable=False, index=True)
     telefone1 = Column(String, nullable=True)
     telefone2 = Column(String, nullable=True)
-    tipo = Column(String, nullable=False) # 'vistoriador' ou 'adm'
+    tipo = Column(String, nullable=False) # 'vistoriador' ou 'admin'
     senha = Column(String, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), default=func.now(), onupdate=func.now())
