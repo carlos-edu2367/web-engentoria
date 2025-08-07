@@ -7,16 +7,19 @@ from fastapi.middleware.cors import CORSMiddleware
 
 # Importo os roteadores que criei
 from .routes import auth_routes, agenda_routes, suporte_routes
+# NOVO: Importo o roteador do painel de gestão
+from .routes import admin_routes
 from . import models
 from .config import engine
 
 # Crio as tabelas no banco de dados (se elas não existirem)
+# Isso agora também criará a tabela 'usuarios_ti'
 models.Base.metadata.create_all(bind=engine)
 
 # Crio a instância principal do FastAPI
 app = FastAPI(
-    title="Engentoria - API Vistoriador",
-    description="API para o portal web do vistoriador da Engentoria.",
+    title="Engentoria - API Vistoriador & Gestão",
+    description="API para o portal web do vistoriador e para o painel de gestão de TI da Engentoria.",
     version="1.0.0"
 )
 
@@ -35,6 +38,9 @@ app.add_middleware(
 app.include_router(auth_routes.router, prefix="/api/v1")
 app.include_router(agenda_routes.router, prefix="/api/v1")
 app.include_router(suporte_routes.router, prefix="/api/v1")
+# NOVO: Incluo o roteador do painel de gestão
+app.include_router(admin_routes.router, prefix="/api/v1")
+
 
 # --- SERVINDO O FRONTEND ---
 
