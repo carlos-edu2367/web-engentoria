@@ -151,10 +151,10 @@ async function setupAgendaPage() {
                 <p class="mt-2 text-gray-400">Carregando vistorias...</p>
             </div>`;
         
-        let url = new URL(`${API_BASE_URL}/agenda/`);
-        url.searchParams.append('periodo', currentFilters.period);
+        // CORREÇÃO: Constrói o URL como uma string para evitar o erro "Invalid URL".
+        let url = `${API_BASE_URL}/agenda/?periodo=${currentFilters.period}`;
         if (currentFilters.status !== 'todos') {
-            url.searchParams.append('status_filtro', currentFilters.status);
+            url += `&status_filtro=${currentFilters.status}`;
         }
 
         try {
