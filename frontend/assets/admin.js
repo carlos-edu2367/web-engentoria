@@ -318,9 +318,12 @@ async function renderImprodutivas() {
         const codImovel = document.getElementById('improdutiva-cod-imovel').value;
         const dataVistoria = document.getElementById('improdutiva-data').value;
         
-        let url = new URL(`${API_BASE_URL_ADMIN}/improdutivas`);
-        if (codImovel) url.searchParams.append('cod_imovel', codImovel);
-        if (dataVistoria) url.searchParams.append('data_vistoria', dataVistoria);
+        // CORREÇÃO: Constrói o URL como uma string para evitar o erro "Invalid URL".
+        let url = `${API_BASE_URL_ADMIN}/improdutivas?`;
+        const params = new URLSearchParams();
+        if (codImovel) params.append('cod_imovel', codImovel);
+        if (dataVistoria) params.append('data_vistoria', dataVistoria);
+        url += params.toString();
 
         tableContainer.innerHTML = '<p>Buscando...</p>';
         try {
