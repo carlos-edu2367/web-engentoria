@@ -1,12 +1,12 @@
 # backend/schemas.py
 
 from pydantic import BaseModel, EmailStr, Field
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Any
 from uuid import UUID
 from datetime import date, datetime
 
 # =================================================================
-# --- Schemas para Autenticação e Usuários (Existentes) ---
+# --- Schemas para Autenticação e Usuários ---
 # =================================================================
 
 class Token(BaseModel):
@@ -22,41 +22,41 @@ class UsuarioLogin(BaseModel):
     password: str
 
 # =================================================================
-# --- Schemas para a Agenda (Leitura de Dados Existentes) ---
+# --- Schemas para a Agenda ---
 # =================================================================
 
 class Vistoriador(BaseModel):
     nome: str
     class Config: from_attributes = True
 
-class Imobiliaria(BaseModel):
+class ImobiliariaBase(BaseModel):
+    id: UUID
     nome: str
     class Config: from_attributes = True
 
 class Cliente(BaseModel):
     nome: str
     email: Optional[EmailStr] = None
-    telefone1: Optional[str] = Field(None, alias="Telefone 1")
-    telefone2: Optional[str] = Field(None, alias="Telefone 2")
+    telefone1: Optional[str] = None
+    telefone2: Optional[str] = None
     class Config:
         from_attributes = True
-        populate_by_name = True
 
 class Imovel(BaseModel):
-    cod_imovel: str = Field(..., alias="Código")
-    endereco: str = Field(..., alias="Endereço")
-    cep: Optional[str] = Field("N/D", alias="CEP")
-    referencia: Optional[str] = Field("N/D", alias="Referência")
-    tamanho: float = Field(..., alias="Tamanho")
-    mobiliado: str = Field(..., alias="Mobília")
-    imobiliaria: Imobiliaria
+    cod_imovel: str
+    endereco: str
+    cep: Optional[str] = "N/D"
+    referencia: Optional[str] = "N/D"
+    tamanho: float
+    mobiliado: str
+    valor: float
+    imobiliaria: ImobiliariaBase
     class Config:
         from_attributes = True
-        populate_by_name = True
 
 class Vistoria(BaseModel):
     id: UUID
-    tipo_vistoria: str = Field(..., alias="Tipo de Vistoria")
+    tipo_vistoria: str
     data: date
     horario: str
     vistoriador: Vistoriador
@@ -64,12 +64,91 @@ class Vistoria(BaseModel):
     cliente: Optional[Cliente] = None
     class Config:
         from_attributes = True
-        populate_by_name = True
 
 # =================================================================
-# --- Schemas para Suporte (Existentes e Novos) ---
+# --- Schemas para Imobiliárias e Grupos ---
 # =================================================================
 
+class GrupoImobiliariaBase(BaseModel):
+    nome: str
+    email: EmailStr
+
+class GrupoImobiliariaCreate(GrupoImobiliariaBase):
+    senha: str = Field(..., min_length=6)
+
+class GrupoImobiliariaDisplay(GrupoImobiliariaBase):
+    id: UUID
+    imobiliarias: List[ImobiliariaBase] = []
+    class Config:
+        from_attributes = True
+
+class ImobiliariaCreate(BaseModel):
+    nome: str
+    valor_sem_mobilia: float = Field(..., ge=0)
+    valor_semi_mobiliado: float = Field(..., ge=0)
+    valor_mobiliado: float = Field(..., ge=0)
+
+class ImobiliariaUpdate(ImobiliariaCreate):
+    pass
+
+class ImobiliariaDetail(ImobiliariaCreate):
+    id: UUID
+    grupo: Optional[GrupoImobiliariaBase] = None
+    class Config:
+        from_attributes = True
+
+class ImobiliariaGrupoLink(BaseModel):
+    grupo_id: Optional[UUID] = None
+
+# --- Schemas para o Dashboard da Imobiliária ---
+
+class StatsItem(BaseModel):
+    total: int
+    change: float
+
+class DashboardStatsImobiliaria(BaseModel):
+    vistorias_30d: StatsItem
+    improdutivas_30d: StatsItem
+    vistorias_mes_atual: int
+    improdutivas_mes_atual: int
+    projecao_proximo_mes: int
+    monthly_breakdown: Dict[str, int]
+
+class VistoriaImprodutivaRelatorio(BaseModel):
+    id: UUID
+    data_vistoria_original: date
+    cod_imovel: str
+    motivo_improdutividade: str
+    valor_cobranca: float
+    class Config: from_attributes = True
+
+# ALTERADO: Adicionados novos campos para o relatório
+class VistoriaAgendadaRelatorio(BaseModel):
+    id: UUID
+    data: date
+    horario: str
+    tipo: str
+    cod_imovel: str
+    endereco: str
+    tamanho: float
+    mobiliado: str
+    valor: float
+    class Config: from_attributes = True
+
+class RelatorioMensal(BaseModel):
+    mes_ano: str
+    imobiliaria_nome: str
+    total_vistorias: int
+    total_improdutivas: int
+    valor_vistorias: float
+    valor_improdutivas: float
+    valor_total: float
+    vistorias_agendadas: List[VistoriaAgendadaRelatorio]
+    vistorias_improdutivas: List[VistoriaImprodutivaRelatorio]
+
+# =================================================================
+# --- Schemas para Suporte ---
+# =================================================================
 class ChamadoCreate(BaseModel):
     titulo: str = Field(..., min_length=5, max_length=100)
     descricao: str = Field(..., min_length=10)
@@ -80,10 +159,9 @@ class LoginAjudaCreate(BaseModel):
     email: EmailStr
     descricao: str = Field(..., min_length=10)
 
-# --- NOVO: Schemas para Feedback do Vistoriador ---
 class FeedbackCreate(BaseModel):
     app_version: str
-    nota: int = Field(..., ge=1, le=5) # Garante que a nota esteja entre 1 e 5
+    nota: int = Field(..., ge=1, le=5)
     comentario: Optional[str] = None
 
 class AppVersionInfo(BaseModel):
@@ -92,12 +170,9 @@ class AppVersionInfo(BaseModel):
 class FeedbackCheck(BaseModel):
     has_submitted: bool
 
-
 # =================================================================
-# --- Schemas para o Painel de Gestão de TI (Existentes) ---
+# --- Schemas para o Painel de Gestão de TI ---
 # =================================================================
-
-# --- Dashboard ---
 class DashboardStats(BaseModel):
     total_users: int
     total_clients: int
@@ -109,7 +184,6 @@ class FeedbackChartItem(BaseModel):
     version: str
     avg_rating: float
 
-# --- Gerenciamento de Usuários ---
 class AdminUserDisplay(BaseModel):
     id: UUID
     nome: str
@@ -130,7 +204,6 @@ class AdminUserUpdate(BaseModel):
     tipo: str
     senha: Optional[str] = None
 
-# --- Chamados e Feedbacks ---
 class ChamadoAdminDisplay(BaseModel):
     id: UUID
     titulo: str
@@ -154,7 +227,6 @@ class FeedbackAdminDisplay(BaseModel):
     nome_usuario: str
     class Config: from_attributes = True
 
-# --- Vistorias Improdutivas ---
 class ImprodutivaDisplay(BaseModel):
     id: UUID
     data_vistoria: str
@@ -164,7 +236,6 @@ class ImprodutivaDisplay(BaseModel):
     motivo: str
     class Config: from_attributes = True
 
-# --- Manutenção e Restauração ---
 class AppVersionUpdate(BaseModel):
     new_version: str
 

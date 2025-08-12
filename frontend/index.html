@@ -1,56 +1,157 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Engentoria - Vistorias Inteligentes</title>
-    <!-- Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' font-size='90' font-family='Inter, sans-serif' font-weight='700' fill='%234ade80'>e</text></svg>">
-    <!-- Fontes -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <style>
-        /* Usamos a fonte Inter como padrão */
-        body { font-family: 'Inter', sans-serif; }
-        /* Efeito de gradiente sutil no fundo */
-        .bg-grid { background-image: linear-gradient(to right, rgba(255, 255, 255, 0.05) 1px, transparent 1px), linear-gradient(to bottom, rgba(255, 255, 255, 0.05) 1px, transparent 1px); background-size: 2rem 2rem; }
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Engentoria - Vistorias Inteligentes</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' font-size='90' font-family='Inter, sans-serif' font-weight='700' fill='%2300ffb3'>e</text></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <style>
+    body { 
+      font-family: 'Inter', sans-serif; 
+      background-color: #0a0a0a;
+    }
+    
+    /* Fundo futurista com grid */
+    .bg-futuristic {
+      background-color: #0a0a0a;
+      background-image: 
+        linear-gradient(rgba(0, 255, 179, 0.05) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0, 255, 179, 0.05) 1px, transparent 1px);
+      background-size: 40px 40px;
+      position: relative;
+      overflow: hidden;
+    }
+    
+    /* Efeito de escaneamento */
+    .scanline {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(
+        to bottom,
+        rgba(0, 255, 179, 0) 0%,
+        rgba(0, 255, 179, 0.02) 50%,
+        rgba(0, 255, 179, 0) 100%
+      );
+      background-size: 100% 8px;
+      animation: scan 4s linear infinite;
+      pointer-events: none;
+      z-index: 1;
+    }
+    
+    @keyframes scan {
+      0% { transform: translateY(-100%); }
+      100% { transform: translateY(100%); }
+    }
+    
+    /* Partículas futuristas */
+    .particles {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      top: 0;
+      left: 0;
+      z-index: 0;
+    }
+    .particles span {
+      position: absolute;
+      background: rgba(0, 255, 179, 0.3);
+      border-radius: 50%;
+      animation: floatUp linear infinite;
+      filter: blur(1px);
+    }
+    @keyframes floatUp {
+      from { transform: translateY(100vh) scale(0); opacity: 0; }
+      10% { opacity: 1; }
+      to { transform: translateY(-10vh) scale(1); opacity: 0; }
+    }
+    
+    /* Efeito de borda neon */
+    .neon-border {
+      position: relative;
+      border: 1px solid rgba(0, 255, 179, 0.3);
+      box-shadow: 0 0 10px rgba(0, 255, 179, 0.2),
+                  inset 0 0 10px rgba(0, 255, 179, 0.2);
+      transition: all 0.3s ease;
+    }
+    
+    .neon-border:hover {
+      box-shadow: 0 0 15px rgba(0, 255, 179, 0.4),
+                  inset 0 0 15px rgba(0, 255, 179, 0.4);
+    }
+    
+    /* Efeito de digitação */
+    .typing-effect {
+      border-right: 2px solid #00ffb3;
+      animation: blink 0.75s step-end infinite;
+    }
+    
+    @keyframes blink {
+      from, to { border-color: transparent }
+      50% { border-color: #00ffb3 }
+    }
+  </style>
 </head>
-<body class="bg-gray-900 text-white antialiased bg-grid">
+<body class="bg-futuristic text-gray-200 antialiased min-h-screen flex flex-col items-center justify-center p-6 relative overflow-hidden">
 
-    <div class="flex flex-col items-center justify-center min-h-screen p-6">
-        <header class="text-center mb-12">
-            <h1 class="text-5xl md:text-6xl font-bold text-green-400 tracking-tight">Engentoria</h1>
-            <p class="text-lg text-gray-400 mt-2">Inovação e Precisão em Vistorias de Imóveis.</p>
-        </header>
+  <!-- Efeito de escaneamento -->
+  <div class="scanline"></div>
+  
+  <!-- Partículas futuristas -->
+  <div class="particles">
+    <span style="width:4px; height:4px; left:15%; animation-duration:15s;"></span>
+    <span style="width:6px; height:6px; left:35%; animation-duration:12s;"></span>
+    <span style="width:3px; height:3px; left:55%; animation-duration:18s;"></span>
+    <span style="width:5px; height:5px; left:75%; animation-duration:14s;"></span>
+    <span style="width:4px; height:4px; left:95%; animation-duration:16s;"></span>
+  </div>
 
-        <main class="text-center max-w-2xl mx-auto">
-            <p class="text-gray-300 mb-8 leading-relaxed">
-                Combinamos tecnologia de ponta e expertise técnica para oferecer relatórios de vistoria detalhados e confiáveis. Nossa plataforma otimiza o fluxo de trabalho para os vistoriadores, garantindo transparência e eficiência em cada etapa do processo.
-            </p>
-            <div class="flex flex-col items-center justify-center gap-4 w-full max-w-sm mx-auto">
-                <!-- Botão Principal -->
-                <a href="login.html" class="inline-block bg-green-500 hover:bg-green-600 text-gray-900 font-bold py-3 px-8 rounded-lg shadow-lg transition-transform transform hover:scale-105 w-full">
-                    Área do Vistoriador
-                </a>
-                <!-- Botões Secundários -->
-                <div class="flex items-center justify-center gap-4 w-full">
-                    <a href="login-ti.html" class="inline-block bg-orange-500 hover:bg-orange-600 text-gray-900 font-bold py-2 px-6 rounded-lg shadow-lg transition-transform transform hover:scale-105 w-1/2 text-center">
-                        Área de TI
-                    </a>
-                    <a href="login.html" class="inline-block bg-blue-500 hover:bg-blue-600 text-gray-900 font-bold py-2 px-6 rounded-lg shadow-lg transition-transform transform hover:scale-105 w-1/2 text-center">
-                        Área ADM
-                    </a>
-                </div>
-            </div>
-        </main>
+  <!-- Linha superior futurista -->
+  <div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-cyan-400 to-transparent opacity-80"></div>
 
-        <footer class="absolute bottom-6 text-center text-gray-500 text-sm">
-            <p>&copy; 2025 Engentoria. Todos os direitos reservados.</p>
-        </footer>
+  <header class="text-center mb-12 relative z-10">
+    <h1 class="text-5xl md:text-6xl font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-cyan-300 via-emerald-300 to-green-400 drop-shadow-[0_0_10px_rgba(0,255,179,0.5)]">
+      Engentoria
+    </h1>
+    <p class="text-lg text-gray-400 mt-3 typing-effect inline-block">
+      Vistorias Inteligentes
+    </p>
+  </header>
+
+  <main class="text-center max-w-2xl mx-auto relative z-10">
+    <p class="text-gray-300 mb-10 leading-relaxed text-lg">
+      Combinamos <span class="text-cyan-300 font-medium">tecnologia avançada</span> e <span class="text-emerald-300 font-medium">expertise técnica</span> para oferecer relatórios de vistoria detalhados e precisos. Nossa plataforma <span class="text-green-300 font-medium">otimiza processos</span> para vistoriadores e imobiliárias, garantindo eficiência e transparência.
+    </p>
+    <div class="flex flex-col gap-4 w-full max-w-sm mx-auto">
+      <a href="login.html" class="group relative w-full py-3 px-8 rounded-lg font-bold bg-gray-800 hover:bg-gray-700 text-cyan-300 shadow-lg transition-all duration-300 neon-border hover:text-white">
+        <span class="absolute left-4 top-3 opacity-0 group-hover:opacity-100 transition">></span>
+        Área do Vistoriador
+        <span class="absolute right-4 top-3 opacity-0 group-hover:opacity-100 transition"><</span>
+      </a>
+      <a href="login-imobiliaria.html" class="group relative w-full py-3 px-8 rounded-lg font-bold bg-gray-800 hover:bg-gray-700 text-emerald-300 shadow-lg transition-all duration-300 neon-border hover:text-white">
+        <span class="absolute left-4 top-3 opacity-0 group-hover:opacity-100 transition">></span>
+        Área da Imobiliária
+        <span class="absolute right-4 top-3 opacity-0 group-hover:opacity-100 transition"><</span>
+      </a>
+      <a href="login-ti.html" class="group relative w-full py-3 px-8 rounded-lg font-bold bg-gray-800 hover:bg-gray-700 text-green-300 shadow-lg transition-all duration-300 neon-border hover:text-white">
+        <span class="absolute left-4 top-3 opacity-0 group-hover:opacity-100 transition">></span>
+        Área de Gestão (TI/ADM)
+        <span class="absolute right-4 top-3 opacity-0 group-hover:opacity-100 transition"><</span>
+      </a>
     </div>
+  </main>
+
+  <footer class="absolute bottom-6 text-center text-gray-500 text-sm z-10">
+    <p class="text-xs tracking-wider">© 2025 ENGENTORIA | TODOS OS DIREITOS RESERVADOS</p>
+  </footer>
 
 </body>
 </html>

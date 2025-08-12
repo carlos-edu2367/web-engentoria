@@ -8,9 +8,16 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from dotenv import load_dotenv
+from pathlib import Path
 
-# Carrego as variáveis de ambiente do arquivo .env para o ambiente do sistema
-load_dotenv()
+# --- LÓGICA DE CARREGAMENTO DO .ENV MAIS ROBUSTA ---
+# Esta nova lógica encontra o diretório do arquivo atual (config.py),
+# sobe um nível (para a pasta 'backend'), e depois mais um (para a pasta raiz do projeto).
+# Em seguida, procura pelo arquivo .env nesse local.
+# Isso garante que o .env seja encontrado independentemente de onde o script é executado.
+BASE_DIR = Path(__file__).resolve().parent.parent
+env_path = BASE_DIR / '.env'
+load_dotenv(dotenv_path=env_path)
 
 # Configuro o logging para que possamos ver as mensagens de tentativa de reconexão no console
 logging.basicConfig(level=logging.INFO)
@@ -36,6 +43,10 @@ settings = Settings()
 
 # Se as variáveis essenciais não forem encontradas, gero um erro claro.
 if not settings.DATABASE_URL or not settings.SECRET_KEY:
+    # Adiciona uma mensagem de debug para ajudar a identificar o problema
+    logger.error(f"Não foi possível carregar as variáveis de ambiente. Caminho procurado para o .env: {env_path}")
+    logger.error(f"Valor lido para DATABASE_URL: {settings.DATABASE_URL}")
+    logger.error(f"Valor lido para SECRET_KEY: {settings.SECRET_KEY}")
     raise ValueError("As variáveis de ambiente DATABASE_URL e SECRET_KEY devem ser definidas no arquivo .env")
 
 def create_db_engine_with_retry(max_retries=5, delay_seconds=3):

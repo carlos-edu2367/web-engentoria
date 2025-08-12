@@ -11,3 +11,6 @@ python-multipart
 aiofiles
 passlib[bcrypt]
 bcrypt
+python-dateutil
+openpyxl
+reportlab

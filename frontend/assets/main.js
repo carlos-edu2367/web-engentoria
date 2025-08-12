@@ -16,7 +16,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const currentPage = window.location.pathname.split('/').pop();
 
     // Executa a lógica específica para cada página
-    if (currentPage === 'login.html' || currentPage === 'login-ti.html') {
+    // ALTERADO: Adicionada a página 'login-imobiliaria.html' à condição
+    if (currentPage === 'login.html' || currentPage === 'login-ti.html' || currentPage === 'login-imobiliaria.html') {
         setupLoginPage();
     } else if (currentPage === 'agenda.html') {
         setupAgendaPage();
@@ -85,12 +86,8 @@ function setupLoginPage() {
             const data = await response.json();
             saveToken(data.access_token);
             
-            const payload = decodeToken(data.access_token);
-            if (payload && (payload.dashboard === 'ti' || payload.dashboard === 'admin')) {
-                window.location.href = 'admin-dashboard.html';
-            } else {
-                window.location.href = 'agenda.html';
-            }
+            // A lógica de redirecionamento agora está centralizada no auth.js
+            redirectToDashboard(data.access_token);
 
         } catch (error) {
             errorMessageDiv.textContent = error.message;
@@ -151,7 +148,6 @@ async function setupAgendaPage() {
                 <p class="mt-2 text-gray-400">Carregando vistorias...</p>
             </div>`;
         
-        // CORREÇÃO: Constrói o URL como uma string para evitar o erro "Invalid URL".
         let url = `${API_BASE_URL}/agenda/?periodo=${currentFilters.period}`;
         if (currentFilters.status !== 'todos') {
             url += `&status_filtro=${currentFilters.status}`;
@@ -242,7 +238,6 @@ async function setupFeedbackFeature() {
         }
         const versionData = await versionResponse.json();
         currentAppVersion = versionData.version_tag;
-        console.log(`Versão atual do app: ${currentAppVersion}`);
 
         const token = getToken();
         const statusResponse = await fetch(`${API_BASE_URL}/suporte/feedbacks/check-status?app_version=${currentAppVersion}`, {
@@ -253,7 +248,6 @@ async function setupFeedbackFeature() {
             return;
         }
         const statusData = await statusResponse.json();
-        console.log(`Utilizador já enviou feedback para esta versão? ${statusData.has_submitted}`);
 
         if (!statusData.has_submitted) {
             setTimeout(() => {

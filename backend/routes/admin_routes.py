@@ -181,6 +181,155 @@ def soft_delete_user(table: str, user_id: UUID, db: Session = Depends(get_db)):
     return None
 
 # =================================================================
+# --- Endpoints de Gerenciamento de Imobiliárias e Grupos ---
+# =================================================================
+
+@router.post(
+    "/grupos-imobiliarias",
+    response_model=schemas.GrupoImobiliariaDisplay,
+    status_code=status.HTTP_201_CREATED,
+    summary="Cria um novo grupo de imobiliárias"
+)
+def create_imobiliaria_group(
+    group_data: schemas.GrupoImobiliariaCreate,
+    db: Session = Depends(get_db)
+):
+    """Cria um novo login de grupo para imobiliárias."""
+    existing_group = db.query(models.GrupoImobiliaria).filter(models.GrupoImobiliaria.email == group_data.email).first()
+    if existing_group:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Este email já está em uso por outro grupo.")
+    
+    hashed_password = auth.get_password_hash(group_data.senha)
+    new_group = models.GrupoImobiliaria(
+        nome=group_data.nome,
+        email=group_data.email,
+        senha=hashed_password
+    )
+    db.add(new_group)
+    db.commit()
+    db.refresh(new_group)
+    return new_group
+
+@router.get(
+    "/grupos-imobiliarias",
+    response_model=List[schemas.GrupoImobiliariaDisplay],
+    summary="Lista todos os grupos de imobiliárias"
+)
+def get_all_imobiliaria_groups(db: Session = Depends(get_db)):
+    """Retorna uma lista de todos os grupos de imobiliárias cadastrados."""
+    groups = db.query(models.GrupoImobiliaria).options(joinedload(models.GrupoImobiliaria.imobiliarias)).filter(models.GrupoImobiliaria.is_deleted == False).order_by(models.GrupoImobiliaria.nome).all()
+    return groups
+
+@router.get(
+    "/imobiliarias",
+    response_model=List[schemas.ImobiliariaDetail],
+    summary="Lista todas as imobiliárias e seus grupos"
+)
+def get_all_imobiliarias(db: Session = Depends(get_db)):
+    """Retorna uma lista de todas as imobiliárias, incluindo a qual grupo pertencem."""
+    imobiliarias = db.query(models.Imobiliaria).options(joinedload(models.Imobiliaria.grupo)).filter(models.Imobiliaria.is_deleted == False).order_by(models.Imobiliaria.nome).all()
+    return imobiliarias
+
+# NOVO: Endpoint para criar uma imobiliária
+@router.post(
+    "/imobiliarias",
+    response_model=schemas.ImobiliariaDetail,
+    status_code=status.HTTP_201_CREATED,
+    summary="Cria uma nova imobiliária"
+)
+def create_imobiliaria(
+    imobiliaria_data: schemas.ImobiliariaCreate,
+    db: Session = Depends(get_db)
+):
+    """Cria um novo registro de imobiliária."""
+    existing = db.query(models.Imobiliaria).filter(models.Imobiliaria.nome == imobiliaria_data.nome, models.Imobiliaria.is_deleted == False).first()
+    if existing:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Já existe uma imobiliária com este nome.")
+    
+    new_imobiliaria = models.Imobiliaria(**imobiliaria_data.model_dump())
+    db.add(new_imobiliaria)
+    db.commit()
+    db.refresh(new_imobiliaria)
+    return new_imobiliaria
+
+# NOVO: Endpoint para atualizar uma imobiliária
+@router.put(
+    "/imobiliarias/{imobiliaria_id}",
+    response_model=schemas.ImobiliariaDetail,
+    summary="Atualiza uma imobiliária existente"
+)
+def update_imobiliaria(
+    imobiliaria_id: UUID,
+    imobiliaria_data: schemas.ImobiliariaUpdate,
+    db: Session = Depends(get_db)
+):
+    """Atualiza os dados de uma imobiliária."""
+    db_imobiliaria = db.query(models.Imobiliaria).filter(models.Imobiliaria.id == imobiliaria_id).first()
+    if not db_imobiliaria:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Imobiliária não encontrada.")
+    
+    # Verifica se o nome já existe em outra imobiliária (ignorando a atual)
+    existing_with_name = db.query(models.Imobiliaria).filter(
+        models.Imobiliaria.nome == imobiliaria_data.nome,
+        models.Imobiliaria.id != imobiliaria_id,
+        models.Imobiliaria.is_deleted == False
+    ).first()
+    if existing_with_name:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Já existe uma imobiliária com este nome.")
+
+    for key, value in imobiliaria_data.model_dump().items():
+        setattr(db_imobiliaria, key, value)
+        
+    db.commit()
+    db.refresh(db_imobiliaria)
+    return db_imobiliaria
+
+# NOVO: Endpoint para deletar (soft) uma imobiliária
+@router.delete(
+    "/imobiliarias/{imobiliaria_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Move uma imobiliária para a lixeira (soft delete)"
+)
+def soft_delete_imobiliaria(imobiliaria_id: UUID, db: Session = Depends(get_db)):
+    """Marca uma imobiliária como deletada (is_deleted = True)."""
+    db_imobiliaria = db.query(models.Imobiliaria).filter(models.Imobiliaria.id == imobiliaria_id, models.Imobiliaria.is_deleted == False).first()
+    if not db_imobiliaria:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Imobiliária não encontrada ou já deletada.")
+    
+    db_imobiliaria.is_deleted = True
+    db.commit()
+    return None
+
+
+@router.put(
+    "/imobiliarias/{imobiliaria_id}/link-group",
+    response_model=schemas.ImobiliariaDetail,
+    summary="Vincula ou desvincula uma imobiliária de um grupo"
+)
+def link_imobiliaria_to_group(
+    imobiliaria_id: UUID,
+    link_data: schemas.ImobiliariaGrupoLink,
+    db: Session = Depends(get_db)
+):
+    """
+    Atualiza o vínculo de uma imobiliária a um grupo.
+    Para desvincular, envie `{"grupo_id": null}`.
+    """
+    db_imobiliaria = db.query(models.Imobiliaria).filter(models.Imobiliaria.id == imobiliaria_id).first()
+    if not db_imobiliaria:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Imobiliária não encontrada.")
+
+    if link_data.grupo_id:
+        db_group = db.query(models.GrupoImobiliaria).filter(models.GrupoImobiliaria.id == link_data.grupo_id).first()
+        if not db_group:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Grupo de imobiliária não encontrado.")
+    
+    db_imobiliaria.grupo_id = link_data.grupo_id
+    db.commit()
+    db.refresh(db_imobiliaria)
+    return db_imobiliaria
+
+# =================================================================
 # --- Endpoints de Gestão de Chamados e Feedbacks ---
 # =================================================================
 
@@ -313,6 +462,7 @@ TABLE_MODEL_MAP = {
     "usuarios": models.Usuario,
     "clientes": models.Cliente,
     "imobiliarias": models.Imobiliaria,
+    "grupos_imobiliarias": models.GrupoImobiliaria,
     "imoveis": models.Imovel,
     "agenda": models.Agenda,
     "feedbacks": models.Feedback,
@@ -338,7 +488,6 @@ def get_deleted_records(db: Session = Depends(get_db)):
         for record in records:
             display_info = str(record.id)
             if display_column_attr:
-                # CORREÇÃO: Acessa o nome da coluna usando .key em vez de .__name__
                 display_info = getattr(record, display_column_attr.key, str(record.id))
 
             deleted_records.append(schemas.DeletedRecordInfo(
@@ -405,7 +554,7 @@ def permanently_delete_records(db: Session = Depends(get_db)):
     """
     cleanup_order = [
         "vistorias_improdutivas", "agenda", "feedbacks", "chamados",
-        "imoveis", "clientes", "usuarios", "imobiliarias"
+        "imoveis", "clientes", "usuarios", "grupos_imobiliarias", "imobiliarias"
     ]
     
     total_deleted = 0

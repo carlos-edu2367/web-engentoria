@@ -7,7 +7,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' font-size='90' font-family='Inter, sans-serif' font-weight='700' fill='%234ade80'>e</text></svg>">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' font-size='90' font-family='Inter, sans-serif' font-weight='700' fill='%23f97316'>e</text></svg>">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         body { font-family: 'Inter', sans-serif; }
@@ -31,6 +31,10 @@
             </a>
             <a href="#users" class="nav-link flex items-center p-3 rounded-lg hover:bg-gray-700">
                 <span>👥</span><span class="ml-4">Usuários</span>
+            </a>
+            <!-- NOVO LINK PARA IMOBILIÁRIAS -->
+            <a href="#imobiliarias" class="nav-link flex items-center p-3 rounded-lg hover:bg-gray-700">
+                <span>🏢</span><span class="ml-4">Imobiliárias</span>
             </a>
             <a href="#chamados" class="nav-link flex items-center p-3 rounded-lg hover:bg-gray-700">
                 <span>🎫</span><span class="ml-4">Chamados</span>
@@ -64,8 +68,8 @@
     </main>
     
     <!-- Modal Genérico -->
-    <div id="generic-modal" class="fixed inset-0 bg-black/70 z-50 hidden items-center justify-center">
-        <div id="modal-content" class="bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-md border border-gray-700">
+    <div id="generic-modal" class="fixed inset-0 bg-black/70 z-50 hidden items-center justify-center p-4">
+        <div id="modal-content" class="bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-lg border border-gray-700 max-h-[90vh] overflow-y-auto">
             <!-- Conteúdo do modal será inserido aqui -->
         </div>
     </div>

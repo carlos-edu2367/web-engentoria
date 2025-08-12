@@ -27,7 +27,7 @@ document.addEventListener('DOMContentLoaded', () => {
             activeLink.classList.remove('hover:bg-gray-700');
         }
 
-        pageContent.innerHTML = '<p class="text-center">Carregando...</p>';
+        pageContent.innerHTML = '<p class="text-center text-lg mt-10">Carregando...</p>';
         try {
             // Cada case corresponde a uma função que renderiza uma seção do painel
             switch (pageId) {
@@ -36,6 +36,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     break;
                 case 'users':
                     await renderUsers();
+                    break;
+                case 'imobiliarias':
+                    await renderImobiliarias();
                     break;
                 case 'chamados':
                     await renderChamados();
@@ -53,7 +56,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     await renderMaintenance();
                     break;
                 default:
-                    pageContent.innerHTML = `<h1 class="text-2xl font-bold">Bem-vindo ao Painel de Gestão de TI</h1>`;
+                    await renderDashboard(); // Carrega o dashboard por padrão
             }
         } catch (error) {
             pageContent.innerHTML = `<p class="text-red-400 text-center">Erro ao carregar conteúdo: ${error.message}</p>`;
@@ -63,12 +66,16 @@ document.addEventListener('DOMContentLoaded', () => {
     // Navegação baseada em Hash
     adminNav.addEventListener('click', (e) => {
         const link = e.target.closest('a');
-        if (link) {
+        if (link && link.hash) {
             e.preventDefault();
             const pageId = link.hash.substring(1);
             window.location.hash = pageId;
-            loadPage(pageId);
         }
+    });
+
+    window.addEventListener('hashchange', () => {
+        const pageId = window.location.hash.substring(1) || 'dashboard';
+        loadPage(pageId);
     });
     
     // Carrega a página inicial baseada no hash ou padrão
@@ -200,9 +207,10 @@ async function renderUsers() {
         displayUsers(filtered);
     });
 
-    document.getElementById('add-user-btn').addEventListener('click', () => showUserModal());
-
-    userListDiv.addEventListener('click', (e) => {
+    contentDiv.addEventListener('click', (e) => {
+        if (e.target.id === 'add-user-btn') {
+            showUserModal();
+        }
         if (e.target.classList.contains('edit-user-btn')) {
             const userId = e.target.dataset.userId;
             const user = allUsers.find(u => u.id === userId);
@@ -212,12 +220,149 @@ async function renderUsers() {
             const userId = e.target.dataset.userId;
             const userName = e.target.dataset.userName;
             const userTable = e.target.dataset.userTable;
-            showDeleteConfirmModal(userId, userName, userTable);
+            showDeleteConfirmModal('user', { id: userId, name: userName, table: userTable }, fetchAndDisplayUsers);
         }
     });
 
     await fetchAndDisplayUsers();
 }
+
+/**
+ * Renderiza a página de Gerenciamento de Imobiliárias e Grupos
+ */
+async function renderImobiliarias() {
+    const contentDiv = document.getElementById('page-content');
+    contentDiv.innerHTML = `
+        <h1 class="text-3xl font-bold text-white mb-8">Gerenciar Imobiliárias e Grupos</h1>
+        
+        <!-- Seção de Grupos -->
+        <div class="mb-12 bg-gray-800/50 border border-gray-700 p-6 rounded-xl">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-2xl font-bold text-orange-400">Grupos de Imobiliárias</h2>
+                <button id="add-group-btn" class="bg-orange-500 hover:bg-orange-600 text-white font-bold py-2 px-4 rounded-lg">
+                    + Adicionar Grupo
+                </button>
+            </div>
+            <div id="group-list" class="space-y-3"></div>
+        </div>
+
+        <!-- Seção de Imobiliárias -->
+        <div class="bg-gray-800/50 border border-gray-700 p-6 rounded-xl">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-2xl font-bold text-orange-400">Imobiliárias</h2>
+                <button id="add-imobiliaria-btn" class="bg-orange-500 hover:bg-orange-600 text-white font-bold py-2 px-4 rounded-lg">
+                    + Adicionar Imobiliária
+                </button>
+            </div>
+            <div id="imobiliaria-list" class="space-y-3"></div>
+        </div>
+    `;
+
+    let allGroups = [];
+    let allImobiliarias = [];
+
+    const fetchAndDisplayData = async () => {
+        document.getElementById('group-list').innerHTML = '<p>Carregando grupos...</p>';
+        document.getElementById('imobiliaria-list').innerHTML = '<p>Carregando imobiliárias...</p>';
+        try {
+            const token = getToken();
+            const [groupsRes, imobiliariasRes] = await Promise.all([
+                fetch(`${API_BASE_URL_ADMIN}/grupos-imobiliarias`, { headers: { 'Authorization': `Bearer ${token}` } }),
+                fetch(`${API_BASE_URL_ADMIN}/imobiliarias`, { headers: { 'Authorization': `Bearer ${token}` } })
+            ]);
+
+            if (!groupsRes.ok) throw new Error('Falha ao buscar grupos.');
+            if (!imobiliariasRes.ok) throw new Error('Falha ao buscar imobiliárias.');
+
+            allGroups = await groupsRes.json();
+            allImobiliarias = await imobiliariasRes.json();
+            
+            displayGroups(allGroups);
+            displayImobiliarias(allImobiliarias, allGroups);
+
+        } catch (error) {
+            contentDiv.innerHTML = `<p class="text-red-400">${error.message}</p>`;
+        }
+    };
+    
+    const displayGroups = (groups) => {
+        const container = document.getElementById('group-list');
+        container.innerHTML = '';
+        if (groups.length === 0) {
+            container.innerHTML = '<p class="text-gray-400 text-center py-4">Nenhum grupo cadastrado.</p>';
+            return;
+        }
+        groups.forEach(group => {
+            const groupCard = document.createElement('div');
+            groupCard.className = 'bg-gray-800 p-4 rounded-lg border border-gray-700 flex justify-between items-center';
+            groupCard.innerHTML = `
+                <div>
+                    <h3 class="font-bold text-lg">${group.nome}</h3>
+                    <p class="text-sm text-gray-400">${group.email}</p>
+                    <div class="text-xs text-gray-400 mt-1">
+                        Membros: ${group.imobiliarias.map(i => i.nome).join(', ') || 'Nenhum'}
+                    </div>
+                </div>
+                <div class="flex gap-2">
+                    <button class="edit-group-btn text-sm bg-blue-500 hover:bg-blue-600 px-3 py-1 rounded" data-group-id="${group.id}">Editar</button>
+                </div>
+            `;
+            container.appendChild(groupCard);
+        });
+    };
+
+    const displayImobiliarias = (imobiliarias, groups) => {
+        const container = document.getElementById('imobiliaria-list');
+        container.innerHTML = '';
+        if (imobiliarias.length === 0) {
+            container.innerHTML = '<p class="text-gray-400 text-center py-4">Nenhuma imobiliária cadastrada.</p>';
+            return;
+        }
+        imobiliarias.forEach(imob => {
+            const imobCard = document.createElement('div');
+            imobCard.className = 'bg-gray-800 p-4 rounded-lg border border-gray-700 flex justify-between items-center';
+            const groupName = imob.grupo ? imob.grupo.nome : 'Nenhum';
+            const groupClass = imob.grupo ? 'text-green-400' : 'text-yellow-400';
+
+            imobCard.innerHTML = `
+                <div>
+                    <h3 class="font-bold text-lg">${imob.nome}</h3>
+                    <p class="text-sm text-gray-400">Grupo: <span class="${groupClass}">${groupName}</span></p>
+                </div>
+                <div class="flex gap-2">
+                    <button class="link-group-btn text-sm bg-purple-500 hover:bg-purple-600 px-3 py-1 rounded" data-imob-id="${imob.id}">Vincular Grupo</button>
+                    <button class="edit-imobiliaria-btn text-sm bg-blue-500 hover:bg-blue-600 px-3 py-1 rounded" data-imob-id="${imob.id}">Editar</button>
+                    <button class="delete-imobiliaria-btn text-sm bg-red-500 hover:bg-red-600 px-3 py-1 rounded" data-imob-id="${imob.id}" data-imob-name="${imob.nome}">Excluir</button>
+                </div>
+            `;
+            container.appendChild(imobCard);
+        });
+    };
+
+    contentDiv.addEventListener('click', e => {
+        if (e.target.id === 'add-group-btn') showGroupModal(null, fetchAndDisplayData);
+        if (e.target.id === 'add-imobiliaria-btn') showImobiliariaModal(null, fetchAndDisplayData);
+        
+        if (e.target.classList.contains('edit-group-btn')) {
+            const group = allGroups.find(g => g.id === e.target.dataset.groupId);
+            showGroupModal(group, fetchAndDisplayData);
+        }
+        if (e.target.classList.contains('edit-imobiliaria-btn')) {
+            const imob = allImobiliarias.find(i => i.id === e.target.dataset.imobId);
+            showImobiliariaModal(imob, fetchAndDisplayData);
+        }
+        if (e.target.classList.contains('link-group-btn')) {
+            const imob = allImobiliarias.find(i => i.id === e.target.dataset.imobId);
+            showLinkGroupModal(imob, allGroups, fetchAndDisplayData);
+        }
+        if (e.target.classList.contains('delete-imobiliaria-btn')) {
+            showDeleteConfirmModal('imobiliaria', { id: e.target.dataset.imobId, name: e.target.dataset.imobName }, fetchAndDisplayData);
+        }
+    });
+
+    await fetchAndDisplayData();
+}
+
 
 /**
  * Renderiza a página de Gerenciamento de Chamados
@@ -318,7 +463,6 @@ async function renderImprodutivas() {
         const codImovel = document.getElementById('improdutiva-cod-imovel').value;
         const dataVistoria = document.getElementById('improdutiva-data').value;
         
-        // CORREÇÃO: Constrói o URL como uma string para evitar o erro "Invalid URL".
         let url = `${API_BASE_URL_ADMIN}/improdutivas?`;
         const params = new URLSearchParams();
         if (codImovel) params.append('cod_imovel', codImovel);
@@ -650,13 +794,18 @@ function showUserModal(user = null) {
 }
 
 /**
- * Exibe o modal de confirmação para exclusão de usuário.
+ * Exibe o modal de confirmação para exclusão.
  */
-function showDeleteConfirmModal(userId, userName, userTable) {
+function showDeleteConfirmModal(type, item, onSuccess) {
+    const itemType = type === 'user' ? 'usuário' : 'imobiliária';
+    const url = type === 'user' 
+        ? `${API_BASE_URL_ADMIN}/users/${item.table}/${item.id}`
+        : `${API_BASE_URL_ADMIN}/imobiliarias/${item.id}`;
+
     const modalHTML = `
         <h2 class="text-2xl font-bold mb-4">Confirmar Exclusão</h2>
-        <p>Você tem certeza que deseja excluir o usuário <strong>${userName}</strong>?</p>
-        <p class="text-sm text-gray-400 mt-2">Esta ação moverá o usuário para a lixeira e pode ser revertida na tela "Restaurar".</p>
+        <p>Você tem certeza que deseja excluir o ${itemType} <strong>${item.name}</strong>?</p>
+        <p class="text-sm text-gray-400 mt-2">Esta ação moverá o item para a lixeira e pode ser revertida na tela "Restaurar".</p>
         <div id="modal-error" class="text-red-400 text-sm hidden mt-2"></div>
         <div class="flex justify-end gap-4 pt-4 mt-4">
             <button type="button" id="cancel-btn" class="bg-gray-600 hover:bg-gray-500 px-4 py-2 rounded">Cancelar</button>
@@ -668,24 +817,223 @@ function showDeleteConfirmModal(userId, userName, userTable) {
     document.getElementById('cancel-btn').addEventListener('click', closeModal);
     document.getElementById('confirm-delete-btn').addEventListener('click', async () => {
         const token = getToken();
-        const url = `${API_BASE_URL_ADMIN}/users/${userTable}/${userId}`;
         try {
             const response = await fetch(url, {
                 method: 'DELETE',
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             if (!response.ok) {
-                 const errorData = await response.json();
+                 const errorData = await response.json().catch(() => ({}));
                 throw new Error(errorData.detail || 'Ocorreu um erro ao excluir.');
             }
             closeModal();
-            renderUsers();
+            onSuccess();
         } catch (error) {
              document.getElementById('modal-error').textContent = error.message;
             document.getElementById('modal-error').classList.remove('hidden');
         }
     });
 }
+
+/**
+ * Exibe o modal para criar ou editar um Grupo de Imobiliária.
+ */
+function showGroupModal(group = null, onSuccess) {
+    const isEdit = group !== null;
+    const title = isEdit ? 'Editar Grupo' : 'Adicionar Novo Grupo';
+    const buttonText = isEdit ? 'Salvar Alterações' : 'Criar Grupo';
+    const passwordPlaceholder = isEdit ? 'Deixe em branco para não alterar' : 'Senha (obrigatória)';
+
+    const modalHTML = `
+        <h2 class="text-2xl font-bold mb-4">${title}</h2>
+        <form id="group-form" class="space-y-4">
+            <div>
+                <label for="nome" class="block text-sm font-medium">Nome do Grupo</label>
+                <input type="text" id="nome" name="nome" value="${group?.nome || ''}" required class="w-full p-2 bg-gray-700 rounded">
+            </div>
+            <div>
+                <label for="email" class="block text-sm font-medium">Email de Login</label>
+                <input type="email" id="email" name="email" value="${group?.email || ''}" required class="w-full p-2 bg-gray-700 rounded">
+            </div>
+            <div>
+                <label for="senha" class="block text-sm font-medium">Senha</label>
+                <input type="password" id="senha" name="senha" placeholder="${passwordPlaceholder}" ${!isEdit ? 'required' : ''} class="w-full p-2 bg-gray-700 rounded">
+            </div>
+            <div id="modal-error" class="text-red-400 text-sm hidden"></div>
+            <div class="flex justify-end gap-4 pt-4">
+                <button type="button" id="cancel-btn" class="bg-gray-600 hover:bg-gray-500 px-4 py-2 rounded">Cancelar</button>
+                <button type="submit" class="bg-orange-500 hover:bg-orange-600 px-4 py-2 rounded">${buttonText}</button>
+            </div>
+        </form>
+    `;
+    openModal(modalHTML);
+
+    document.getElementById('cancel-btn').addEventListener('click', closeModal);
+    document.getElementById('group-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const formData = new FormData(e.target);
+        const data = Object.fromEntries(formData.entries());
+        
+        if (isEdit && !data.senha) {
+            delete data.senha;
+        }
+
+        const token = getToken();
+        // TODO: Adicionar rotas de PUT e DELETE para grupos no backend
+        const url = isEdit 
+            ? `${API_BASE_URL_ADMIN}/grupos-imobiliarias/${group.id}` // Assumindo que esta rota existirá
+            : `${API_BASE_URL_ADMIN}/grupos-imobiliarias`;
+        const method = isEdit ? 'PUT' : 'POST';
+
+        try {
+            const response = await fetch(url, {
+                method: method,
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify(data)
+            });
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.detail || 'Ocorreu um erro.');
+            }
+            closeModal();
+            onSuccess();
+        } catch (error) {
+            document.getElementById('modal-error').textContent = error.message;
+            document.getElementById('modal-error').classList.remove('hidden');
+        }
+    });
+}
+
+/**
+ * Exibe o modal para criar ou editar uma Imobiliária.
+ */
+function showImobiliariaModal(imob = null, onSuccess) {
+    const isEdit = imob !== null;
+    const title = isEdit ? 'Editar Imobiliária' : 'Adicionar Nova Imobiliária';
+    const buttonText = isEdit ? 'Salvar Alterações' : 'Criar Imobiliária';
+
+    const modalHTML = `
+        <h2 class="text-2xl font-bold mb-4">${title}</h2>
+        <form id="imobiliaria-form" class="space-y-4">
+            <div>
+                <label for="nome" class="block text-sm font-medium">Nome da Imobiliária</label>
+                <input type="text" id="nome" name="nome" value="${imob?.nome || ''}" required class="w-full p-2 bg-gray-700 rounded">
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                    <label for="valor_sem_mobilia" class="block text-sm font-medium">Valor s/ Mobília</label>
+                    <input type="number" step="0.01" id="valor_sem_mobilia" name="valor_sem_mobilia" value="${imob?.valor_sem_mobilia || 0}" required class="w-full p-2 bg-gray-700 rounded">
+                </div>
+                <div>
+                    <label for="valor_semi_mobiliado" class="block text-sm font-medium">Valor Semi Mob.</label>
+                    <input type="number" step="0.01" id="valor_semi_mobiliado" name="valor_semi_mobiliado" value="${imob?.valor_semi_mobiliado || 0}" required class="w-full p-2 bg-gray-700 rounded">
+                </div>
+                <div>
+                    <label for="valor_mobiliado" class="block text-sm font-medium">Valor Mobiliado</label>
+                    <input type="number" step="0.01" id="valor_mobiliado" name="valor_mobiliado" value="${imob?.valor_mobiliado || 0}" required class="w-full p-2 bg-gray-700 rounded">
+                </div>
+            </div>
+            <div id="modal-error" class="text-red-400 text-sm hidden"></div>
+            <div class="flex justify-end gap-4 pt-4">
+                <button type="button" id="cancel-btn" class="bg-gray-600 hover:bg-gray-500 px-4 py-2 rounded">Cancelar</button>
+                <button type="submit" class="bg-orange-500 hover:bg-orange-600 px-4 py-2 rounded">${buttonText}</button>
+            </div>
+        </form>
+    `;
+    openModal(modalHTML);
+
+    document.getElementById('cancel-btn').addEventListener('click', closeModal);
+    document.getElementById('imobiliaria-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const formData = new FormData(e.target);
+        const data = {
+            nome: formData.get('nome'),
+            valor_sem_mobilia: parseFloat(formData.get('valor_sem_mobilia')),
+            valor_semi_mobiliado: parseFloat(formData.get('valor_semi_mobiliado')),
+            valor_mobiliado: parseFloat(formData.get('valor_mobiliado')),
+        };
+
+        const token = getToken();
+        const url = isEdit 
+            ? `${API_BASE_URL_ADMIN}/imobiliarias/${imob.id}` 
+            : `${API_BASE_URL_ADMIN}/imobiliarias`;
+        const method = isEdit ? 'PUT' : 'POST';
+
+        try {
+            const response = await fetch(url, {
+                method: method,
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify(data)
+            });
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.detail || 'Ocorreu um erro.');
+            }
+            closeModal();
+            onSuccess();
+        } catch (error) {
+            document.getElementById('modal-error').textContent = error.message;
+            document.getElementById('modal-error').classList.remove('hidden');
+        }
+    });
+}
+
+/**
+ * Exibe o modal para vincular uma imobiliária a um grupo.
+ */
+function showLinkGroupModal(imob, groups, onSuccess) {
+    let optionsHTML = '<option value="">Nenhum</option>';
+    groups.forEach(g => {
+        const isSelected = imob.grupo && imob.grupo.id === g.id;
+        optionsHTML += `<option value="${g.id}" ${isSelected ? 'selected' : ''}>${g.nome}</option>`;
+    });
+
+    const modalHTML = `
+        <h2 class="text-2xl font-bold mb-4">Vincular Grupo</h2>
+        <p class="mb-4">Selecione o grupo para a imobiliária <strong>${imob.nome}</strong>.</p>
+        <form id="link-group-form">
+            <select name="grupo_id" class="w-full p-2 bg-gray-700 rounded">
+                ${optionsHTML}
+            </select>
+            <div id="modal-error" class="text-red-400 text-sm hidden mt-2"></div>
+            <div class="flex justify-end gap-4 pt-4 mt-4">
+                <button type="button" id="cancel-btn" class="bg-gray-600 hover:bg-gray-500 px-4 py-2 rounded">Cancelar</button>
+                <button type="submit" class="bg-purple-500 hover:bg-purple-600 px-4 py-2 rounded">Salvar Vínculo</button>
+            </div>
+        </form>
+    `;
+    openModal(modalHTML);
+
+    document.getElementById('cancel-btn').addEventListener('click', closeModal);
+    document.getElementById('link-group-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const formData = new FormData(e.target);
+        const grupoId = formData.get('grupo_id');
+        const data = {
+            grupo_id: grupoId || null // Envia null se a opção "Nenhum" for selecionada
+        };
+
+        const token = getToken();
+        const url = `${API_BASE_URL_ADMIN}/imobiliarias/${imob.id}/link-group`;
+        try {
+            const response = await fetch(url, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify(data)
+            });
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.detail || 'Ocorreu um erro.');
+            }
+            closeModal();
+            onSuccess();
+        } catch (error) {
+            document.getElementById('modal-error').textContent = error.message;
+            document.getElementById('modal-error').classList.remove('hidden');
+        }
+    });
+}
+
 
 /**
  * Cria o HTML para um único card de chamado.

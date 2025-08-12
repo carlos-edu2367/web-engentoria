@@ -10,6 +10,21 @@ import uuid
 # Importo a Base que declarei no config.py
 from .config import Base
 
+# --- NOVO: Modelo para a tabela de Grupos de Imobiliárias ---
+class GrupoImobiliaria(Base):
+    __tablename__ = "grupos_imobiliarias"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    nome = Column(String, unique=True, nullable=False, index=True)
+    email = Column(String, unique=True, nullable=False, index=True)
+    senha = Column(String, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), default=func.now(), onupdate=func.now())
+    is_deleted = Column(Boolean, default=False, nullable=False)
+    
+    # Relacionamento: Um grupo pode ter várias imobiliárias
+    imobiliarias = relationship("Imobiliaria", back_populates="grupo")
+
+
 # --- Modelo para a tabela de Usuários de TI (Gestores) ---
 class UsuarioTI(Base):
     __tablename__ = "usuarios_ti"
@@ -57,6 +72,8 @@ class Cliente(Base):
 class Imobiliaria(Base):
     __tablename__ = "imobiliarias"
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    # NOVO: Chave estrangeira para o grupo de imobiliárias
+    grupo_id = Column(UUID(as_uuid=True), ForeignKey("grupos_imobiliarias.id"), nullable=True)
     nome = Column(String, unique=True, nullable=False)
     valor_sem_mobilia = Column(Numeric(10, 2), nullable=False, default=0.0)
     valor_semi_mobiliado = Column(Numeric(10, 2), nullable=False, default=0.0)
@@ -65,6 +82,10 @@ class Imobiliaria(Base):
     updated_at = Column(DateTime(timezone=True), default=func.now(), onupdate=func.now())
     is_deleted = Column(Boolean, default=False, nullable=False)
     imoveis = relationship("Imovel", back_populates="imobiliaria")
+    
+    # NOVO: Relacionamento para acessar o objeto do grupo a partir da imobiliária
+    grupo = relationship("GrupoImobiliaria", back_populates="imobiliarias")
+
 
 # --- Modelo para a tabela de Imóveis ---
 class Imovel(Base):
@@ -157,8 +178,6 @@ class VistoriaImprodutiva(Base):
 # --- Modelo para a tabela de Versão do App ---
 class AppVersion(Base):
     __tablename__ = "app_version"
-
     id = Column(Integer, primary_key=True, default=1)
     version_tag = Column(String, nullable=False)
-    # CORREÇÃO: A coluna 'updated_at' foi removida para corresponder à base de dados.
-    # A lógica de atualização foi movida para o endpoint.
+    updated_at = Column(DateTime(timezone=True), default=func.now(), onupdate=func.now())
