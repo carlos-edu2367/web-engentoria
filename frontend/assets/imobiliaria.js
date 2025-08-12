@@ -1,3 +1,5 @@
+// frontend/assets/imobiliaria.js
+
 const isLocalImob = window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost';
 const API_BASE_URL_IMOB = isLocalImob ? 'http://127.0.0.1:8000/api/v1/imobiliaria' : '/api/v1/imobiliaria';
 
@@ -213,6 +215,68 @@ async function renderOverview() {
     }
 }
 
+async function renderAgenda() {
+    const contentDiv = document.getElementById('page-content');
+    contentDiv.innerHTML = `
+        <div class="fade-in">
+            <h1 class="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-cyan-300 to-emerald-300 mb-6">Agenda de Vistorias</h1>
+            <div id="calendar" class="bg-gray-800/50 p-4 rounded-xl border border-gray-700/50 neon-border"></div>
+        </div>
+    `;
+
+    const calendarEl = document.getElementById('calendar');
+    calendar = new FullCalendar.Calendar(calendarEl, {
+        initialView: 'dayGridMonth',
+        locale: 'pt-br',
+        buttonText: {
+            today:    'Hoje',
+            month:    'Mês',
+            week:     'Semana',
+            day:      'Dia',
+            list:     'Lista'
+        },
+        headerToolbar: {
+            left: 'prev,next today',
+            center: 'title',
+            right: 'dayGridMonth,timeGridWeek,listWeek'
+        },
+        events: async (fetchInfo, successCallback, failureCallback) => {
+            try {
+                const token = getToken();
+                const url = `${API_BASE_URL_IMOB}/agenda?start_date=${fetchInfo.startStr.split('T')[0]}&end_date=${fetchInfo.endStr.split('T')[0]}`;
+                const response = await fetch(url, { 
+                    headers: { 'Authorization': `Bearer ${token}` } 
+                });
+                
+                if (!response.ok) throw new Error('Falha ao buscar eventos.');
+                const vistorias = await response.json();
+                
+                const events = vistorias.map(v => ({
+                    title: `[${v.imovel.cod_imovel}] ${v.tipo_vistoria}`,
+                    start: `${v.data}T${v.horario}`,
+                    backgroundColor: v.tipo_vistoria.includes('Entrega') ? '#00a3ff' : '#00ffb3',
+                    borderColor: v.tipo_vistoria.includes('Entrega') ? '#0088cc' : '#00cc88',
+                    extendedProps: { vistoria: v }
+                }));
+                
+                successCallback(events);
+            } catch (error) {
+                failureCallback(error);
+            }
+        },
+        eventClick: (info) => {
+            showVistoriaModal(info.event.extendedProps.vistoria);
+        },
+        eventTimeFormat: {
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false
+        }
+    });
+    
+    calendar.render();
+}
+
 async function renderRelatorios() {
     const contentDiv = document.getElementById('page-content');
     const today = new Date();
@@ -262,7 +326,6 @@ async function renderRelatorios() {
         yearSelect.add(new Option(y, y));
     }
 
-    // Função para carregar e exibir relatório
     const fetchAndDisplayReport = async () => {
         const reportContent = document.getElementById('report-content');
         reportContent.innerHTML = `
@@ -319,12 +382,10 @@ async function renderRelatorios() {
         }
     };
 
-    // Configura os event listeners
     document.getElementById('fetch-report-btn').addEventListener('click', fetchAndDisplayReport);
     document.getElementById('download-excel-btn').addEventListener('click', () => downloadReport('excel'));
     document.getElementById('download-pdf-btn').addEventListener('click', () => downloadReport('pdf'));
 
-    // Carrega o relatório inicial
     fetchAndDisplayReport();
 }
 
@@ -574,7 +635,6 @@ function createReportHTML(report) {
     `;
 }
 
-// Função auxiliar para obter o label do próximo mês
 function getNextMonthLabel(lastLabel) {
     if (!lastLabel) {
         const d = new Date();
@@ -597,7 +657,6 @@ function getNextMonthLabel(lastLabel) {
     return `${nextMonth.charAt(0).toUpperCase() + nextMonth.slice(1)}/${nextYear}`;
 }
 
-// Função para download de relatórios
 async function downloadReport(format) {
     const mes = document.getElementById('report-month').value;
     const ano = document.getElementById('report-year').value;
