@@ -16,7 +16,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const currentPage = window.location.pathname.split('/').pop();
 
     // Executa a lógica específica para cada página
-    // ALTERADO: Adicionada a página 'login-imobiliaria.html' à condição
     if (currentPage === 'login.html' || currentPage === 'login-ti.html' || currentPage === 'login-imobiliaria.html') {
         setupLoginPage();
     } else if (currentPage === 'agenda.html') {
@@ -33,6 +32,7 @@ document.addEventListener('DOMContentLoaded', () => {
         logoutButton.addEventListener('click', logout);
     }
     
+    // Configura a funcionalidade da sidebar em todas as páginas que a possuem
     setupSidebar();
 });
 
@@ -40,9 +40,9 @@ function setupSidebar() {
     const sidebar = document.getElementById('sidebar');
     const overlay = document.getElementById('sidebar-overlay');
     const openBtn = document.getElementById('open-sidebar-btn');
-    const closeBtn = document.getElementById('close-sidebar-btn');
+    const closeBtn = document.querySelector('#sidebar #close-sidebar-btn'); // Seleciona o botão dentro da sidebar
 
-    if (sidebar && overlay && openBtn && closeBtn) {
+    if (sidebar && overlay && openBtn) {
         const openSidebar = () => {
             sidebar.classList.remove('-translate-x-full');
             overlay.classList.remove('hidden');
@@ -52,7 +52,7 @@ function setupSidebar() {
             overlay.classList.add('hidden');
         };
         openBtn.addEventListener('click', openSidebar);
-        closeBtn.addEventListener('click', closeSidebar);
+        if(closeBtn) closeBtn.addEventListener('click', closeSidebar);
         overlay.addEventListener('click', closeSidebar);
     }
 }
@@ -117,11 +117,11 @@ function setupLoginAjudaPage() {
             const result = await response.json();
             if (!response.ok) throw new Error(result.detail || 'Ocorreu um erro.');
             formMessageDiv.textContent = result.message;
-            formMessageDiv.className = 'block mt-4 text-center p-3 rounded-md bg-green-900/70 text-green-300';
+            formMessageDiv.className = 'block mt-4 text-center p-3 rounded-lg bg-green-900/30 text-green-300 border-green-700/50';
             helpForm.reset();
         } catch (error) {
             formMessageDiv.textContent = error.message;
-            formMessageDiv.className = 'block mt-4 text-center p-3 rounded-md bg-red-900/70 text-red-400';
+            formMessageDiv.className = 'block mt-4 text-center p-3 rounded-lg bg-red-900/30 text-red-400 border-red-700/50';
         }
     });
 }
@@ -140,8 +140,8 @@ async function setupAgendaPage() {
 
     const fetchAndRenderAgenda = async () => {
         agendaContainer.innerHTML = `
-            <div id="loader" class="text-center py-10">
-                <svg class="animate-spin h-8 w-8 text-green-400 mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <div id="loader" class="text-center py-10 fade-in">
+                <svg class="animate-spin h-8 w-8 text-cyan-400 mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                     <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                     <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                 </svg>
@@ -180,11 +180,9 @@ async function setupAgendaPage() {
     const updateFilterButtons = (container, dataAttribute) => {
         if (!container) return;
         container.querySelectorAll('button').forEach(btn => {
-            btn.classList.remove('bg-green-500', 'text-gray-900');
-            btn.classList.add('bg-gray-700', 'hover:bg-gray-600', 'text-white');
+            btn.classList.remove('active');
             if (btn.dataset[dataAttribute] === currentFilters[dataAttribute]) {
-                btn.classList.add('bg-green-500', 'text-gray-900');
-                btn.classList.remove('bg-gray-700', 'hover:bg-gray-600', 'text-white');
+                btn.classList.add('active');
             }
         });
     };
@@ -192,7 +190,7 @@ async function setupAgendaPage() {
     if (periodFilterContainer) {
         periodFilterContainer.addEventListener('click', (event) => {
             const button = event.target.closest('button');
-            if (button && button.classList.contains('period-filter-btn')) {
+            if (button && button.classList.contains('filter-btn')) {
                 currentFilters.period = button.dataset.period;
                 updateFilterButtons(periodFilterContainer, 'period');
                 fetchAndRenderAgenda();
@@ -203,13 +201,17 @@ async function setupAgendaPage() {
     if (statusFilterContainer) {
         statusFilterContainer.addEventListener('click', (event) => {
             const button = event.target.closest('button');
-            if (button && button.classList.contains('status-filter-btn')) {
+            if (button && button.classList.contains('filter-btn')) {
                 currentFilters.status = button.dataset.status;
                 updateFilterButtons(statusFilterContainer, 'status');
                 fetchAndRenderAgenda();
             }
         });
     }
+    
+    // Set initial active buttons
+    updateFilterButtons(periodFilterContainer, 'period');
+    updateFilterButtons(statusFilterContainer, 'status');
 
     await fetchAndRenderAgenda();
     await setupFeedbackFeature();
@@ -264,6 +266,7 @@ async function setupFeedbackFeature() {
                 clearTimeout(hideTimer);
                 reminderToast.classList.remove('opacity-100', 'translate-y-0');
                 reminderToast.classList.add('opacity-0', '-translate-y-20');
+                feedbackModal.classList.add('flex');
                 feedbackModal.classList.remove('hidden');
             }, { once: true });
         }
@@ -272,7 +275,10 @@ async function setupFeedbackFeature() {
         console.error("Erro inesperado ao configurar a funcionalidade de feedback:", error);
     }
 
-    cancelFeedbackBtn.addEventListener('click', () => feedbackModal.classList.add('hidden'));
+    cancelFeedbackBtn.addEventListener('click', () => {
+        feedbackModal.classList.add('hidden');
+        feedbackModal.classList.remove('flex');
+    });
 
     feedbackForm.addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -303,6 +309,8 @@ async function setupFeedbackFeature() {
             if (!response.ok) throw new Error(result.detail || 'Erro ao enviar feedback.');
 
             feedbackModal.classList.add('hidden');
+            feedbackModal.classList.remove('flex');
+            // You can show a success toast here if you want
             alert('Obrigado pelo seu feedback!');
 
         } catch (error) {
@@ -318,7 +326,7 @@ function renderAgenda(vistorias) {
     agendaContainer.innerHTML = '';
 
     if (vistorias.length === 0) {
-        agendaContainer.innerHTML = `<div class="text-center text-gray-400 bg-gray-800 p-6 rounded-lg">Nenhuma vistoria encontrada para os filtros selecionados.</div>`;
+        agendaContainer.innerHTML = `<div class="text-center text-gray-400 bg-gray-800/80 p-6 rounded-xl neon-border">Nenhuma vistoria encontrada para os filtros selecionados.</div>`;
         return;
     }
 
@@ -335,12 +343,12 @@ function renderAgenda(vistorias) {
 
     for (const data in vistoriasPorData) {
         const dayCard = document.createElement('div');
-        dayCard.className = 'bg-gray-800 rounded-xl shadow-lg border border-gray-700 fade-in';
+        dayCard.className = 'bg-gray-800/80 backdrop-blur-sm rounded-xl shadow-lg neon-border fade-in';
         
         let vistoriasHtml = vistoriasPorData[data].map(v => createVistoriaCard(v)).join('');
 
         dayCard.innerHTML = `
-            <h2 class="text-lg font-bold text-green-400 p-4 border-b border-gray-700">${data}</h2>
+            <h2 class="text-lg font-bold bg-clip-text text-transparent bg-gradient-to-r from-cyan-300 to-emerald-300 p-4 border-b border-gray-700/50">${data}</h2>
             <div class="p-4 space-y-4">
                 ${vistoriasHtml}
             </div>
@@ -362,13 +370,15 @@ function createVistoriaCard(vistoria) {
     const { horario, tipo_vistoria, imovel, cliente } = vistoria;
     
     const isBooked = !!imovel;
-    const cardBgClass = isBooked ? 'bg-green-900/20 border-l-4 border-green-500' : 'bg-gray-700/50';
+    const cardBgClass = isBooked ? 'bg-gray-700/40' : 'bg-gray-700/20';
+    const borderColorClass = isBooked ? 'border-cyan-500/50' : 'border-gray-600/50';
+
     const subtitleHTML = isBooked 
         ? `<p class="text-sm text-gray-300">Cód. Imóvel: ${imovel['Código']}</p>`
-        : `<p class="text-sm text-blue-400">Horário Livre</p>`;
+        : `<p class="text-sm text-cyan-400">Horário Livre</p>`;
 
     const detalhesImovelHTML = isBooked ? `
-        <h4 class="font-semibold text-green-300 mt-4 border-t border-gray-600 pt-3">--- Detalhes do Imóvel ---</h4>
+        <h4 class="font-semibold text-cyan-300 mt-4 border-t border-gray-600/50 pt-3">Detalhes do Imóvel</h4>
         <p><strong>Tipo de Vistoria:</strong> ${(tipo_vistoria || 'N/D').replace(/_/g, ' ')}</p>
         <p><strong>Código:</strong> ${imovel['Código'] || 'N/D'}</p>
         <p><strong>Endereço:</strong> ${imovel['Endereço'] || 'N/D'}</p>
@@ -380,7 +390,7 @@ function createVistoriaCard(vistoria) {
     ` : '';
 
     const detalhesClienteHTML = cliente ? `
-        <h4 class="font-semibold text-green-300 mt-4 border-t border-gray-600 pt-3">--- Detalhes do Cliente ---</h4>
+        <h4 class="font-semibold text-cyan-300 mt-4 border-t border-gray-600/50 pt-3">Detalhes do Cliente</h4>
         <p><strong>Nome:</strong> ${cliente.nome || 'N/D'}</p>
         <p><strong>Email:</strong> ${cliente.email || 'N/D'}</p>
         <p><strong>Telefone 1:</strong> ${cliente['Telefone 1'] || 'N/D'}</p>
@@ -388,14 +398,14 @@ function createVistoriaCard(vistoria) {
     ` : '';
 
     return `
-        <div class="vistoria-card ${cardBgClass} rounded-lg p-4">
+        <div class="vistoria-card ${cardBgClass} rounded-lg p-4 border ${borderColorClass} transition-all duration-300">
             <div class="flex justify-between items-center">
                 <div>
                     <p class="text-xl font-bold">${horario || 'N/D'}</p>
                     ${subtitleHTML}
                 </div>
                 ${isBooked ? `
-                <button class="expand-btn p-2 rounded-full hover:bg-gray-600 transition">
+                <button class="expand-btn p-2 rounded-full hover:bg-gray-600/50 transition">
                     <svg class="h-6 w-6 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
                 </button>
                 ` : ''}
@@ -442,14 +452,15 @@ function setupAjudaPage() {
                 const errorData = await response.json();
                 throw new Error(errorData.detail || 'Falha ao enviar chamado.');
             }
-
-            formMessageDiv.textContent = 'Chamado enviado com sucesso!';
-            formMessageDiv.className = 'block mt-4 text-center p-3 rounded-md bg-green-900/70 text-green-300';
+            
+            const result = await response.json();
+            formMessageDiv.textContent = result.message || 'Chamado enviado com sucesso!';
+            formMessageDiv.className = 'block mt-4 text-center p-3 rounded-lg bg-green-900/30 text-green-300 border border-green-700/50';
             supportForm.reset();
 
         } catch (error) {
             formMessageDiv.textContent = error.message;
-            formMessageDiv.className = 'block mt-4 text-center p-3 rounded-md bg-red-900/70 text-red-400';
+            formMessageDiv.className = 'block mt-4 text-center p-3 rounded-lg bg-red-900/30 text-red-400 border border-red-700/50';
         }
     });
 }
