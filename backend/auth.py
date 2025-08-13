@@ -112,3 +112,15 @@ def get_current_active_imobiliaria_group(current_user: models.GrupoImobiliaria =
             detail="Acesso negado. Requer perfil de imobiliária."
         )
     return current_user
+
+def get_current_admin_user(current_user: models.Usuario = Depends(get_current_user)) -> models.Usuario:
+    """
+    Dependência de segurança para as rotas do painel de administração.
+    Garante que o usuário logado é um 'admin'.
+    """
+    if not isinstance(current_user, models.Usuario) or current_user.tipo != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Acesso negado. Requer perfil de administrador."
+        )
+    return current_user

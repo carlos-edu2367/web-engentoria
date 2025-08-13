@@ -7,17 +7,20 @@ from fastapi.middleware.cors import CORSMiddleware
 
 # Importo os roteadores que criei
 from .routes import auth_routes, agenda_routes, suporte_routes, admin_routes, imobiliaria_routes
+from .routes import admin_panel_routes # Rota para o novo painel de admin
 from . import models
 from .config import engine
 
+# Cria as tabelas no banco de dados, se não existirem
 models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
     title="Engentoria - API Vistoriador & Gestão",
     description="API para o portal web do vistoriador, painel da imobiliária e painel de gestão de TI.",
-    version="1.14"
+    version="2.0" # Versão atualizada para refletir as novas funcionalidades
 )
 
+# Configuração do CORS para permitir todas as origens
 origins = ["*"] 
 
 app.add_middleware(
@@ -28,19 +31,22 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Incluo os roteadores da API
-app.include_router(auth_routes.router, prefix="/api/v1")
-app.include_router(agenda_routes.router, prefix="/api/v1")
-app.include_router(suporte_routes.router, prefix="/api/v1")
-app.include_router(admin_routes.router, prefix="/api/v1")
-app.include_router(imobiliaria_routes.router, prefix="/api/v1")
+# Incluo os roteadores da API com um prefixo global
+api_prefix = "/api/v1"
+app.include_router(auth_routes.router, prefix=api_prefix)
+app.include_router(agenda_routes.router, prefix=api_prefix)
+app.include_router(suporte_routes.router, prefix=api_prefix)
+app.include_router(admin_routes.router, prefix=api_prefix) # Painel de gestão de TI
+app.include_router(imobiliaria_routes.router, prefix=api_prefix)
+app.include_router(admin_panel_routes.router, prefix=api_prefix) # Novo painel de administração
 
-
-# --- SERVINDO O FRONTEND ---
+# --- SERVINDO O FRONTEND (Opcional, para desenvolvimento) ---
+# Monta a pasta 'assets' do frontend
 app.mount("/assets", StaticFiles(directory="frontend/assets"), name="assets")
 
 @app.get("/{page_name}.html", include_in_schema=False)
 async def read_html_page(page_name: str):
+    """Serve páginas HTML da pasta frontend."""
     file_path = f'frontend/{page_name}.html'
     if os.path.exists(file_path):
         return FileResponse(file_path)
@@ -48,4 +54,5 @@ async def read_html_page(page_name: str):
 
 @app.get("/", include_in_schema=False)
 async def read_root():
+    """Serve a página principal (index.html)."""
     return FileResponse('frontend/index.html')

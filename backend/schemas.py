@@ -6,246 +6,219 @@ from uuid import UUID
 from datetime import date, datetime
 
 # =================================================================
-# --- Schemas para Autenticação e Usuários ---
+# --- Schemas Base e de Autenticação ---
 # =================================================================
 
 class Token(BaseModel):
     access_token: str
     token_type: str
+    user_info: Dict[str, Any] # Adicionado para retornar informações do usuário no login
 
 class TokenData(BaseModel):
     email: Optional[str] = None
-    dashboard: Optional[str] = None
 
-class UsuarioLogin(BaseModel):
+class UsuarioBase(BaseModel):
+    nome: str
     email: EmailStr
-    password: str
-
-# =================================================================
-# --- Schemas para a Agenda ---
-# =================================================================
-
-class Vistoriador(BaseModel):
-    nome: str
-    class Config: from_attributes = True
-
-class ImobiliariaBase(BaseModel):
-    id: UUID
-    nome: str
-    class Config: from_attributes = True
-
-class Cliente(BaseModel):
-    nome: str
-    email: Optional[EmailStr] = None
     telefone1: Optional[str] = None
     telefone2: Optional[str] = None
-    class Config:
-        from_attributes = True
 
-class Imovel(BaseModel):
-    cod_imovel: str
-    endereco: str
-    cep: Optional[str] = "N/D"
-    referencia: Optional[str] = "N/D"
-    tamanho: float
-    mobiliado: str
-    valor: float
-    imobiliaria: ImobiliariaBase
-    class Config:
-        from_attributes = True
-
-class Vistoria(BaseModel):
-    id: UUID
-    tipo_vistoria: str
-    data: date
-    horario: str
-    vistoriador: Vistoriador
-    imovel: Optional[Imovel] = None
-    cliente: Optional[Cliente] = None
-    class Config:
-        from_attributes = True
-
-# =================================================================
-# --- Schemas para Imobiliárias e Grupos ---
-# =================================================================
-
-class GrupoImobiliariaBase(BaseModel):
-    nome: str
-    email: EmailStr
-
-class GrupoImobiliariaCreate(GrupoImobiliariaBase):
+class UsuarioCreate(UsuarioBase):
+    tipo: str # 'vistoriador' ou 'admin'
     senha: str = Field(..., min_length=6)
 
-class GrupoImobiliariaDisplay(GrupoImobiliariaBase):
+class UsuarioDisplay(UsuarioBase):
     id: UUID
-    imobiliarias: List[ImobiliariaBase] = []
+    tipo: str
+    
     class Config:
         from_attributes = True
 
-class ImobiliariaCreate(BaseModel):
+# =================================================================
+# --- Schemas de Cliente ---
+# =================================================================
+
+class ClienteBase(BaseModel):
+    nome: str
+    email: EmailStr
+    telefone1: Optional[str] = None
+    telefone2: Optional[str] = None
+
+class ClienteCreate(ClienteBase):
+    saldo_devedor_total: float = 0.0
+
+class ClienteDisplay(ClienteBase):
+    id: UUID
+    saldo_devedor_total: float
+    
+    class Config:
+        from_attributes = True
+
+# =================================================================
+# --- Schemas de Imobiliária ---
+# =================================================================
+
+class ImobiliariaBase(BaseModel):
     nome: str
     valor_sem_mobilia: float = Field(..., ge=0)
     valor_semi_mobiliado: float = Field(..., ge=0)
     valor_mobiliado: float = Field(..., ge=0)
 
-class ImobiliariaUpdate(ImobiliariaCreate):
-    pass
+class ImobiliariaCreate(ImobiliariaBase):
+    email: Optional[EmailStr] = None
+    senha: Optional[str] = Field(None, min_length=6)
 
-class ImobiliariaDetail(ImobiliariaCreate):
+class ImobiliariaUpdate(ImobiliariaBase):
+    nome: str
+    valor_sem_mobilia: float = Field(..., ge=0)
+    valor_semi_mobiliado: float = Field(..., ge=0)
+    valor_mobiliado: float = Field(..., ge=0)
+
+class ImobiliariaDisplay(ImobiliariaBase):
     id: UUID
-    grupo: Optional[GrupoImobiliariaBase] = None
+    email: Optional[EmailStr] = None
+
     class Config:
         from_attributes = True
 
-class ImobiliariaGrupoLink(BaseModel):
-    grupo_id: Optional[UUID] = None
+# =================================================================
+# --- Schemas de Imóvel ---
+# =================================================================
 
-# --- Schemas para o Dashboard da Imobiliária ---
-
-class StatsItem(BaseModel):
-    total: int
-    change: float
-
-class DashboardStatsImobiliaria(BaseModel):
-    vistorias_30d: StatsItem
-    improdutivas_30d: StatsItem
-    vistorias_mes_atual: int
-    improdutivas_mes_atual: int
-    projecao_proximo_mes: int
-    monthly_breakdown: Dict[str, int]
-
-class VistoriaImprodutivaRelatorio(BaseModel):
-    id: UUID
-    data_vistoria_original: date
+class ImovelBase(BaseModel):
     cod_imovel: str
-    motivo_improdutividade: str
-    valor_cobranca: float
-    class Config: from_attributes = True
+    endereco: str
+    cep: Optional[str] = None
+    referencia: Optional[str] = None
+    tamanho: float = Field(..., gt=0)
+    mobiliado: str # "sem_mobilia", "semi_mobiliado", "mobiliado"
 
-# ALTERADO: Adicionados novos campos para o relatório
-class VistoriaAgendadaRelatorio(BaseModel):
+class ImovelCreate(ImovelBase):
+    cliente_id: UUID
+    imobiliaria_id: UUID
+
+class ImovelDisplay(ImovelBase):
     id: UUID
+    valor: float
+    cliente: ClienteDisplay
+    imobiliaria: ImobiliariaDisplay
+
+    class Config:
+        from_attributes = True
+
+# =================================================================
+# --- Schemas de Agenda e Horários ---
+# =================================================================
+
+class HorarioFixoCreate(BaseModel):
+    vistoriador_id: UUID
+    dia_semana: str
+    horario: str
+
+class HorarioFixoDisplay(BaseModel):
+    id: UUID
+    dia_semana: str
+    horario: str
+    vistoriador: UsuarioDisplay
+
+    class Config:
+        from_attributes = True
+
+class HorarioAvulsoCreate(BaseModel):
+    vistoriador_id: UUID
     data: date
     horario: str
-    tipo: str
+
+class AgendaBase(BaseModel):
+    data: date
+    horario: str
+
+class AgendaCreate(AgendaBase):
+    imovel_id: UUID
+    vistoriador_id: UUID
+    tipo: str # 'ENTRADA', 'SAIDA', etc.
+
+class AgendaUpdate(BaseModel):
+    cod_imovel: Optional[str] = None
+    endereco: Optional[str] = None
+    cep: Optional[str] = None
+    referencia: Optional[str] = None
+    tamanho: Optional[float] = None
+    mobiliado: Optional[str] = None
+    tipo_vistoria: Optional[str] = None
+    valor_final_vistoria: Optional[float] = None
+
+class AgendaObservacaoUpdate(BaseModel):
+    observacao_privada: str
+
+class AgendaDisplay(AgendaBase):
+    id: UUID
+    disponivel: bool
+    tipo: Optional[str] = None
+    observacao_privada: Optional[str] = None
+    valor_final_vistoria: Optional[float] = None
+    vistoriador: UsuarioDisplay
+    imovel: Optional[ImovelDisplay] = None
+
+    class Config:
+        from_attributes = True
+
+class VistoriaImprodutivaCreate(BaseModel):
+    agenda_id_original: UUID
+    cliente_id: UUID
+    imovel_id: Optional[UUID] = None
+    imobiliaria_id: Optional[UUID] = None
+    data_vistoria_original: date
+    horario_vistoria_original: str
+    motivo_improdutividade: str
+    valor_cobranca: float
+
+# =================================================================
+# --- Schemas de Relatórios ---
+# =================================================================
+
+class RelatorioVistoriaItem(BaseModel):
+    data: date
     cod_imovel: str
     endereco: str
     tamanho: float
-    mobiliado: str
+    tipo_mobilia: str
+    tipo_vistoria: str
     valor: float
-    class Config: from_attributes = True
 
-class RelatorioMensal(BaseModel):
-    mes_ano: str
+class RelatorioImprodutivaItem(BaseModel):
+    data: date
+    cod_imovel: str
+    motivo: str
+    valor: float
+
+class RelatorioImobiliaria(BaseModel):
     imobiliaria_nome: str
-    total_vistorias: int
-    total_improdutivas: int
-    valor_vistorias: float
-    valor_improdutivas: float
-    valor_total: float
-    vistorias_agendadas: List[VistoriaAgendadaRelatorio]
-    vistorias_improdutivas: List[VistoriaImprodutivaRelatorio]
+    periodo: str
+    vistorias: List[RelatorioVistoriaItem]
+    improdutivas: List[RelatorioImprodutivaItem]
+    total_vistorias: float
+    total_improdutivas: float
+    total_geral: float
+
+class RelatorioVistoriador(BaseModel):
+    vistoriador_nome: str
+    periodo: str
+    vistorias_por_imobiliaria: Dict[str, List[RelatorioVistoriaItem]]
+    improdutivas: List[RelatorioImprodutivaItem]
+    total_geral: float
 
 # =================================================================
-# --- Schemas para Suporte ---
+# --- Schemas de Suporte (Já existentes, mantidos) ---
 # =================================================================
+
 class ChamadoCreate(BaseModel):
     titulo: str = Field(..., min_length=5, max_length=100)
     descricao: str = Field(..., min_length=10)
     categoria: str
     prioridade: str
 
-class LoginAjudaCreate(BaseModel):
-    email: EmailStr
-    descricao: str = Field(..., min_length=10)
-
 class FeedbackCreate(BaseModel):
     app_version: str
     nota: int = Field(..., ge=1, le=5)
     comentario: Optional[str] = None
-
-class AppVersionInfo(BaseModel):
-    version_tag: str
-
-class FeedbackCheck(BaseModel):
-    has_submitted: bool
-
-# =================================================================
-# --- Schemas para o Painel de Gestão de TI ---
-# =================================================================
-class DashboardStats(BaseModel):
-    total_users: int
-    total_clients: int
-    total_imobiliarias: int
-    total_imoveis: int
-    open_tickets: int
-
-class FeedbackChartItem(BaseModel):
-    version: str
-    avg_rating: float
-
-class AdminUserDisplay(BaseModel):
-    id: UUID
-    nome: str
-    email: EmailStr
-    tipo: str
-    table: str
-    class Config: from_attributes = True
-
-class AdminUserCreate(BaseModel):
-    nome: str
-    email: EmailStr
-    tipo: str
-    senha: Optional[str] = None
-
-class AdminUserUpdate(BaseModel):
-    nome: str
-    email: EmailStr
-    tipo: str
-    senha: Optional[str] = None
-
-class ChamadoAdminDisplay(BaseModel):
-    id: UUID
-    titulo: str
-    status: str
-    prioridade: str
-    categoria: str
-    nome_usuario: str
-    data_abertura: datetime
-    descricao: Optional[str] = None
-    comentario_conclusao: Optional[str] = None
-    class Config: from_attributes = True
-
-class ChamadoResolve(BaseModel):
-    comentario_conclusao: str = Field(..., min_length=5)
-
-class FeedbackAdminDisplay(BaseModel):
-    app_version: str
-    nota: int
-    comentario: str
-    data_envio: datetime
-    nome_usuario: str
-    class Config: from_attributes = True
-
-class ImprodutivaDisplay(BaseModel):
-    id: UUID
-    data_vistoria: str
-    horario: str
-    cod_imovel: str
-    cliente: str
-    motivo: str
-    class Config: from_attributes = True
-
-class AppVersionUpdate(BaseModel):
-    new_version: str
-
-class DeletedRecordInfo(BaseModel):
-    id: UUID
-    nome_info: str
-    data_delecao: str
-    tabela: str
-    class Config: from_attributes = True
-
-class CleanupPreviewResponse(BaseModel):
-    counts: Dict[str, int]
-    total: int
