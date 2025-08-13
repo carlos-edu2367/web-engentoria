@@ -28,21 +28,26 @@ def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db:
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # ALTERADO: Define o tipo de dashboard para o token com base no tipo de usuário
     dashboard_type = "vistoriador" # Padrão
+    user_info = {"email": user.email, "nome": user.nome}
+
     if isinstance(user, models.UsuarioTI):
         dashboard_type = "ti"
-    elif isinstance(user, models.Usuario) and user.tipo == 'admin':
-        dashboard_type = "admin"
-    # NOVO: Verifica se o usuário é um grupo de imobiliária
     elif isinstance(user, models.GrupoImobiliaria):
         dashboard_type = "imobiliaria"
+    elif isinstance(user, models.Usuario):
+        if user.tipo == 'admin':
+            dashboard_type = "admin"
+        else:
+            dashboard_type = "vistoriador"
+        user_info["tipo"] = user.tipo
+    
+    user_info["dashboard_type"] = dashboard_type
 
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = auth.create_access_token(
-        # Inclui o tipo de dashboard no payload do token
         data={"sub": user.email, "dashboard": dashboard_type}, 
         expires_delta=access_token_expires
     )
 
-    return {"access_token": access_token, "token_type": "bearer"}
+    return {"access_token": access_token, "token_type": "bearer", "user_info": user_info}

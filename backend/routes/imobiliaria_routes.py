@@ -94,7 +94,7 @@ def get_report_data(mes: int, ano: int, db: Session, current_user: models.GrupoI
     return relatorios
 
 # --- Endpoints da API ---
-@router.get("/agenda", response_model=List[schemas.Vistoria])
+@router.get("/agenda", response_model=List[schemas.AgendaDisplay])
 def read_imobiliaria_agenda(start_date: date, end_date: date, db: Session = Depends(get_db), current_user: models.GrupoImobiliaria = Depends(auth.get_current_active_imobiliaria_group)):
     imobiliaria_ids = get_imobiliaria_ids_from_group(current_user)
     query = db.query(models.Agenda).join(models.Imovel).filter(
@@ -110,20 +110,7 @@ def read_imobiliaria_agenda(start_date: date, end_date: date, db: Session = Depe
     )
     vistorias = query.order_by(models.Agenda.data, models.Agenda.horario).all()
     
-    results = []
-    for vistoria in vistorias:
-        vistoria_data = {
-            "id": vistoria.id,
-            "tipo_vistoria": vistoria.tipo,
-            "data": vistoria.data,
-            "horario": vistoria.horario,
-            "vistoriador": vistoria.vistoriador,
-            "imovel": vistoria.imovel,
-            "cliente": vistoria.imovel.cliente if vistoria.imovel else None
-        }
-        results.append(schemas.Vistoria.model_validate(vistoria_data))
-
-    return results
+    return vistorias
 
 @router.get("/dashboard-stats", response_model=schemas.DashboardStatsImobiliaria)
 def get_dashboard_stats(db: Session = Depends(get_db), current_user: models.GrupoImobiliaria = Depends(auth.get_current_active_imobiliaria_group)):

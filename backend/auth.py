@@ -25,6 +25,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
         hashed_password_byte_enc = hashed_password.encode('utf-8')
         return bcrypt.checkpw(password_byte_enc, hashed_password_byte_enc)
     except (ValueError, TypeError):
+        # Fallback para o sistema de hash antigo (SHA256) se o bcrypt falhar
         old_system_hash = hashlib.sha256(plain_password.encode('utf-8')).hexdigest()
         return old_system_hash == hashed_password
 
@@ -39,33 +40,28 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
     return encoded_jwt
 
-# ALTERADO: A função agora busca em 3 tabelas diferentes
 def get_user(db: Session, email: str) -> Optional[Union[models.Usuario, models.UsuarioTI, models.GrupoImobiliaria]]:
     """
     Busca um usuário pelo email, na seguinte ordem:
     1. Usuários de TI (Gestores)
     2. Grupos de Imobiliárias
-    3. Usuários da Aplicação (Vistoriadores, etc.)
+    3. Usuários da Aplicação (Vistoriadores, Admins)
     Retorna o objeto do usuário encontrado, ou None.
     """
-    # 1. Tenta encontrar na tabela de usuários de TI
     user_ti = db.query(models.UsuarioTI).filter(models.UsuarioTI.email == email).first()
     if user_ti:
         return user_ti
     
-    # 2. NOVO: Tenta encontrar na tabela de grupos de imobiliárias
     user_imobiliaria = db.query(models.GrupoImobiliaria).filter(models.GrupoImobiliaria.email == email, models.GrupoImobiliaria.is_deleted == False).first()
     if user_imobiliaria:
         return user_imobiliaria
 
-    # 3. Se não encontrar, busca na tabela de usuários da aplicação
     user_app = db.query(models.Usuario).filter(models.Usuario.email == email, models.Usuario.is_deleted == False).first()
     if user_app:
         return user_app
 
     return None
 
-# ALTERADO: O tipo de retorno agora é mais genérico para acomodar todos os tipos de usuário
 def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> Union[models.Usuario, models.UsuarioTI, models.GrupoImobiliaria]:
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -100,12 +96,7 @@ def get_current_gestor_user(current_user: models.UsuarioTI = Depends(get_current
         )
     return current_user
 
-# NOVO: Dependência de segurança para o Grupo de Imobiliária logado
 def get_current_active_imobiliaria_group(current_user: models.GrupoImobiliaria = Depends(get_current_user)) -> models.GrupoImobiliaria:
-    """
-    Dependência de segurança para as rotas do painel da imobiliária.
-    Garante que o usuário logado é um Grupo de Imobiliária.
-    """
     if not isinstance(current_user, models.GrupoImobiliaria):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
