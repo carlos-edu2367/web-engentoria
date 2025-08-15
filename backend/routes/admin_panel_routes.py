@@ -199,8 +199,10 @@ def read_vistoriadores(skip: int = 0, limit: int = 100, db: Session = Depends(ge
 
 @router.get("/vistoriadores/{vistoriador_id}/detalhes", response_model=schemas.VistoriadorDetalhes, summary="Obter detalhes e estatísticas de um vistoriador")
 def get_vistoriador_details(vistoriador_id: UUID, db: Session = Depends(get_db)):
-    six_months_ago = date.today() - timedelta(days=180)
-    
+    today = date.today()
+    start_of_current_month = today.replace(day=1)
+    six_months_ago = (start_of_current_month - timedelta(days=1)).replace(day=1) - timedelta(days=150) # Garante 6 meses completos
+
     vistorias_normais = db.query(
         extract('year', models.Agenda.data).label('ano'),
         extract('month', models.Agenda.data).label('mes'),
@@ -243,16 +245,21 @@ def get_vistoriador_details(vistoriador_id: UUID, db: Session = Depends(get_db))
         for key, value in sorted(monthly_data.items())
     ]
 
-    total_months = len(historico_mensal)
-    if total_months == 0:
-        return schemas.VistoriadorDetalhes(media_vistorias_mensal=0, media_comissao_mensal=0, historico_mensal=[])
+    meses_finalizados = [
+        item for item in historico_mensal 
+        if datetime.strptime(f"01/{item.mes_ano}", "%d/%m/%Y").date() < start_of_current_month
+    ]
 
-    total_vistorias = sum(item.total_vistorias for item in historico_mensal)
-    total_comissao = sum(item.total_comissao for item in historico_mensal)
+    total_months_finalizados = len(meses_finalizados)
+    if total_months_finalizados == 0:
+        return schemas.VistoriadorDetalhes(media_vistorias_mensal=0, media_comissao_mensal=0, historico_mensal=historico_mensal)
+
+    total_vistorias = sum(item.total_vistorias for item in meses_finalizados)
+    total_comissao = sum(item.total_comissao for item in meses_finalizados)
 
     return schemas.VistoriadorDetalhes(
-        media_vistorias_mensal=round(total_vistorias / total_months, 2),
-        media_comissao_mensal=round(total_comissao / total_months, 2),
+        media_vistorias_mensal=round(total_vistorias / total_months_finalizados, 2),
+        media_comissao_mensal=round(total_comissao / total_months_finalizados, 2),
         historico_mensal=historico_mensal
     )
 
@@ -374,6 +381,20 @@ def delete_imovel(imovel_id: UUID, db: Session = Depends(get_db)):
 # =================================================================
 # --- Gestão de Disponibilidade e Agenda ---
 # =================================================================
+
+@router.get("/agenda/all", response_model=List[schemas.AgendaDisplay], summary="Busca todos os eventos da agenda para um período")
+def get_all_agenda_events(start: date, end: date, db: Session = Depends(get_db)):
+    events = db.query(models.Agenda).options(
+        joinedload(models.Agenda.vistoriador),
+        joinedload(models.Agenda.imovel).joinedload(models.Imovel.cliente),
+        joinedload(models.Agenda.imovel).joinedload(models.Imovel.imobiliaria)
+    ).filter(
+        models.Agenda.data.between(start, end),
+        models.Agenda.is_deleted == False
+    ).order_by(models.Agenda.data, models.Agenda.horario).all()
+    return events
+
+
 @router.post("/horarios-fixos/", response_model=schemas.HorarioFixoDisplay, status_code=status.HTTP_201_CREATED, summary="Adicionar horário de trabalho fixo")
 def add_horario_fixo(horario: schemas.HorarioFixoCreate, db: Session = Depends(get_db)):
     db_vistoriador = db.query(models.Usuario).filter(models.Usuario.id == horario.vistoriador_id, models.Usuario.tipo == 'vistoriador').first()
@@ -440,118 +461,194 @@ def generate_agenda(semanas: int = 4, db: Session = Depends(get_db)):
 
 @router.post("/agenda/agendar", response_model=schemas.AgendaDisplay, summary="Agendar uma nova vistoria")
 def schedule_vistoria(agendamento: schemas.AgendaCreate, db: Session = Depends(get_db)):
-    db_imovel = db.query(models.Imovel).filter(models.Imovel.id == agendamento.imovel_id, models.Imovel.is_deleted == False).first()
+    db_imovel = db.query(models.Imovel).filter(
+        models.Imovel.id == agendamento.imovel_id,
+        models.Imovel.imobiliaria_id == agendamento.imobiliaria_id,
+        models.Imovel.is_deleted == False
+    ).first()
     if not db_imovel:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Imóvel não encontrado.")
-    db_agenda_1 = db.query(models.Agenda).filter(models.Agenda.data == agendamento.data, models.Agenda.horario == agendamento.horario, models.Agenda.vistoriador_id == agendamento.vistoriador_id, models.Agenda.disponivel == True).first()
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Imóvel não encontrado ou não pertence à imobiliária informada.")
+    
+    db_agenda_1 = db.query(models.Agenda).filter(
+        models.Agenda.id == agendamento.horario_id,
+        models.Agenda.disponivel == True
+    ).first()
+
     if not db_agenda_1:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Horário selecionado não está livre ou não existe.")
     
     valor_final = _calculate_valor_final_vistoria(db_imovel, agendamento.tipo.value)
     valor_comissao = _calculate_valor_comissao_vistoriador(db_imovel.tamanho, db_imovel.mobiliado, agendamento.tipo.value)
 
-    necessita_horario_duplo = (agendamento.tipo.value in ["ENTRADA", "SAIDA"] and db_imovel.tamanho > 100)
-    if necessita_horario_duplo:
+    necessita_horario_duplo = ((agendamento.tipo.value in ["ENTRADA", "SAIDA"]) and 
+                              (float(db_imovel.tamanho) >= 100 or db_imovel.mobiliado == "mobiliado"))
+
+    if necessita_horario_duplo and not agendamento.force_single_slot:
         try:
-            horario_dt = datetime.strptime(agendamento.horario, '%H:%M')
+            horario_dt = datetime.strptime(db_agenda_1.horario, '%H:%M')
             proximo_horario_dt = horario_dt + timedelta(hours=1)
             proximo_horario_str = proximo_horario_dt.strftime('%H:%M')
         except ValueError:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Formato de horário inválido. Use HH:MM.")
-        db_agenda_2 = db.query(models.Agenda).filter(models.Agenda.data == agendamento.data, models.Agenda.horario == proximo_horario_str, models.Agenda.vistoriador_id == agendamento.vistoriador_id, models.Agenda.disponivel == True).first()
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Formato de horário inválido no banco de dados.")
+
+        db_agenda_2 = db.query(models.Agenda).filter(
+            models.Agenda.data == db_agenda_1.data,
+            models.Agenda.horario == proximo_horario_str,
+            models.Agenda.vistoriador_id == db_agenda_1.vistoriador_id,
+            models.Agenda.disponivel == True
+        ).first()
+
         if not db_agenda_2:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Este imóvel necessita de 2 horários consecutivos, mas o segundo horário não está disponível.")
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, 
+                detail="Este imóvel necessita de 2 horários consecutivos, mas o segundo horário não está disponível. Você pode forçar o agendamento em um único horário ou escolher outro horário."
+            )
         db_agenda_2.imovel_id = agendamento.imovel_id
         db_agenda_2.tipo = agendamento.tipo.value
         db_agenda_2.disponivel = False
-        db_agenda_2.valor_final_vistoria = valor_final
-        db_agenda_2.valor_vistoriador = valor_comissao
+        db_agenda_2.valor_final_vistoria = 0
+        db_agenda_2.valor_vistoriador = 0
 
-    db_agenda_1.imovel_id = agendamento.imovel_id
-    db_agenda_1.tipo = agendamento.tipo.value
-    db_agenda_1.disponivel = False
-    db_agenda_1.valor_final_vistoria = valor_final
-    db_agenda_1.valor_vistoriador = valor_comissao
-    
+        db_agenda_1.imovel_id = agendamento.imovel_id
+        db_agenda_1.tipo = agendamento.tipo.value
+        db_agenda_1.disponivel = False
+        db_agenda_1.valor_final_vistoria = valor_final if valor_final is not None else 0
+        db_agenda_1.valor_vistoriador = valor_comissao if valor_comissao is not None else 0
+
+    else:
+        db_agenda_1.imovel_id = agendamento.imovel_id
+        db_agenda_1.tipo = agendamento.tipo.value
+        db_agenda_1.disponivel = False
+        db_agenda_1.valor_final_vistoria = valor_final if valor_final is not None else 0
+        db_agenda_1.valor_vistoriador = valor_comissao if valor_comissao is not None else 0
+
     db.commit()
     db.refresh(db_agenda_1)
     return db_agenda_1
 
-@router.post("/agenda/{agenda_id}/cancelar", response_model=schemas.AgendaDisplay, summary="Cancelar uma vistoria agendada")
-def cancel_vistoria(agenda_id: UUID, db: Session = Depends(get_db)):
-    db_agenda = db.query(models.Agenda).filter(models.Agenda.id == agenda_id, models.Agenda.is_deleted == False).first()
+
+@router.put("/agenda/{agenda_id}", response_model=schemas.AgendaDisplay, summary="Atualiza os detalhes de uma vistoria")
+def update_vistoria(
+    agenda_id: UUID,
+    update_data: schemas.AgendaUpdate,
+    db: Session = Depends(get_db)
+):
+    """
+    Atualiza os dados de uma vistoria agendada.
+    Permite alterar informações do imóvel (que são cacheadas na agenda), tipo de vistoria e valores.
+    Se os valores não forem fornecidos, eles são recalculados automaticamente com base nas alterações.
+    """
+    db_agenda = db.query(models.Agenda).options(
+        joinedload(models.Agenda.imovel).joinedload(models.Imovel.imobiliaria)
+    ).filter(models.Agenda.id == agenda_id).first()
+
     if not db_agenda:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agendamento não encontrado.")
-    if db_agenda.disponivel:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Este horário já está livre.")
-    agendamentos_a_cancelar = db.query(models.Agenda).filter(models.Agenda.imovel_id == db_agenda.imovel_id, models.Agenda.data == db_agenda.data, models.Agenda.vistoriador_id == db_agenda.vistoriador_id).all()
-    for agendamento in agendamentos_a_cancelar:
-        agendamento.imovel_id = None
-        agendamento.tipo = "LIVRE"
-        agendamento.disponivel = True
-        agendamento.observacao_privada = None
-        agendamento.valor_final_vistoria = None
-        agendamento.valor_vistoriador = None
+
+    if not db_agenda.imovel:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Este agendamento não está vinculado a um imóvel.")
+
+    update_payload = update_data.model_dump(exclude_unset=True)
+    recalcular = False
+
+    if "tamanho" in update_payload and float(update_payload["tamanho"]) != float(db_agenda.imovel.tamanho):
+        db_agenda.imovel.tamanho = Decimal(str(update_payload["tamanho"]))
+        recalcular = True
+    
+    if "mobiliado" in update_payload and update_payload["mobiliado"] != db_agenda.imovel.mobiliado:
+        db_agenda.imovel.mobiliado = update_payload["mobiliado"]
+        recalcular = True
+
+    if "tipo_vistoria" in update_payload and update_payload["tipo_vistoria"] != db_agenda.tipo:
+        db_agenda.tipo = update_payload["tipo_vistoria"]
+        recalcular = True
+
+    if recalcular and "valor_final_vistoria" not in update_payload and "valor_vistoriador" not in update_payload:
+        db_agenda.imovel.valor = _calculate_valor_base_imovel(db_agenda.imovel.imobiliaria, db_agenda.imovel.tamanho, db_agenda.imovel.mobiliado)
+        db_agenda.valor_final_vistoria = _calculate_valor_final_vistoria(db_agenda.imovel, db_agenda.tipo)
+        db_agenda.valor_vistoriador = _calculate_valor_comissao_vistoriador(db_agenda.imovel.tamanho, db_agenda.imovel.mobiliado, db_agenda.tipo)
+    else:
+        if "valor_final_vistoria" in update_payload:
+            db_agenda.valor_final_vistoria = Decimal(str(update_payload["valor_final_vistoria"]))
+        if "valor_vistoriador" in update_payload:
+            db_agenda.valor_vistoriador = Decimal(str(update_payload["valor_vistoriador"]))
+
+    if "observacao_privada" in update_payload:
+        db_agenda.observacao_privada = update_payload["observacao_privada"]
+
     db.commit()
     db.refresh(db_agenda)
     return db_agenda
 
-@router.put("/agenda/{agenda_id}", response_model=schemas.AgendaDisplay, summary="Editar detalhes de uma vistoria")
-def update_vistoria_details(agenda_id: UUID, update_data: schemas.AgendaUpdate, db: Session = Depends(get_db)):
-    db_agenda = db.query(models.Agenda).options(joinedload(models.Agenda.imovel).joinedload(models.Imovel.imobiliaria)).filter(models.Agenda.id == agenda_id).first()
-    if not db_agenda or not db_agenda.imovel:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agendamento ou imóvel associado não encontrado.")
-    
-    db_imovel = db_agenda.imovel
-    recalcular_valores = False
 
-    if update_data.tamanho is not None and update_data.tamanho != float(db_imovel.tamanho): recalcular_valores = True
-    if update_data.mobiliado is not None and update_data.mobiliado.value != db_imovel.mobiliado: recalcular_valores = True
-    if update_data.tipo_vistoria is not None and update_data.tipo_vistoria.value != db_agenda.tipo: recalcular_valores = True
-
-    if update_data.cod_imovel: db_imovel.cod_imovel = update_data.cod_imovel
-    if update_data.endereco: db_imovel.endereco = update_data.endereco
-    if update_data.cep: db_imovel.cep = update_data.cep
-    if update_data.referencia: db_imovel.referencia = update_data.referencia
-    if update_data.tamanho: db_imovel.tamanho = update_data.tamanho
-    if update_data.mobiliado: db_imovel.mobiliado = update_data.mobiliado.value
-    if update_data.tipo_vistoria: db_agenda.tipo = update_data.tipo_vistoria.value
-    
-    if recalcular_valores:
-        db_imovel.valor = _calculate_valor_base_imovel(db_imovel.imobiliaria, db_imovel.tamanho, db_imovel.mobiliado)
-        db_agenda.valor_final_vistoria = _calculate_valor_final_vistoria(db_imovel, db_agenda.tipo)
-        db_agenda.valor_vistoriador = _calculate_valor_comissao_vistoriador(db_imovel.tamanho, db_imovel.mobiliado, db_agenda.tipo)
-
-    if update_data.valor_final_vistoria is not None: db_agenda.valor_final_vistoria = update_data.valor_final_vistoria
-    if update_data.valor_vistoriador is not None: db_agenda.valor_vistoriador = update_data.valor_vistoriador
-    
-    db.commit()
-    db.refresh(db_agenda)
-    return db_agenda
-
-@router.post("/agenda/{agenda_id}/marcar-improdutiva", summary="Marcar vistoria como improdutiva")
-def mark_as_unproductive(agenda_id: UUID, improdutiva_data: schemas.VistoriaImprodutivaCreate, db: Session = Depends(get_db)):
-    db_agenda = db.query(models.Agenda).options(joinedload(models.Agenda.imovel)).filter(models.Agenda.id == agenda_id).first()
+@router.put("/agenda/{agenda_id}/improdutiva", response_model=schemas.AgendaDisplay, summary="Marcar vistoria como improdutiva")
+def mark_vistoria_improdutiva(
+    agenda_id: UUID,
+    data: schemas.AgendaImprodutiva,
+    db: Session = Depends(get_db)
+):
+    db_agenda = db.query(models.Agenda).filter(models.Agenda.id == agenda_id).first()
     if not db_agenda:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agendamento original não encontrado.")
-    db_cliente = db.query(models.Cliente).filter(models.Cliente.id == improdutiva_data.cliente_id).first()
-    if not db_cliente:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cliente para cobrança não encontrado.")
-    config = db.query(models.Configuracao).filter(models.Configuracao.id == 1).first()
-    if not config:
-        config = models.Configuracao()
-        db.add(config)
-        db.commit()
-        db.refresh(config)
-    percentual = config.percentual_comissao_improdutiva / 100.0
-    valor_para_vistoriador = improdutiva_data.valor_cobranca * float(percentual)
-    db_improdutiva = models.VistoriaImprodutiva(**improdutiva_data.model_dump(), valor_para_vistoriador=valor_para_vistoriador)
-    db.add(db_improdutiva)
-    db_cliente.saldo_devedor_total = (db_cliente.saldo_devedor_total or 0) + improdutiva_data.valor_cobranca
+        raise HTTPException(status_code=404, detail="Agendamento não encontrado")
+
     db_agenda.tipo = "IMPRODUTIVA"
-    db_agenda.disponivel = False
+    db_agenda.observacao_privada = data.motivo
+    db_agenda.valor_final_vistoria = 0
+    db_agenda.valor_vistoriador = 0
+    
     db.commit()
-    return {"message": "Vistoria marcada como improdutiva com sucesso."}
+    db.refresh(db_agenda)
+    return db_agenda
+
+@router.put("/agenda/{agenda_id}/cancelar", response_model=schemas.AgendaDisplay, summary="Cancelar uma vistoria agendada")
+def cancelar_vistoria(
+    agenda_id: UUID,
+    db: Session = Depends(get_db)
+):
+    db_agenda = db.query(models.Agenda).filter(models.Agenda.id == agenda_id).first()
+    if not db_agenda:
+        raise HTTPException(status_code=404, detail="Agendamento não encontrado")
+
+    db_agenda.imovel_id = None
+    db_agenda.tipo = "LIVRE"
+    db_agenda.disponivel = True
+    db_agenda.valor_final_vistoria = None
+    db_agenda.valor_vistoriador = None
+    db_agenda.observacao_privada = None
+
+    db.commit()
+    db.refresh(db_agenda)
+    return db_agenda
+
+@router.put("/agenda/{agenda_id}/reagendar", response_model=schemas.AgendaDisplay, summary="Reagendar uma vistoria para um novo horário")
+def reagendar_vistoria(agenda_id: UUID, reagendamento: schemas.AgendaReagendar, db: Session = Depends(get_db)):
+    db_agenda_origem = db.query(models.Agenda).filter(models.Agenda.id == agenda_id).first()
+    db_agenda_destino = db.query(models.Agenda).filter(models.Agenda.id == reagendamento.target_agenda_id).first()
+
+    if not db_agenda_origem:
+        raise HTTPException(status_code=404, detail="Agendamento original não encontrado.")
+    if not db_agenda_destino:
+        raise HTTPException(status_code=404, detail="Horário de destino não encontrado.")
+    if not db_agenda_destino.disponivel:
+        raise HTTPException(status_code=400, detail="O horário de destino não está disponível.")
+
+    db_agenda_destino.imovel_id = db_agenda_origem.imovel_id
+    db_agenda_destino.tipo = db_agenda_origem.tipo
+    db_agenda_destino.observacao_privada = db_agenda_origem.observacao_privada
+    db_agenda_destino.valor_final_vistoria = db_agenda_origem.valor_final_vistoria
+    db_agenda_destino.valor_vistoriador = db_agenda_origem.valor_vistoriador
+    db_agenda_destino.disponivel = False
+
+    db_agenda_origem.imovel_id = None
+    db_agenda_origem.tipo = "LIVRE"
+    db_agenda_origem.disponivel = True
+    db_agenda_origem.observacao_privada = None
+    db_agenda_origem.valor_final_vistoria = None
+    db_agenda_origem.valor_vistoriador = None
+
+    db.commit()
+    db.refresh(db_agenda_destino)
+    return db_agenda_destino
 
 # =================================================================
 # --- Gestão de Configurações ---

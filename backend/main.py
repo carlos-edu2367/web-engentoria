@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 # Importo os roteadores que criei
 from .routes import auth_routes, agenda_routes, suporte_routes, admin_routes, imobiliaria_routes
 from .routes import admin_panel_routes # Rota para o novo painel de admin
+from .routes import vistoria_valores_routes # Rota para manipulação de valores de vistorias
 from . import models
 from .config import engine
 
@@ -39,6 +40,7 @@ app.include_router(suporte_routes.router, prefix=api_prefix)
 app.include_router(admin_routes.router, prefix=api_prefix) # Painel de gestão de TI
 app.include_router(imobiliaria_routes.router, prefix=api_prefix)
 app.include_router(admin_panel_routes.router, prefix=api_prefix) # Novo painel de administração
+app.include_router(vistoria_valores_routes.router, prefix=api_prefix) # Rota para manipulação de valores
 
 # --- SERVINDO O FRONTEND (Opcional, para desenvolvimento) ---
 # Monta a pasta 'assets' do frontend

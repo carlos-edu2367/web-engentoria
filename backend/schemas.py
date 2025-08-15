@@ -166,10 +166,12 @@ class AgendaBase(BaseModel):
     data: date
     horario: str
 
-class AgendaCreate(AgendaBase):
+class AgendaCreate(BaseModel):
+    horario_id: UUID  # ID do horário selecionado na agenda
     imovel_id: UUID
-    vistoriador_id: UUID
+    imobiliaria_id: UUID
     tipo: TipoVistoriaEnum # Validação com Enum
+    force_single_slot: Optional[bool] = False # Para forçar agendamento em horário único
 
 class AgendaUpdate(BaseModel):
     cod_imovel: Optional[str] = None
@@ -185,13 +187,20 @@ class AgendaUpdate(BaseModel):
 class AgendaObservacaoUpdate(BaseModel):
     observacao_privada: str
 
+class AgendaImprodutiva(BaseModel):
+    motivo: str
+
+# ADICIONADO: Schema para reagendamento
+class AgendaReagendar(BaseModel):
+    target_agenda_id: UUID
+
 class AgendaDisplay(AgendaBase):
     id: UUID
     disponivel: bool
     tipo: Optional[str] = None
     observacao_privada: Optional[str] = None
-    valor_final_vistoria: Optional[float] = None
-    valor_vistoriador: Optional[float] = None
+    valor_final_vistoria: Optional[float] = 0
+    valor_vistoriador: Optional[float] = 0
     vistoriador: UsuarioDisplay
     imovel: Optional[ImovelDisplay] = None
 

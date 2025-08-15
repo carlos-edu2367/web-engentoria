@@ -6,6 +6,18 @@
     <title>Painel de Gestão - Engentoria</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- SCRIPT DO FULLCALENDAR ADICIONADO AQUI -->
+    <script src='https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.js'></script>
+    
+    <!-- CONFIGURAÇÃO DA API EMBUTIDA PARA EVITAR ERROS DE CAMINHO -->
+    <script>
+        window.APP_CONFIG = {
+            API_BASE_URL_ADMIN: (window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost')
+                ? 'http://127.0.0.1:8000/api/v1/admin-panel'
+                : '/api/v1/admin-panel'
+        };
+    </script>
+
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' font-size='90' font-family='Inter, sans-serif' font-weight='700' fill='%2300ffb3'>e</text></svg>">
@@ -51,6 +63,21 @@
             border: 1px solid rgba(0, 255, 179, 0.2);
             box-shadow: 0 0 10px rgba(0, 255, 179, 0.1), inset 0 0 10px rgba(0, 255, 179, 0.1);
         }
+
+        /* Estilos FullCalendar */
+        :root {
+            --fc-border-color: #374151;
+            --fc-daygrid-event-dot-width: 8px;
+            --fc-list-event-dot-width: 10px;
+            --fc-event-text-color: #e5e7eb;
+            --fc-day-today-bg-color: rgba(0, 255, 179, 0.1);
+        }
+        .fc .fc-toolbar-title { font-size: 1.25rem; color: #e5e7eb; }
+        .fc .fc-button-primary { background-color: #1f2937; border-color: #374151; }
+        .fc .fc-button-primary:hover { background-color: #374151; }
+        .fc .fc-daygrid-day-number { color: #9ca3af; }
+        .fc .fc-col-header-cell-cushion { color: #d1d5db; }
+        .fc-event { cursor: pointer; }
     </style>
 </head>
 <body class="text-gray-200">
@@ -74,7 +101,7 @@
                 <span class="ml-4">Imobiliárias</span>
             </a>
             <a href="#vistoriadores" class="nav-link flex items-center p-3 rounded-lg hover:bg-gray-700/50 transition">
-                <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.653-.125-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.653.125-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
+                <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.653-.125-1.283-.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
                 <span class="ml-4">Vistoriadores</span>
             </a>
             <a href="#clientes" class="nav-link flex items-center p-3 rounded-lg hover:bg-gray-700/50 transition">
@@ -94,7 +121,7 @@
                 <span class="ml-4">Relatórios</span>
             </a>
             <a href="#configuracoes" class="nav-link flex items-center p-3 rounded-lg hover:bg-gray-700/50 transition">
-                <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924-1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
                 <span class="ml-4">Configurações</span>
             </a>
         </nav>
@@ -112,18 +139,18 @@
 
     <main class="ml-64 p-8">
         <div id="page-content">
-            <!-- Conteúdo da página será carregado aqui -->
+            <!-- O conteúdo da página será carregado aqui dinamicamente -->
         </div>
     </main>
     
     <!-- Modal Genérico -->
     <div id="generic-modal" class="fixed inset-0 bg-black/70 z-50 hidden items-center justify-center p-4 backdrop-blur-sm">
         <div id="modal-content" class="bg-gray-800/90 backdrop-blur-sm rounded-xl shadow-xl p-6 w-full max-w-2xl border border-gray-700/50 max-h-[90vh] overflow-y-auto neon-border">
-            <!-- Conteúdo do modal será inserido aqui -->
+            <!-- O conteúdo do modal será inserido aqui dinamicamente -->
         </div>
     </div>
 
-    <script src="./assets/auth.js"></script>
-    <script src="./assets/gestao.js"></script>
+    <script src="assets/auth.js"></script>
+    <script src="assets/gestao.js" type="module"></script>
 </body>
 </html>
