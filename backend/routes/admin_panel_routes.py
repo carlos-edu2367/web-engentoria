@@ -96,8 +96,9 @@ def get_admin_dashboard_stats(db: Session = Depends(get_db)):
         models.Agenda.tipo.in_(['ENTRADA', 'SAIDA', 'CONFERENCIA', 'AVERIGUACAO', 'COMPLEMENTO_VISITA'])
     ).count()
 
-    improdutivas_mes_atual = db.query(models.VistoriaImprodutiva).filter(
-        models.VistoriaImprodutiva.data_vistoria_original >= start_of_month
+    improdutivas_mes_atual = db.query(models.Agenda).filter(
+        models.Agenda.data >= start_of_month,
+        models.Agenda.tipo == 'IMPRODUTIVA'
     ).count()
 
     return schemas.AdminDashboardStats(
@@ -201,9 +202,10 @@ def read_vistoriadores(skip: int = 0, limit: int = 100, db: Session = Depends(ge
 def get_vistoriador_details(vistoriador_id: UUID, db: Session = Depends(get_db)):
     today = date.today()
     start_of_current_month = today.replace(day=1)
-    six_months_ago = (start_of_current_month - timedelta(days=1)).replace(day=1) - timedelta(days=150) # Garante 6 meses completos
+    # Garante 6 meses completos para trás
+    six_months_ago = (start_of_current_month - timedelta(days=1)).replace(day=1) - timedelta(days=150) 
 
-    vistorias_normais = db.query(
+    vistorias_agrupadas = db.query(
         extract('year', models.Agenda.data).label('ano'),
         extract('month', models.Agenda.data).label('mes'),
         func.count(models.Agenda.id).label('total_vistorias'),
@@ -211,34 +213,16 @@ def get_vistoriador_details(vistoriador_id: UUID, db: Session = Depends(get_db))
     ).filter(
         models.Agenda.vistoriador_id == vistoriador_id,
         models.Agenda.data >= six_months_ago,
-        models.Agenda.tipo.in_(['ENTRADA', 'SAIDA', 'CONFERENCIA', 'AVERIGUACAO', 'COMPLEMENTO_VISITA'])
-    ).group_by('ano', 'mes').subquery()
-
-    vistorias_improdutivas = db.query(
-        extract('year', models.VistoriaImprodutiva.data_vistoria_original).label('ano'),
-        extract('month', models.VistoriaImprodutiva.data_vistoria_original).label('mes'),
-        func.count(models.VistoriaImprodutiva.id).label('total_vistorias'),
-        func.sum(models.VistoriaImprodutiva.valor_para_vistoriador).label('total_comissao')
-    ).join(models.Agenda, models.VistoriaImprodutiva.agenda_id_original == models.Agenda.id).filter(
-        models.Agenda.vistoriador_id == vistoriador_id,
-        models.VistoriaImprodutiva.data_vistoria_original >= six_months_ago
-    ).group_by('ano', 'mes').subquery()
-
-    results_normais = db.query(vistorias_normais).all()
-    results_improdutivas = db.query(vistorias_improdutivas).all()
-
+        models.Agenda.tipo != 'LIVRE' # Inclui normais e improdutivas
+    ).group_by('ano', 'mes').all()
+    
     monthly_data = {}
-    for r in results_normais:
+    for r in vistorias_agrupadas:
         key = f"{int(r.mes):02d}/{int(r.ano)}"
-        monthly_data[key] = {'total_vistorias': r.total_vistorias, 'total_comissao': float(r.total_comissao or 0)}
-
-    for r in results_improdutivas:
-        key = f"{int(r.mes):02d}/{int(r.ano)}"
-        if key in monthly_data:
-            monthly_data[key]['total_vistorias'] += r.total_vistorias
-            monthly_data[key]['total_comissao'] += float(r.total_comissao or 0)
-        else:
-            monthly_data[key] = {'total_vistorias': r.total_vistorias, 'total_comissao': float(r.total_comissao or 0)}
+        monthly_data[key] = {
+            'total_vistorias': r.total_vistorias, 
+            'total_comissao': float(r.total_comissao or 0)
+        }
     
     historico_mensal = [
         schemas.VistoriadorDetalhesItem(mes_ano=key, **value)
@@ -411,7 +395,7 @@ def add_horario_fixo(horario: schemas.HorarioFixoCreate, db: Session = Depends(g
 
 @router.get("/vistoriadores/{vistoriador_id}/horarios-fixos/", response_model=List[schemas.HorarioFixoDisplay], summary="Listar horários fixos de um vistoriador")
 def get_horarios_fixos(vistoriador_id: UUID, db: Session = Depends(get_db)):
-    horarios = db.query(models.HorarioFixo).filter(models.HorarioFixo.vistoriador_id == vistoriador_id).all()
+    horarios = db.query(models.HorarioFixo).filter(models.HorarioFixo.vistoriador_id == vistoriador_id, models.HorarioFixo.is_deleted == False).all()
     return horarios
 
 @router.delete("/horarios-fixos/{horario_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Remover um horário de trabalho fixo")
@@ -419,7 +403,8 @@ def delete_horario_fixo(horario_id: UUID, db: Session = Depends(get_db)):
     db_horario = db.query(models.HorarioFixo).filter(models.HorarioFixo.id == horario_id).first()
     if not db_horario:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Horário fixo não encontrado.")
-    db.delete(db_horario)
+    # Soft delete em vez de db.delete(db_horario)
+    db_horario.is_deleted = True
     db.commit()
     return None
 
@@ -440,7 +425,7 @@ def add_horario_avulso(horario: schemas.HorarioAvulsoCreate, db: Session = Depen
 @router.post("/agenda/gerar", summary="Gerar agenda com base nos horários fixos")
 def generate_agenda(semanas: int = 4, db: Session = Depends(get_db)):
     today = date.today()
-    horarios_fixos = db.query(models.HorarioFixo).all()
+    horarios_fixos = db.query(models.HorarioFixo).filter(models.HorarioFixo.is_deleted == False).all()
     novos_agendamentos = 0
     for i in range(7 * semanas):
         current_date = today + timedelta(days=i)
@@ -533,11 +518,6 @@ def update_vistoria(
     update_data: schemas.AgendaUpdate,
     db: Session = Depends(get_db)
 ):
-    """
-    Atualiza os dados de uma vistoria agendada.
-    Permite alterar informações do imóvel (que são cacheadas na agenda), tipo de vistoria e valores.
-    Se os valores não forem fornecidos, eles são recalculados automaticamente com base nas alterações.
-    """
     db_agenda = db.query(models.Agenda).options(
         joinedload(models.Agenda.imovel).joinedload(models.Imovel.imobiliaria)
     ).filter(models.Agenda.id == agenda_id).first()
@@ -591,10 +571,18 @@ def mark_vistoria_improdutiva(
     if not db_agenda:
         raise HTTPException(status_code=404, detail="Agendamento não encontrado")
 
+    # Busca o valor fixo da comissão na tabela de configurações
+    config = db.query(models.Configuracao).first()
+    if not config:
+        # Fallback caso a configuração não exista, embora seja improvável
+        raise HTTPException(status_code=500, detail="Configuração do sistema não encontrada.")
+
+    valor_comissao_improdutiva = config.valor_comissao_improdutiva
+
     db_agenda.tipo = "IMPRODUTIVA"
     db_agenda.observacao_privada = data.motivo
-    db_agenda.valor_final_vistoria = 0
-    db_agenda.valor_vistoriador = 0
+    db_agenda.valor_final_vistoria = 0  # Valor cobrado do cliente é zero neste fluxo
+    db_agenda.valor_vistoriador = valor_comissao_improdutiva
     
     db.commit()
     db.refresh(db_agenda)
@@ -656,7 +644,7 @@ def reagendar_vistoria(agenda_id: UUID, reagendamento: schemas.AgendaReagendar, 
 
 @router.get("/configuracoes/", response_model=schemas.ConfiguracaoDisplay, summary="Obter configurações do sistema")
 def get_configuracoes(db: Session = Depends(get_db)):
-    config = db.query(models.Configuracao).filter(models.Configuracao.id == 1).first()
+    config = db.query(models.Configuracao).first()
     if not config:
         config = models.Configuracao()
         db.add(config)
@@ -666,7 +654,7 @@ def get_configuracoes(db: Session = Depends(get_db)):
 
 @router.put("/configuracoes/", response_model=schemas.ConfiguracaoDisplay, summary="Atualizar configurações do sistema")
 def update_configuracoes(config_update: schemas.ConfiguracaoUpdate, db: Session = Depends(get_db)):
-    db_config = db.query(models.Configuracao).filter(models.Configuracao.id == 1).first()
+    db_config = db.query(models.Configuracao).first()
     if not db_config:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Configurações não encontradas.")
     update_data = config_update.model_dump(exclude_unset=True)
@@ -693,14 +681,15 @@ def get_relatorio_imobiliaria(imobiliaria_id: UUID, mes: int = Query(..., ge=1, 
         models.Agenda.tipo.in_(['ENTRADA', 'SAIDA', 'CONFERENCIA', 'AVERIGUACAO', 'COMPLEMENTO_VISITA'])
     ).all()
 
-    improdutivas = db.query(models.VistoriaImprodutiva).filter(
-        models.VistoriaImprodutiva.imobiliaria_id == imobiliaria_id,
-        extract('year', models.VistoriaImprodutiva.data_vistoria_original) == ano,
-        extract('month', models.VistoriaImprodutiva.data_vistoria_original) == mes
+    improdutivas = db.query(models.Agenda).join(models.Imovel).filter(
+        models.Imovel.imobiliaria_id == imobiliaria_id,
+        extract('year', models.Agenda.data) == ano,
+        extract('month', models.Agenda.data) == mes,
+        models.Agenda.tipo == 'IMPRODUTIVA'
     ).all()
 
     total_vistorias = sum(v.valor_final_vistoria or 0 for v in vistorias)
-    total_improdutivas = sum(i.valor_cobranca for i in improdutivas)
+    total_improdutivas = sum(i.valor_final_vistoria or 0 for i in improdutivas) # Assumindo que o valor cobrado fica aqui
 
     return {
         "imobiliaria_nome": db_imobiliaria.nome,
@@ -718,31 +707,28 @@ def get_relatorio_vistoriador(vistoriador_id: UUID, mes: int = Query(..., ge=1, 
     if not db_vistoriador:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vistoriador não encontrado.")
 
-    vistorias = db.query(models.Agenda).filter(
+    vistorias_do_mes = db.query(models.Agenda).filter(
         models.Agenda.vistoriador_id == vistoriador_id,
         extract('year', models.Agenda.data) == ano,
         extract('month', models.Agenda.data) == mes,
-        models.Agenda.tipo.in_(['ENTRADA', 'SAIDA', 'CONFERENCIA', 'AVERIGUACAO', 'COMPLEMENTO_VISITA'])
+        models.Agenda.tipo != 'LIVRE'
     ).options(joinedload(models.Agenda.imovel).joinedload(models.Imovel.imobiliaria)).all()
-
-    improdutivas_query = db.query(models.VistoriaImprodutiva).join(models.Agenda, models.VistoriaImprodutiva.agenda_id_original == models.Agenda.id)
-    improdutivas = improdutivas_query.filter(
-        models.Agenda.vistoriador_id == vistoriador_id,
-        extract('year', models.VistoriaImprodutiva.data_vistoria_original) == ano,
-        extract('month', models.VistoriaImprodutiva.data_vistoria_original) == mes
-    ).all()
     
     vistorias_por_imobiliaria = {}
+    improdutivas = []
     total_comissao_vistorias = Decimal(0)
-    for v in vistorias:
-        if v.imovel and v.imovel.imobiliaria:
+    total_comissao_improdutivas = Decimal(0)
+
+    for v in vistorias_do_mes:
+        if v.tipo == 'IMPRODUTIVA':
+            improdutivas.append(v)
+            total_comissao_improdutivas += v.valor_vistoriador or 0
+        elif v.imovel and v.imovel.imobiliaria:
             imob_nome = v.imovel.imobiliaria.nome
             if imob_nome not in vistorias_por_imobiliaria:
                 vistorias_por_imobiliaria[imob_nome] = []
             vistorias_por_imobiliaria[imob_nome].append(v)
             total_comissao_vistorias += v.valor_vistoriador or 0
-
-    total_comissao_improdutivas = sum(i.valor_para_vistoriador or 0 for i in improdutivas)
 
     return {
         "vistoriador_nome": db_vistoriador.nome,
