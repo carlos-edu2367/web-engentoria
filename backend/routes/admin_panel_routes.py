@@ -739,3 +739,25 @@ def get_relatorio_vistoriador(vistoriador_id: UUID, mes: int = Query(..., ge=1, 
         "total_comissao_improdutivas": total_comissao_improdutivas,
         "total_geral_comissao": total_comissao_vistorias + total_comissao_improdutivas
     }
+
+@router.put("/agenda/{agenda_id}/fechar", response_model=schemas.AgendaDisplay, summary="Fechar um horário livre na agenda")
+def fechar_horario(
+    agenda_id: UUID,
+    data: schemas.AgendaFecharHorario,
+    db: Session = Depends(get_db)
+):
+    db_agenda = db.query(models.Agenda).filter(
+        models.Agenda.id == agenda_id,
+        models.Agenda.disponivel == True,
+        models.Agenda.tipo == 'LIVRE'
+    ).first()
+    if not db_agenda:
+        raise HTTPException(status_code=404, detail="Horário não está livre ou não foi encontrado.")
+
+    db_agenda.tipo = "FECHADO"
+    db_agenda.disponivel = False
+    db_agenda.observacao_privada = data.motivo # Reutilizando o campo de observação para o motivo
+    
+    db.commit()
+    db.refresh(db_agenda)
+    return db_agenda

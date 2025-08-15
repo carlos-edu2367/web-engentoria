@@ -217,6 +217,10 @@ class VistoriaImprodutivaCreate(BaseModel):
     motivo_improdutividade: str
     valor_cobranca: float
 
+
+class AgendaFecharHorario(BaseModel):
+    motivo: str
+
 # =================================================================
 # --- Schemas de Relatórios e Dashboards ---
 # =================================================================
