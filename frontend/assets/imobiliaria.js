@@ -153,7 +153,6 @@ async function renderOverview() {
         labels.push(nextMonthLabel);
         data.push(stats.projecao_proximo_mes);
 
-        // Calcula o stepSize para o eixo Y
         const maxDataValue = Math.max(...data.filter(Number.isFinite));
         const stepSize = Math.ceil(maxDataValue / 5) || 1;
 
@@ -252,10 +251,10 @@ async function renderAgenda() {
                 const vistorias = await response.json();
                 
                 const events = vistorias.map(v => ({
-                    title: `[${v.imovel.cod_imovel}] ${v.tipo_vistoria}`,
+                    title: `[${v.imovel.cod_imovel}] ${v.tipo}`,
                     start: `${v.data}T${v.horario}`,
-                    backgroundColor: v.tipo_vistoria.includes('Entrega') ? '#00a3ff' : '#00ffb3',
-                    borderColor: v.tipo_vistoria.includes('Entrega') ? '#0088cc' : '#00cc88',
+                    backgroundColor: v.tipo.includes('ENTRADA') ? '#00a3ff' : '#00ffb3',
+                    borderColor: v.tipo.includes('ENTRADA') ? '#0088cc' : '#00cc88',
                     extendedProps: { vistoria: v }
                 }));
                 
@@ -311,7 +310,6 @@ async function renderRelatorios() {
         </div>
     `;
 
-    // CORREÇÃO: Declarar yearSelect antes de usar
     const monthSelect = document.getElementById('report-month');
     const yearSelect = document.getElementById('report-year');
     
@@ -460,7 +458,7 @@ function showVistoriaModal(vistoria) {
                         Vistoria
                     </h3>
                     <div class="space-y-3">
-                        <p><strong class="text-gray-300">Tipo:</strong> <span class="text-gray-200">${vistoria.tipo_vistoria}</span></p>
+                        <p><strong class="text-gray-300">Tipo:</strong> <span class="text-gray-200">${vistoria.tipo}</span></p>
                         <p><strong class="text-gray-300">Data:</strong> <span class="text-gray-200">${new Date(vistoria.data + 'T00:00:00').toLocaleDateString('pt-BR')}</span></p>
                         <p><strong class="text-gray-300">Horário:</strong> <span class="text-gray-200">${vistoria.horario}</span></p>
                         <p><strong class="text-gray-300">Vistoriador:</strong> <span class="text-gray-200">${vistoriador.nome}</span></p>
@@ -508,6 +506,7 @@ function showVistoriaModal(vistoria) {
 
     document.getElementById('close-modal-btn').addEventListener('click', () => {
         modal.classList.add('hidden');
+        modal.classList.remove('flex');
     });
 }
 
@@ -664,15 +663,16 @@ async function downloadReport(format) {
     const url = `${API_BASE_URL_IMOB}/relatorio-download?mes=${mes}&ano=${ano}&formato=${format}`;
     
     try {
-        // Mostra feedback visual durante o download
         const btnId = `download-${format}-btn`;
-        const originalText = document.getElementById(btnId).innerHTML;
-        document.getElementById(btnId).innerHTML = `
+        const button = document.getElementById(btnId);
+        const originalText = button.innerHTML;
+        button.innerHTML = `
             <svg class="animate-spin h-5 w-5 mr-2 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
             </svg>
             Preparando...
         `;
+        button.disabled = true;
         
         const response = await fetch(url, {
             headers: { 'Authorization': `Bearer ${token}` }
@@ -705,7 +705,6 @@ async function downloadReport(format) {
         a.remove();
 
     } catch (error) {
-        // Mostra notificação de erro
         const errorDiv = document.createElement('div');
         errorDiv.className = 'fixed bottom-4 right-4 bg-red-900/80 text-red-100 px-4 py-3 rounded-lg shadow-lg flex items-start max-w-xs';
         errorDiv.innerHTML = `
@@ -719,19 +718,17 @@ async function downloadReport(format) {
         `;
         document.body.appendChild(errorDiv);
         
-        // Remove a notificação após 5 segundos
         setTimeout(() => {
             errorDiv.classList.add('opacity-0', 'transition-opacity', 'duration-300');
             setTimeout(() => errorDiv.remove(), 300);
         }, 5000);
         
     } finally {
-        // Restaura o texto original do botão
         const btnId = `download-${format}-btn`;
-        setTimeout(() => {
-            if (document.getElementById(btnId)) {
-                document.getElementById(btnId).innerHTML = originalText;
-            }
-        }, 1000);
+        const button = document.getElementById(btnId);
+        if (button) {
+            button.innerHTML = originalText;
+            button.disabled = false;
+        }
     }
 }
