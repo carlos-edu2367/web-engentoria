@@ -6,8 +6,8 @@ const API_BASE_URL_ADMIN = isLocalAdmin ? 'http://127.0.0.1:8000/api/v1/admin' :
 
 
 document.addEventListener('DOMContentLoaded', () => {
-    // Protege a página, garantindo que apenas gestores logados possam acessá-la.
-    protectAdminPage();
+    // CORREÇÃO: Chamando a função de proteção correta para a página de TI.
+    protectTiPage();
 
     const navLinks = document.querySelectorAll('.nav-link');
     const pageContent = document.getElementById('page-content');

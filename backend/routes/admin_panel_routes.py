@@ -7,6 +7,8 @@ from typing import List, Dict
 from uuid import UUID
 from datetime import date, timedelta, datetime
 from decimal import Decimal
+from dateutil.relativedelta import relativedelta
+
 
 from .. import models, schemas, auth
 
@@ -82,7 +84,7 @@ def _calculate_valor_comissao_vistoriador(tamanho_m2: float, mobiliado_status: s
 # --- Dashboard ---
 # =================================================================
 
-@router.get("/dashboard/stats", response_model=schemas.AdminDashboardStats, summary="Obter estatísticas para o dashboard do admin de vistorias")
+@router.get("/dashboard/stats", response_model=schemas.AdminDashboardStats, summary="Obter estatísticas gerais para o dashboard")
 def get_admin_dashboard_stats(db: Session = Depends(get_db)):
     today = date.today()
     start_of_month = today.replace(day=1)
@@ -96,9 +98,9 @@ def get_admin_dashboard_stats(db: Session = Depends(get_db)):
         models.Agenda.tipo.in_(['ENTRADA', 'SAIDA', 'CONFERENCIA', 'AVERIGUACAO', 'COMPLEMENTO_VISITA'])
     ).count()
 
-    improdutivas_mes_atual = db.query(models.Agenda).filter(
-        models.Agenda.data >= start_of_month,
-        models.Agenda.tipo == 'IMPRODUTIVA'
+    improdutivas_mes_atual = db.query(models.VistoriaImprodutiva).filter(
+        models.VistoriaImprodutiva.data_vistoria_original >= start_of_month,
+        models.VistoriaImprodutiva.is_deleted == False
     ).count()
 
     return schemas.AdminDashboardStats(
@@ -108,6 +110,50 @@ def get_admin_dashboard_stats(db: Session = Depends(get_db)):
         vistorias_mes_atual=vistorias_mes_atual,
         improdutivas_mes_atual=improdutivas_mes_atual
     )
+
+@router.get("/dashboard/financial-stats", response_model=schemas.AdminDashboardFinancialStats, summary="Obter estatísticas financeiras para o dashboard")
+def get_financial_stats(db: Session = Depends(get_db)):
+    today = date.today()
+    
+    # Período do Mês Atual
+    start_of_current_month = today.replace(day=1)
+    
+    # Período Comparativo do Mês Anterior
+    start_of_previous_month = start_of_current_month - relativedelta(months=1)
+    end_of_previous_month_comparative = start_of_previous_month + timedelta(days=today.day - 1)
+
+    # Função auxiliar para evitar repetição de código
+    def get_financials_for_period(start_date, end_date):
+        results = db.query(
+            func.coalesce(func.sum(models.Agenda.valor_final_vistoria), 0),
+            func.coalesce(func.sum(models.Agenda.valor_vistoriador), 0)
+        ).filter(
+            models.Agenda.data.between(start_date, end_date),
+            models.Agenda.is_deleted == False,
+            models.Agenda.tipo.isnot(None),
+            models.Agenda.tipo.notin_(['LIVRE', 'FECHADO'])
+        ).one()
+        return float(results[0]), float(results[1])
+
+    faturamento_atual, comissoes_atuais = get_financials_for_period(start_of_current_month, today)
+    faturamento_anterior, _ = get_financials_for_period(start_of_previous_month, end_of_previous_month_comparative)
+
+    lucro_atual = faturamento_atual - comissoes_atuais
+
+    crescimento = 0.0
+    if faturamento_anterior > 0:
+        crescimento = ((faturamento_atual - faturamento_anterior) / faturamento_anterior) * 100
+    elif faturamento_atual > 0:
+        crescimento = 100.0 # Crescimento infinito se o anterior foi 0
+
+    return schemas.AdminDashboardFinancialStats(
+        faturamento_mes_atual=faturamento_atual,
+        faturamento_mes_anterior_comparativo=faturamento_anterior,
+        comissoes_a_pagar_mes_atual=comissoes_atuais,
+        lucro_mes_atual=lucro_atual,
+        crescimento_percentual=round(crescimento, 2)
+    )
+
 
 @router.get("/dashboard/vistorias-chart", response_model=List[schemas.VistoriasChartItem], summary="Obter dados para o gráfico de vistorias mensais")
 def get_vistorias_chart_data(db: Session = Depends(get_db)):
@@ -470,24 +516,36 @@ def schedule_vistoria(agendamento: schemas.AgendaCreate, db: Session = Depends(g
 
     if necessita_horario_duplo and not agendamento.force_single_slot:
         try:
-            horario_dt = datetime.strptime(db_agenda_1.horario, '%H:%M')
-            proximo_horario_dt = horario_dt + timedelta(hours=1)
-            proximo_horario_str = proximo_horario_dt.strftime('%H:%M')
+            horario_principal_dt = datetime.strptime(db_agenda_1.horario, '%H:%M')
+            periodo_principal = 'manha' if horario_principal_dt.hour < 12 else 'tarde'
         except ValueError:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Formato de horário inválido no banco de dados.")
 
         db_agenda_2 = db.query(models.Agenda).filter(
             models.Agenda.data == db_agenda_1.data,
-            models.Agenda.horario == proximo_horario_str,
             models.Agenda.vistoriador_id == db_agenda_1.vistoriador_id,
+            models.Agenda.horario > db_agenda_1.horario,
             models.Agenda.disponivel == True
-        ).first()
+        ).order_by(models.Agenda.horario).first()
 
         if not db_agenda_2:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT, 
-                detail="Este imóvel necessita de 2 horários consecutivos, mas o segundo horário não está disponível. Você pode forçar o agendamento em um único horário ou escolher outro horário."
+                detail="Este imóvel necessita de 2 horários, mas não há um segundo slot disponível no mesmo dia."
             )
+
+        try:
+            horario_secundario_dt = datetime.strptime(db_agenda_2.horario, '%H:%M')
+            periodo_secundario = 'manha' if horario_secundario_dt.hour < 12 else 'tarde'
+        except ValueError:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Formato de horário inválido para o slot consecutivo.")
+
+        if periodo_principal != periodo_secundario:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, 
+                detail="Este imóvel necessita de 2 horários, mas o próximo slot livre não está no mesmo período (manhã/tarde)."
+            )
+            
         db_agenda_2.imovel_id = agendamento.imovel_id
         db_agenda_2.tipo = agendamento.tipo.value
         db_agenda_2.disponivel = False
@@ -561,32 +619,62 @@ def update_vistoria(
     return db_agenda
 
 
-@router.put("/agenda/{agenda_id}/improdutiva", response_model=schemas.AgendaDisplay, summary="Marcar vistoria como improdutiva")
+@router.put("/agenda/{agenda_id}/improdutiva", status_code=status.HTTP_201_CREATED, summary="Marcar vistoria como improdutiva")
 def mark_vistoria_improdutiva(
     agenda_id: UUID,
     data: schemas.AgendaImprodutiva,
     db: Session = Depends(get_db)
 ):
-    db_agenda = db.query(models.Agenda).filter(models.Agenda.id == agenda_id).first()
+    """
+    Cria um registro em VistoriaImprodutiva e libera o horário original na agenda.
+    Esta é a única forma correta de registrar uma improdutiva.
+    """
+    db_agenda = db.query(models.Agenda).options(
+        joinedload(models.Agenda.imovel)
+    ).filter(models.Agenda.id == agenda_id).first()
+
     if not db_agenda:
         raise HTTPException(status_code=404, detail="Agendamento não encontrado")
+    
+    if not db_agenda.imovel:
+         raise HTTPException(status_code=400, detail="Agendamento não está associado a um imóvel para ser marcado como improdutivo.")
 
-    # Busca o valor fixo da comissão na tabela de configurações
     config = db.query(models.Configuracao).first()
     if not config:
-        # Fallback caso a configuração não exista, embora seja improvável
         raise HTTPException(status_code=500, detail="Configuração do sistema não encontrada.")
 
-    valor_comissao_improdutiva = config.valor_comissao_improdutiva
+    valor_comissao_fixa = config.percentual_comissao_improdutiva
 
-    db_agenda.tipo = "IMPRODUTIVA"
-    db_agenda.observacao_privada = data.motivo
-    db_agenda.valor_final_vistoria = 0  # Valor cobrado do cliente é zero neste fluxo
-    db_agenda.valor_vistoriador = valor_comissao_improdutiva
-    
-    db.commit()
-    db.refresh(db_agenda)
-    return db_agenda
+    nova_improdutiva = models.VistoriaImprodutiva(
+        agenda_id_original=db_agenda.id,
+        cliente_id=db_agenda.imovel.cliente_id,
+        imovel_id=db_agenda.imovel_id,
+        imobiliaria_id=db_agenda.imovel.imobiliaria_id,
+        data_marcacao=date.today(), # CORREÇÃO: Adiciona a data atual
+        data_vistoria_original=db_agenda.data,
+        horario_vistoria_original=db_agenda.horario,
+        motivo_improdutividade=data.motivo,
+        valor_cobranca=data.valor_cobranca,
+        valor_para_vistoriador=valor_comissao_fixa,
+        pago=False
+    )
+    db.add(nova_improdutiva)
+
+    db_agenda.imovel_id = None
+    db_agenda.tipo = "LIVRE"
+    db_agenda.disponivel = True
+    db_agenda.valor_final_vistoria = None
+    db_agenda.valor_vistoriador = None
+    db_agenda.observacao_privada = None
+
+    try:
+        db.commit()
+        db.refresh(nova_improdutiva)
+        return {"message": "Vistoria marcada como improdutiva com sucesso. O horário original foi liberado.", "improdutiva_id": nova_improdutiva.id}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Erro ao salvar a vistoria improdutiva: {str(e)}")
+
 
 @router.put("/agenda/{agenda_id}/cancelar", response_model=schemas.AgendaDisplay, summary="Cancelar uma vistoria agendada")
 def cancelar_vistoria(
@@ -638,6 +726,28 @@ def reagendar_vistoria(agenda_id: UUID, reagendamento: schemas.AgendaReagendar, 
     db.refresh(db_agenda_destino)
     return db_agenda_destino
 
+@router.put("/agenda/{agenda_id}/fechar", response_model=schemas.AgendaDisplay, summary="Fechar um horário livre na agenda")
+def fechar_horario(
+    agenda_id: UUID,
+    data: schemas.AgendaFecharHorario,
+    db: Session = Depends(get_db)
+):
+    db_agenda = db.query(models.Agenda).filter(
+        models.Agenda.id == agenda_id,
+        models.Agenda.disponivel == True,
+        models.Agenda.tipo == 'LIVRE'
+    ).first()
+    if not db_agenda:
+        raise HTTPException(status_code=404, detail="Horário não está livre ou não foi encontrado.")
+
+    db_agenda.tipo = "FECHADO"
+    db_agenda.disponivel = False
+    db_agenda.observacao_privada = data.motivo # Reutilizando o campo de observação para o motivo
+    
+    db.commit()
+    db.refresh(db_agenda)
+    return db_agenda
+
 # =================================================================
 # --- Gestão de Configurações ---
 # =================================================================
@@ -646,7 +756,7 @@ def reagendar_vistoria(agenda_id: UUID, reagendamento: schemas.AgendaReagendar, 
 def get_configuracoes(db: Session = Depends(get_db)):
     config = db.query(models.Configuracao).first()
     if not config:
-        config = models.Configuracao()
+        config = models.Configuracao(percentual_comissao_improdutiva=30.0) # Valor padrão
         db.add(config)
         db.commit()
         db.refresh(config)
@@ -674,32 +784,61 @@ def get_relatorio_imobiliaria(imobiliaria_id: UUID, mes: int = Query(..., ge=1, 
     if not db_imobiliaria:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Imobiliária não encontrada.")
 
-    vistorias = db.query(models.Agenda).join(models.Imovel).filter(
+    # Busca vistorias normais da tabela 'agenda'
+    vistorias_normais = db.query(models.Agenda).options(joinedload(models.Agenda.imovel)).join(models.Imovel).filter(
         models.Imovel.imobiliaria_id == imobiliaria_id,
         extract('year', models.Agenda.data) == ano,
         extract('month', models.Agenda.data) == mes,
         models.Agenda.tipo.in_(['ENTRADA', 'SAIDA', 'CONFERENCIA', 'AVERIGUACAO', 'COMPLEMENTO_VISITA'])
     ).all()
 
-    improdutivas = db.query(models.Agenda).join(models.Imovel).filter(
-        models.Imovel.imobiliaria_id == imobiliaria_id,
-        extract('year', models.Agenda.data) == ano,
-        extract('month', models.Agenda.data) == mes,
-        models.Agenda.tipo == 'IMPRODUTIVA'
+    # CORREÇÃO: Busca vistorias improdutivas da tabela 'vistorias_improdutivas'
+    improdutivas = db.query(models.VistoriaImprodutiva).options(
+        joinedload(models.VistoriaImprodutiva.imovel)
+    ).filter(
+        models.VistoriaImprodutiva.imobiliaria_id == imobiliaria_id,
+        extract('year', models.VistoriaImprodutiva.data_vistoria_original) == ano,
+        extract('month', models.VistoriaImprodutiva.data_vistoria_original) == mes,
+        models.VistoriaImprodutiva.is_deleted == False
     ).all()
 
-    total_vistorias = sum(v.valor_final_vistoria or 0 for v in vistorias)
-    total_improdutivas = sum(i.valor_final_vistoria or 0 for i in improdutivas) # Assumindo que o valor cobrado fica aqui
+    vistorias_formatadas = [
+        schemas.RelatorioVistoriaItem(
+            data=v.data,
+            cod_imovel=v.imovel.cod_imovel,
+            endereco=v.imovel.endereco,
+            tamanho=v.imovel.tamanho,
+            tipo_mobilia=v.imovel.mobiliado,
+            tipo_vistoria=v.tipo,
+            valor=v.valor_final_vistoria or 0,
+            comissao_vistoriador=v.valor_vistoriador or 0,
+            observacao_privada=v.observacao_privada # <-- CAMPO ADICIONADO
+        ) for v in vistorias_normais if v.imovel
+    ]
 
-    return {
-        "imobiliaria_nome": db_imobiliaria.nome,
-        "periodo": f"{mes:02d}/{ano}",
-        "vistorias": vistorias,
-        "improdutivas": improdutivas,
-        "total_vistorias": total_vistorias,
-        "total_improdutivas": total_improdutivas,
-        "total_geral": total_vistorias + total_improdutivas
-    }
+    # CORREÇÃO: Formata os dados da tabela correta, usando os campos corretos
+    improdutivas_formatadas = [
+        schemas.RelatorioImprodutivaItem(
+            data_vistoria_original=i.data_vistoria_original,
+            cod_imovel=i.imovel.cod_imovel if i.imovel else "N/A",
+            motivo_improdutividade=i.motivo_improdutividade or "N/A",
+            valor_cobrado=i.valor_cobranca or 0,
+            comissao_vistoriador=i.valor_para_vistoriador or 0
+        ) for i in improdutivas
+    ]
+
+    total_vistorias = sum(v.valor for v in vistorias_formatadas)
+    total_improdutivas = sum(i.valor_cobrado for i in improdutivas_formatadas)
+
+    return schemas.RelatorioImobiliaria(
+        imobiliaria_nome=db_imobiliaria.nome,
+        periodo=f"{mes:02d}/{ano}",
+        vistorias=vistorias_formatadas,
+        improdutivas=improdutivas_formatadas,
+        total_vistorias=total_vistorias,
+        total_improdutivas=total_improdutivas,
+        total_geral=total_vistorias + total_improdutivas
+    )
 
 @router.get("/relatorios/vistoriador/{vistoriador_id}", response_model=schemas.RelatorioVistoriador, summary="Gerar relatório mensal por vistoriador")
 def get_relatorio_vistoriador(vistoriador_id: UUID, mes: int = Query(..., ge=1, le=12), ano: int = Query(..., ge=2020), db: Session = Depends(get_db)):
@@ -707,57 +846,65 @@ def get_relatorio_vistoriador(vistoriador_id: UUID, mes: int = Query(..., ge=1, 
     if not db_vistoriador:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vistoriador não encontrado.")
 
-    vistorias_do_mes = db.query(models.Agenda).filter(
+    # CORREÇÃO: Busca vistorias normais separadamente
+    vistorias_normais = db.query(models.Agenda).filter(
         models.Agenda.vistoriador_id == vistoriador_id,
         extract('year', models.Agenda.data) == ano,
         extract('month', models.Agenda.data) == mes,
-        models.Agenda.tipo != 'LIVRE'
+        models.Agenda.tipo.in_(['ENTRADA', 'SAIDA', 'CONFERENCIA', 'AVERIGUACAO', 'COMPLEMENTO_VISITA'])
     ).options(joinedload(models.Agenda.imovel).joinedload(models.Imovel.imobiliaria)).all()
+
+    # CORREÇÃO: Busca vistorias improdutivas da tabela correta, fazendo join com agenda para filtrar pelo vistoriador
+    improdutivas = db.query(models.VistoriaImprodutiva).join(
+        models.Agenda, models.VistoriaImprodutiva.agenda_id_original == models.Agenda.id
+    ).options(
+        joinedload(models.VistoriaImprodutiva.imovel).joinedload(models.Imovel.imobiliaria)
+    ).filter(
+        models.Agenda.vistoriador_id == vistoriador_id,
+        extract('year', models.VistoriaImprodutiva.data_vistoria_original) == ano,
+        extract('month', models.VistoriaImprodutiva.data_vistoria_original) == mes,
+        models.VistoriaImprodutiva.is_deleted == False
+    ).all()
     
     vistorias_por_imobiliaria = {}
-    improdutivas = []
     total_comissao_vistorias = Decimal(0)
-    total_comissao_improdutivas = Decimal(0)
-
-    for v in vistorias_do_mes:
-        if v.tipo == 'IMPRODUTIVA':
-            improdutivas.append(v)
-            total_comissao_improdutivas += v.valor_vistoriador or 0
-        elif v.imovel and v.imovel.imobiliaria:
+    for v in vistorias_normais:
+        if v.imovel and v.imovel.imobiliaria:
             imob_nome = v.imovel.imobiliaria.nome
             if imob_nome not in vistorias_por_imobiliaria:
                 vistorias_por_imobiliaria[imob_nome] = []
-            vistorias_por_imobiliaria[imob_nome].append(v)
+            
+            vistorias_por_imobiliaria[imob_nome].append(schemas.RelatorioVistoriaItem(
+                data=v.data,
+                cod_imovel=v.imovel.cod_imovel,
+                endereco=v.imovel.endereco,
+                tamanho=v.imovel.tamanho,
+                tipo_mobilia=v.imovel.mobiliado,
+                tipo_vistoria=v.tipo,
+                valor=v.valor_final_vistoria or 0,
+                comissao_vistoriador=v.valor_vistoriador or 0,
+                observacao_privada=v.observacao_privada # <-- CAMPO ADICIONADO
+            ))
             total_comissao_vistorias += v.valor_vistoriador or 0
 
-    return {
-        "vistoriador_nome": db_vistoriador.nome,
-        "periodo": f"{mes:02d}/{ano}",
-        "vistorias_por_imobiliaria": vistorias_por_imobiliaria,
-        "improdutivas": improdutivas,
-        "total_comissao_vistorias": total_comissao_vistorias,
-        "total_comissao_improdutivas": total_comissao_improdutivas,
-        "total_geral_comissao": total_comissao_vistorias + total_comissao_improdutivas
-    }
+    improdutivas_formatadas = []
+    total_comissao_improdutivas = Decimal(0)
+    for i in improdutivas:
+        improdutivas_formatadas.append(schemas.RelatorioImprodutivaItem(
+            data_vistoria_original=i.data_vistoria_original,
+            cod_imovel=i.imovel.cod_imovel if i.imovel else "N/A",
+            motivo_improdutividade=i.motivo_improdutividade or "N/A",
+            valor_cobrado=i.valor_cobranca or 0,
+            comissao_vistoriador=i.valor_para_vistoriador or 0
+        ))
+        total_comissao_improdutivas += i.valor_para_vistoriador or 0
 
-@router.put("/agenda/{agenda_id}/fechar", response_model=schemas.AgendaDisplay, summary="Fechar um horário livre na agenda")
-def fechar_horario(
-    agenda_id: UUID,
-    data: schemas.AgendaFecharHorario,
-    db: Session = Depends(get_db)
-):
-    db_agenda = db.query(models.Agenda).filter(
-        models.Agenda.id == agenda_id,
-        models.Agenda.disponivel == True,
-        models.Agenda.tipo == 'LIVRE'
-    ).first()
-    if not db_agenda:
-        raise HTTPException(status_code=404, detail="Horário não está livre ou não foi encontrado.")
-
-    db_agenda.tipo = "FECHADO"
-    db_agenda.disponivel = False
-    db_agenda.observacao_privada = data.motivo # Reutilizando o campo de observação para o motivo
-    
-    db.commit()
-    db.refresh(db_agenda)
-    return db_agenda
+    return schemas.RelatorioVistoriador(
+        vistoriador_nome=db_vistoriador.nome,
+        periodo=f"{mes:02d}/{ano}",
+        vistorias_por_imobiliaria=vistorias_por_imobiliaria,
+        improdutivas=improdutivas_formatadas,
+        total_comissao_vistorias=total_comissao_vistorias,
+        total_comissao_improdutivas=total_comissao_improdutivas,
+        total_geral_comissao=total_comissao_vistorias + total_comissao_improdutivas
+    )

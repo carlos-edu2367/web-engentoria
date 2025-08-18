@@ -7,9 +7,9 @@ import { initImobiliarias } from './modules/imobiliarias.js';
 import { initVistoriadores } from './modules/vistoriadores.js';
 import { initClientes } from './modules/clientes.js';
 import { initImoveis } from './modules/imoveis.js';
-// import { initAgenda } from './modules/agenda.js';
-// import { initRelatorios } from './modules/relatorios.js';
-// import { initConfiguracoes } from './modules/configuracoes.js';
+import { initAgenda } from './modules/agenda.js';
+import { initRelatorios } from './modules/relatorios.js';
+import { initConfiguracoes } from './modules/configuracoes.js';
 
 // Estado global simples da aplicação (para caching)
 const AppState = {
@@ -28,9 +28,9 @@ const routes = {
     '#vistoriadores': initVistoriadores,
     '#clientes': initClientes,
     '#imoveis': initImoveis,
-    // '#agenda': initAgenda,
-    // '#relatorios': initRelatorios,
-    // '#configuracoes': initConfiguracoes
+    '#agenda': initAgenda,
+    '#relatorios': initRelatorios,
+    '#configuracoes': initConfiguracoes
 };
 
 function setActiveLink(hash) {

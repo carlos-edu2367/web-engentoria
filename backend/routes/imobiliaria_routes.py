@@ -28,63 +28,74 @@ router = APIRouter(
 
 # --- Funções Auxiliares ---
 def get_imobiliaria_ids_from_group(current_user: models.GrupoImobiliaria):
+    """Obtém os IDs de todas as imobiliárias associadas ao grupo logado."""
     imobiliaria_ids = [imob.id for imob in current_user.imobiliarias]
     if not imobiliaria_ids:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Nenhuma imobiliária associada a este grupo.")
     return imobiliaria_ids
 
 def get_report_data(mes: int, ano: int, db: Session, current_user: models.GrupoImobiliaria):
+    """
+    Busca e formata os dados para o relatório mensal de uma ou mais imobiliárias de um grupo.
+    """
     imobiliarias_do_grupo = db.query(models.Imobiliaria).filter(
         models.Imobiliaria.grupo_id == current_user.id,
         models.Imobiliaria.is_deleted == False
     ).all()
 
     relatorios = []
+
     for imob in imobiliarias_do_grupo:
-        agendadas = db.query(models.Agenda).join(models.Imovel).filter(
+        # Busca vistorias normais da tabela 'agenda'
+        vistorias_normais = db.query(models.Agenda).join(models.Imovel).filter(
             models.Imovel.imobiliaria_id == imob.id,
             extract('year', models.Agenda.data) == ano,
             extract('month', models.Agenda.data) == mes,
-            models.Agenda.tipo != 'LIVRE'
+            models.Agenda.tipo.in_(['ENTRADA', 'SAIDA', 'CONFERENCIA', 'AVERIGUACAO', 'COMPLEMENTO_VISITA'])
         ).options(joinedload(models.Agenda.imovel)).all()
 
-        improdutivas = db.query(models.VistoriaImprodutiva).join(models.Imovel).filter(
-            models.Imovel.imobiliaria_id == imob.id,
+        # CORREÇÃO: Busca vistorias improdutivas da tabela 'vistorias_improdutivas'
+        vistorias_improdutivas = db.query(models.VistoriaImprodutiva).options(
+            joinedload(models.VistoriaImprodutiva.imovel)
+        ).filter(
+            models.VistoriaImprodutiva.imobiliaria_id == imob.id,
             extract('year', models.VistoriaImprodutiva.data_vistoria_original) == ano,
-            extract('month', models.VistoriaImprodutiva.data_vistoria_original) == mes
-        ).options(joinedload(models.VistoriaImprodutiva.imovel)).all()
+            extract('month', models.VistoriaImprodutiva.data_vistoria_original) == mes,
+            models.VistoriaImprodutiva.is_deleted == False
+        ).all()
 
-        valor_vistorias = sum(v.imovel.valor for v in agendadas if v.imovel)
-        valor_improdutivas = sum(i.valor_cobranca for i in improdutivas)
+        valor_vistorias = sum(float(v.valor_final_vistoria or 0) for v in vistorias_normais)
+        # CORREÇÃO: Soma o 'valor_cobranca' da tabela correta
+        valor_improdutivas = sum(float(vi.valor_cobranca or 0) for vi in vistorias_improdutivas)
         
         vistorias_agendadas_schema = []
-        for v in agendadas:
+        for v in vistorias_normais:
             if v.imovel:
                 agendada_data = {
                     "id": v.id, "data": v.data, "horario": v.horario, "tipo": v.tipo,
                     "cod_imovel": v.imovel.cod_imovel, "endereco": v.imovel.endereco,
-                    "tamanho": v.imovel.tamanho, "mobiliado": v.imovel.mobiliado,
-                    "valor": v.imovel.valor
+                    "tamanho": float(v.imovel.tamanho), "mobiliado": v.imovel.mobiliado,
+                    "valor": float(v.valor_final_vistoria or 0)
                 }
                 vistorias_agendadas_schema.append(schemas.VistoriaAgendadaRelatorio.model_validate(agendada_data))
 
         vistorias_improdutivas_schema = []
-        for vi in improdutivas:
-            if vi.imovel:
-                improdutiva_data = {
-                    "id": vi.id,
-                    "data_vistoria_original": vi.data_vistoria_original,
-                    "cod_imovel": vi.imovel.cod_imovel,
-                    "motivo_improdutividade": vi.motivo_improdutividade,
-                    "valor_cobranca": vi.valor_cobranca
-                }
-                vistorias_improdutivas_schema.append(schemas.VistoriaImprodutivaRelatorio.model_validate(improdutiva_data))
+        # CORREÇÃO: Itera sobre os objetos corretos e usa os campos corretos
+        for vi in vistorias_improdutivas:
+            improdutiva_data = {
+                "id": vi.id,
+                "data_vistoria_original": vi.data_vistoria_original,
+                "cod_imovel": vi.imovel.cod_imovel if vi.imovel else "N/A",
+                "motivo_improdutividade": vi.motivo_improdutividade or "Motivo não especificado",
+                "valor_cobranca": float(vi.valor_cobranca or 0)
+            }
+            vistorias_improdutivas_schema.append(schemas.VistoriaImprodutivaRelatorio.model_validate(improdutiva_data))
         
         relatorios.append(schemas.RelatorioMensal(
             mes_ano=f"{datetime(ano, mes, 1).strftime('%B').capitalize()}/{ano}",
             imobiliaria_nome=imob.nome,
-            total_vistorias=len(agendadas),
-            total_improdutivas=len(improdutivas),
+            total_vistorias=len(vistorias_normais),
+            total_improdutivas=len(vistorias_improdutivas),
             valor_vistorias=valor_vistorias,
             valor_improdutivas=valor_improdutivas,
             valor_total=valor_vistorias + valor_improdutivas,
@@ -119,21 +130,28 @@ def get_dashboard_stats(db: Session = Depends(get_db), current_user: models.Grup
     start_current_30d = today - timedelta(days=29)
     start_previous_30d = start_current_30d - timedelta(days=30)
     end_previous_30d = start_current_30d - timedelta(days=1)
+    
     def get_stats_for_period(start, end):
-        vistorias = db.query(func.count(models.Agenda.id)).join(models.Imovel).filter(models.Imovel.imobiliaria_id.in_(imobiliaria_ids), models.Agenda.data.between(start, end), models.Agenda.tipo != 'LIVRE').scalar() or 0
-        improdutivas = db.query(func.count(models.VistoriaImprodutiva.id)).join(models.Imovel).filter(models.Imovel.imobiliaria_id.in_(imobiliaria_ids), models.VistoriaImprodutiva.data_vistoria_original.between(start, end)).scalar() or 0
+        vistorias = db.query(func.count(models.Agenda.id)).join(models.Imovel).filter(models.Imovel.imobiliaria_id.in_(imobiliaria_ids), models.Agenda.data.between(start, end), models.Agenda.tipo.in_(['ENTRADA', 'SAIDA', 'CONFERENCIA', 'AVERIGUACAO', 'COMPLEMENTO_VISITA'])).scalar() or 0
+        improdutivas = db.query(func.count(models.VistoriaImprodutiva.id)).filter(models.VistoriaImprodutiva.imobiliaria_id.in_(imobiliaria_ids), models.VistoriaImprodutiva.data_vistoria_original.between(start, end)).scalar() or 0
         return vistorias, improdutivas
+
     vistorias_current_30d, improdutivas_current_30d = get_stats_for_period(start_current_30d, today)
     vistorias_previous_30d, improdutivas_previous_30d = get_stats_for_period(start_previous_30d, end_previous_30d)
+    
     def calculate_change(current, previous):
         if previous == 0: return 100.0 if current > 0 else 0.0
         return round(((current - previous) / previous) * 100, 1)
+
     start_of_month = today.replace(day=1)
     vistorias_mes_atual, improdutivas_mes_atual = get_stats_for_period(start_of_month, today)
+    
     six_months_ago = today.replace(day=1) - relativedelta(months=5)
     monthly_data = db.query(extract('year', models.Agenda.data).label('year'), extract('month', models.Agenda.data).label('month'), func.count(models.Agenda.id).label('count')).join(models.Imovel).filter(models.Imovel.imobiliaria_id.in_(imobiliaria_ids), models.Agenda.data >= six_months_ago, models.Agenda.data < today.replace(day=1) + relativedelta(months=1), models.Agenda.tipo != 'LIVRE').group_by('year', 'month').order_by('year', 'month').all()
+    
     month_map = {1: "Jan", 2: "Fev", 3: "Mar", 4: "Abr", 5: "Mai", 6: "Jun", 7: "Jul", 8: "Ago", 9: "Set", 10: "Out", 11: "Nov", 12: "Dez"}
     monthly_breakdown = {f"{month_map[row.month]}/{str(int(row.year))[-2:]}": row.count for row in monthly_data}
+    
     projecao = 0
     if len(monthly_data) > 1:
         n, x, y = len(monthly_data), list(range(len(monthly_data))), [row.count for row in monthly_data]
@@ -144,6 +162,7 @@ def get_dashboard_stats(db: Session = Depends(get_db), current_user: models.Grup
             intercept = (sum_y - slope * sum_x) / n
             projecao = max(0, int(slope * n + intercept))
     elif monthly_data: projecao = monthly_data[0].count
+
     return schemas.DashboardStatsImobiliaria(
         vistorias_30d=schemas.StatsItem(total=vistorias_current_30d, change=calculate_change(vistorias_current_30d, vistorias_previous_30d)),
         improdutivas_30d=schemas.StatsItem(total=improdutivas_current_30d, change=calculate_change(improdutivas_current_30d, improdutivas_previous_30d)),

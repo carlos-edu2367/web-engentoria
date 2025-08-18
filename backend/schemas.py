@@ -179,20 +179,24 @@ class AgendaUpdate(BaseModel):
     cep: Optional[str] = None
     referencia: Optional[str] = None
     tamanho: Optional[float] = None
-    mobiliado: Optional[MobiliadoEnum] = None # Validação com Enum
-    tipo_vistoria: Optional[TipoVistoriaEnum] = None # Validação com Enum
+    mobiliado: Optional[MobiliadoEnum] = None
+    tipo_vistoria: Optional[TipoVistoriaEnum] = None
     valor_final_vistoria: Optional[float] = None
     valor_vistoriador: Optional[float] = None
+    observacao_privada: Optional[str] = None
 
 class AgendaObservacaoUpdate(BaseModel):
     observacao_privada: str
 
 class AgendaImprodutiva(BaseModel):
     motivo: str
+    valor_cobranca: float = Field(..., ge=0)
 
-# ADICIONADO: Schema para reagendamento
 class AgendaReagendar(BaseModel):
     target_agenda_id: UUID
+
+class AgendaFecharHorario(BaseModel):
+    motivo: str
 
 class AgendaDisplay(AgendaBase):
     id: UUID
@@ -217,10 +221,6 @@ class VistoriaImprodutivaCreate(BaseModel):
     motivo_improdutividade: str
     valor_cobranca: float
 
-
-class AgendaFecharHorario(BaseModel):
-    motivo: str
-
 # =================================================================
 # --- Schemas de Relatórios e Dashboards ---
 # =================================================================
@@ -231,6 +231,13 @@ class AdminDashboardStats(BaseModel):
     total_clientes: int
     vistorias_mes_atual: int
     improdutivas_mes_atual: int
+
+class AdminDashboardFinancialStats(BaseModel):
+    faturamento_mes_atual: float
+    faturamento_mes_anterior_comparativo: float
+    comissoes_a_pagar_mes_atual: float
+    lucro_mes_atual: float
+    crescimento_percentual: float
 
 class VistoriasChartItem(BaseModel):
     mes_ano: str
@@ -298,11 +305,12 @@ class RelatorioVistoriaItem(BaseModel):
     tipo_vistoria: str
     valor: float
     comissao_vistoriador: float
+    observacao_privada: Optional[str] = None # <-- CAMPO ADICIONADO
 
 class RelatorioImprodutivaItem(BaseModel):
-    data: date
+    data_vistoria_original: date
     cod_imovel: str
-    motivo: str
+    motivo_improdutividade: str
     valor_cobrado: float
     comissao_vistoriador: float
 
@@ -431,7 +439,7 @@ class CleanupPreviewResponse(BaseModel):
 # =================================================================
 
 class ConfiguracaoUpdate(BaseModel):
-    percentual_comissao_improdutiva: float = Field(..., ge=0, le=100)
+    percentual_comissao_improdutiva: float = Field(..., ge=0)
 
 class ConfiguracaoDisplay(BaseModel):
     percentual_comissao_improdutiva: float

@@ -41,16 +41,16 @@ function decodeToken(token) {
 function redirectToDashboard() {
     const userInfo = getUserInfo();
     if (!userInfo) {
-        window.location.href = 'login.html';
+        window.location.href = 'index.html';
         return;
     }
 
     const dashboard = userInfo.dashboard_type;
 
     if (dashboard === 'admin') {
-        window.location.href = 'gestao.html'; // Redirecionamento para o novo dashboard
+        window.location.href = 'gestao.html';
     } else if (dashboard === 'ti') {
-        window.location.href = 'admin-dashboard.html'; // Mantém o dashboard de TI, se houver
+        window.location.href = 'admin-dashboard.html';
     } else if (dashboard === 'imobiliaria') {
         window.location.href = 'imobiliaria-dashboard.html';
     } else { // 'vistoriador'
@@ -60,15 +60,21 @@ function redirectToDashboard() {
 
 function logout() {
     removeLoginData();
-    window.location.href = 'login.html';
+    window.location.href = 'index.html';
 }
 
 function protectPage() {
     if (!isUserLoggedIn()) {
         const currentPage = window.location.pathname.split('/').pop();
-        const publicPages = ['login.html', 'login-ajuda.html'];
+        const publicPages = [
+            'index.html',
+            'login.html',
+            'login-imobiliaria.html',
+            'login-ti.html',
+            'login-ajuda.html'
+        ];
         if (!publicPages.includes(currentPage)) {
-            window.location.href = 'login.html';
+            window.location.href = 'index.html';
         }
     }
 }
@@ -77,6 +83,17 @@ function protectAdminPage() {
     const userInfo = getUserInfo();
     if (!userInfo || userInfo.dashboard_type !== 'admin') {
         alert('Acesso negado. Requer perfil de administrador.');
+        logout();
+    }
+}
+
+/**
+ * NOVA FUNÇÃO: Protege a página de TI, verificando o dashboard_type 'ti'.
+ */
+function protectTiPage() {
+    const userInfo = getUserInfo();
+    if (!userInfo || userInfo.dashboard_type !== 'ti') {
+        alert('Acesso negado. Requer perfil de gestor de TI.');
         logout();
     }
 }

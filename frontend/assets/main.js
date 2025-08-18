@@ -24,6 +24,8 @@ document.addEventListener('DOMContentLoaded', () => {
         setupAjudaPage();
     } else if (currentPage === 'login-ajuda.html') {
         setupLoginAjudaPage();
+    } else if (currentPage === 'relatorios-vistoriador.html') { // NOVA CONDIÇÃO
+        setupRelatoriosVistoriadorPage();
     }
 
     // Adiciona evento de clique para todos os botões de logout
@@ -92,10 +94,8 @@ function setupLoginPage() {
                 throw new Error(data.detail || 'Falha no login.');
             }
             
-            // ATUALIZADO: Salva o token E as informações do usuário
             saveLoginData(data.access_token, data.user_info);
             
-            // Redireciona para o dashboard correto
             redirectToDashboard();
 
         } catch (error) {
@@ -140,9 +140,6 @@ function setupLoginAjudaPage() {
     });
 }
 
-/**
- * Configura a lógica da página da Agenda, incluindo filtros e feedback.
- */
 async function setupAgendaPage() {
     const agendaContainer = document.getElementById('agenda-container');
     const periodFilterContainer = document.getElementById('period-filter-buttons');
@@ -223,7 +220,6 @@ async function setupAgendaPage() {
         });
     }
     
-    // Set initial active buttons
     updateFilterButtons(periodFilterContainer, 'period');
     updateFilterButtons(statusFilterContainer, 'status');
 
@@ -231,9 +227,6 @@ async function setupAgendaPage() {
     await setupFeedbackFeature();
 }
 
-/**
- * Lógica para o sistema de feedback do vistoriador.
- */
 async function setupFeedbackFeature() {
     const reminderToast = document.getElementById('feedback-toast');
     const feedbackModal = document.getElementById('feedback-modal');
@@ -324,7 +317,6 @@ async function setupFeedbackFeature() {
 
             feedbackModal.classList.add('hidden');
             feedbackModal.classList.remove('flex');
-            // You can show a success toast here if you want
             alert('Obrigado pelo seu feedback!');
 
         } catch (error) {
@@ -477,4 +469,161 @@ function setupAjudaPage() {
             formMessageDiv.className = 'block mt-4 text-center p-3 rounded-lg bg-red-900/30 text-red-400 border border-red-700/50';
         }
     });
+}
+
+// NOVA FUNÇÃO PARA A PÁGINA DE RELATÓRIOS DO VISTORIADOR
+async function setupRelatoriosVistoriadorPage() {
+    const reportForm = document.getElementById('report-form');
+    if (!reportForm) return;
+
+    // Define o valor padrão do input de mês para o mês atual
+    const today = new Date();
+    const monthInput = document.getElementById('month-input');
+    monthInput.value = today.toISOString().slice(0, 7);
+
+    reportForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const resultsContainer = document.getElementById('report-results');
+        const monthValue = monthInput.value;
+        const [ano, mes] = monthValue.split('-');
+        const button = e.target.querySelector('button[type="submit"]');
+
+        button.disabled = true;
+        button.textContent = 'Gerando...';
+        resultsContainer.innerHTML = `<div class="text-center p-8 text-gray-400">Buscando dados do relatório...</div>`;
+
+        try {
+            const token = getToken();
+            const response = await fetch(`${API_BASE_URL}/agenda/meu-relatorio?mes=${mes}&ano=${ano}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.detail || 'Falha ao buscar relatório.');
+            }
+
+            const reportData = await response.json();
+            renderVistoriadorReport(resultsContainer, reportData);
+
+        } catch (error) {
+            resultsContainer.innerHTML = `<div class="text-center p-8 text-red-400 bg-red-900/30 rounded-lg">${error.message}</div>`;
+        } finally {
+            button.disabled = false;
+            button.textContent = 'Gerar Relatório';
+        }
+    });
+}
+
+// NOVA FUNÇÃO PARA RENDERIZAR O RELATÓRIO
+function renderVistoriadorReport(container, data) {
+    const formatCurrency = (value) => (value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+    // Helper para formatar o status da mobília
+    const formatMobilia = (status) => {
+        const map = {
+            'sem_mobilia': 'Sem Mobília',
+            'semi_mobiliado': 'Semi Mobiliado',
+            'mobiliado': 'Mobiliado'
+        };
+        return map[status] || status;
+    };
+
+    let vistoriasHtml = '';
+    if (Object.keys(data.vistorias_por_imobiliaria).length > 0) {
+        for (const imobNome in data.vistorias_por_imobiliaria) {
+            const vistorias = data.vistorias_por_imobiliaria[imobNome];
+            vistoriasHtml += `
+                <h4 class="text-lg font-semibold text-cyan-300 mt-6 mb-2">${imobNome}</h4>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm text-left">
+                        <thead class="bg-gray-900/50">
+                            <tr>
+                                <th class="p-2">Data</th>
+                                <th class="p-2">Cód. Imóvel</th>
+                                <th class="p-2">Endereço</th>
+                                <th class="p-2">Tamanho</th>
+                                <th class="p-2">Mobília</th>
+                                <th class="p-2">Tipo</th>
+                                <th class="p-2 text-right">Comissão</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${vistorias.map(v => `
+                                <tr class="border-b border-gray-700/50">
+                                    <td class="p-2 whitespace-nowrap">${new Date(v.data + 'T00:00:00').toLocaleDateString('pt-BR')}</td>
+                                    <td class="p-2">${v.cod_imovel}</td>
+                                    <td class="p-2 truncate max-w-xs" title="${v.endereco}">${v.endereco}</td>
+                                    <td class="p-2 whitespace-nowrap">${v.tamanho} m²</td>
+                                    <td class="p-2">${formatMobilia(v.tipo_mobilia)}</td>
+                                    <td class="p-2">${v.tipo_vistoria}</td>
+                                    <td class="p-2 text-right whitespace-nowrap">${formatCurrency(v.comissao_vistoriador)}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        }
+    } else {
+        vistoriasHtml = '<p class="text-gray-400 mt-4">Nenhuma vistoria normal encontrada para este período.</p>';
+    }
+    
+
+    let improdutivasHtml = '';
+    if (data.improdutivas.length > 0) {
+        improdutivasHtml = `
+            <h4 class="text-lg font-semibold text-red-400 mt-6 mb-2">Vistorias Improdutivas</h4>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm text-left">
+                    <thead class="bg-gray-900/50">
+                        <tr>
+                            <th class="p-2">Data</th>
+                            <th class="p-2">Cód. Imóvel</th>
+                            <th class="p-2">Motivo</th>
+                            <th class="p-2 text-right">Comissão</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${data.improdutivas.map(i => `
+                            <tr class="border-b border-gray-700/50">
+                                <td class="p-2 whitespace-nowrap">${new Date(i.data_vistoria_original + 'T00:00:00').toLocaleDateString('pt-BR')}</td>
+                                <td class="p-2">${i.cod_imovel}</td>
+                                <td class="p-2 truncate max-w-sm" title="${i.motivo_improdutividade}">${i.motivo_improdutividade}</td>
+                                <td class="p-2 text-right whitespace-nowrap">${formatCurrency(i.comissao_vistoriador)}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
+        `;
+    }
+
+    container.innerHTML = `
+        <div class="bg-gray-800/80 p-6 rounded-xl neon-border fade-in">
+            <div class="border-b border-gray-700/50 pb-4 mb-4">
+                <h3 class="text-2xl font-bold text-white">Relatório de Comissão</h3>
+                <p class="text-gray-400">Vistoriador: ${data.vistoriador_nome}</p>
+                <p class="text-gray-400">Período: ${data.periodo}</p>
+            </div>
+            
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-center mb-6">
+                <div class="bg-gray-900/50 p-3 rounded-lg">
+                    <p class="text-sm text-gray-400">Comissão Vistorias</p>
+                    <p class="text-xl font-bold">${formatCurrency(data.total_comissao_vistorias)}</p>
+                </div>
+                <div class="bg-gray-900/50 p-3 rounded-lg">
+                    <p class="text-sm text-gray-400">Comissão Improdutivas</p>
+                    <p class="text-xl font-bold">${formatCurrency(data.total_comissao_improdutivas)}</p>
+                </div>
+                <div class="bg-cyan-900/50 p-3 rounded-lg">
+                    <p class="text-sm text-cyan-300">Total Geral</p>
+                    <p class="text-xl font-bold text-white">${formatCurrency(data.total_geral_comissao)}</p>
+                </div>
+            </div>
+
+            ${vistoriasHtml}
+            ${improdutivasHtml}
+        </div>
+    `;
 }

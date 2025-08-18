@@ -233,5 +233,5 @@ class AppVersion(Base):
 class Configuracao(Base):
     __tablename__ = "configuracoes"
     id = Column(Integer, primary_key=True, default=1)
-    percentual_comissao_improdutiva = Column(Numeric(5, 2), nullable=False, default=50.0)
+    percentual_comissao_improdutiva = Column(Numeric(10, 2), nullable=False, default=30.0)
     updated_at = Column(TIMESTAMP(timezone=True), default=func.now(), onupdate=func.now())

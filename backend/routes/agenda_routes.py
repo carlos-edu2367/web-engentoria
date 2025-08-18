@@ -2,8 +2,10 @@
 
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import extract
 from typing import List, Optional
 from datetime import date, timedelta
+from decimal import Decimal
 
 from .. import models, schemas, auth
 from ..config import get_db
@@ -66,3 +68,78 @@ def read_agenda_do_vistoriador(
     vistorias = query.order_by(models.Agenda.data, models.Agenda.horario).all()
 
     return vistorias
+
+@router.get("/meu-relatorio", response_model=schemas.RelatorioVistoriador, summary="Gerar relatório mensal para o vistoriador logado")
+def get_meu_relatorio_vistoriador(
+    mes: int = Query(..., ge=1, le=12),
+    ano: int = Query(..., ge=2020),
+    db: Session = Depends(get_db),
+    current_user: models.Usuario = Depends(auth.get_current_active_vistoriador)
+):
+    """
+    Gera um relatório de comissões para o vistoriador logado,
+    detalhando as vistorias normais e improdutivas por imobiliária.
+    """
+    # Busca vistorias normais (não-improdutivas) do vistoriador no período
+    vistorias_normais = db.query(models.Agenda).filter(
+        models.Agenda.vistoriador_id == current_user.id,
+        extract('year', models.Agenda.data) == ano,
+        extract('month', models.Agenda.data) == mes,
+        models.Agenda.tipo.in_(['ENTRADA', 'SAIDA', 'CONFERENCIA', 'AVERIGUACAO', 'COMPLEMENTO_VISITA'])
+    ).options(
+        joinedload(models.Agenda.imovel).joinedload(models.Imovel.imobiliaria)
+    ).all()
+
+    # Busca vistorias improdutivas do vistoriador no período
+    improdutivas = db.query(models.VistoriaImprodutiva).join(
+        models.Agenda, models.VistoriaImprodutiva.agenda_id_original == models.Agenda.id
+    ).options(
+        joinedload(models.VistoriaImprodutiva.imovel) # Carrega o imóvel para pegar o cod_imovel
+    ).filter(
+        models.Agenda.vistoriador_id == current_user.id,
+        extract('year', models.VistoriaImprodutiva.data_vistoria_original) == ano,
+        extract('month', models.VistoriaImprodutiva.data_vistoria_original) == mes,
+        models.VistoriaImprodutiva.is_deleted == False
+    ).all()
+
+    vistorias_por_imobiliaria = {}
+    total_comissao_vistorias = Decimal(0)
+    for v in vistorias_normais:
+        if v.imovel and v.imovel.imobiliaria:
+            imob_nome = v.imovel.imobiliaria.nome
+            if imob_nome not in vistorias_por_imobiliaria:
+                vistorias_por_imobiliaria[imob_nome] = []
+            
+            vistorias_por_imobiliaria[imob_nome].append(schemas.RelatorioVistoriaItem(
+                data=v.data,
+                cod_imovel=v.imovel.cod_imovel,
+                endereco=v.imovel.endereco,
+                tamanho=v.imovel.tamanho,
+                tipo_mobilia=v.imovel.mobiliado,
+                tipo_vistoria=v.tipo,
+                valor=v.valor_final_vistoria or 0,
+                comissao_vistoriador=v.valor_vistoriador or 0
+            ))
+            total_comissao_vistorias += v.valor_vistoriador or 0
+
+    improdutivas_formatadas = []
+    total_comissao_improdutivas = Decimal(0)
+    for i in improdutivas:
+        improdutivas_formatadas.append(schemas.RelatorioImprodutivaItem(
+            data_vistoria_original=i.data_vistoria_original,
+            cod_imovel=i.imovel.cod_imovel if i.imovel else "N/A",
+            motivo_improdutividade=i.motivo_improdutividade or "N/A",
+            valor_cobrado=i.valor_cobranca or 0,
+            comissao_vistoriador=i.valor_para_vistoriador or 0
+        ))
+        total_comissao_improdutivas += i.valor_para_vistoriador or 0
+
+    return schemas.RelatorioVistoriador(
+        vistoriador_nome=current_user.nome,
+        periodo=f"{mes:02d}/{ano}",
+        vistorias_por_imobiliaria=vistorias_por_imobiliaria,
+        improdutivas=improdutivas_formatadas,
+        total_comissao_vistorias=total_comissao_vistorias,
+        total_comissao_improdutivas=total_comissao_improdutivas,
+        total_geral_comissao=total_comissao_vistorias + total_comissao_improdutivas
+    )
