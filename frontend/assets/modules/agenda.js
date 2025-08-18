@@ -405,14 +405,44 @@ function handleReagendamentoSelect(targetEvent) {
 
 export async function initAgenda() {
     const pageHTML = `
-        <div class="flex justify-between items-center mb-8">
+        <div class="flex justify-between items-center mb-8 flex-wrap gap-4">
             <h1 class="text-3xl font-bold text-cyan-300">Agenda de Vistorias</h1>
+            <button id="btn-gerar-agenda" class="bg-green-600 hover:bg-green-500 text-white font-bold py-2 px-4 rounded-lg transition flex items-center gap-2">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                Gerar Agenda (4 Semanas)
+            </button>
         </div>
         <div id="calendar-container" class="bg-gray-800/50 rounded-xl neon-border p-4 relative">
             <div id="calendar"></div>
         </div>
     `;
     renderPageContent(pageHTML);
+
+    document.getElementById('btn-gerar-agenda').addEventListener('click', async (e) => {
+        const btn = e.currentTarget;
+        const originalContent = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = `
+            <svg class="animate-spin h-5 w-5 mr-3" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            Gerando...
+        `;
+
+        try {
+            const result = await api.generateAgenda();
+            showAlert(result.message || 'Agenda gerada com sucesso!', 'success');
+            if (calendar) {
+                calendar.refetchEvents();
+            }
+        } catch (error) {
+            showAlert(error.message || 'Erro ao gerar agenda.', 'error');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = originalContent;
+        }
+    });
 
     const calendarEl = document.getElementById('calendar');
     calendar = new FullCalendar.Calendar(calendarEl, {
