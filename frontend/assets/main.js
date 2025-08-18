@@ -4,6 +4,41 @@
 const isLocal = window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost';
 const API_BASE_URL = isLocal ? 'http://127.0.0.1:8000/api/v1' : '/api/v1';
 
+// --- LÓGICA DE RATE LIMIT ---
+const MAX_ATTEMPTS = 5;
+const LOCKOUT_MINUTES = 5;
+const LOGIN_ATTEMPTS_KEY = 'login_attempts';
+
+/**
+ * Obtém as tentativas de login recentes (nos últimos 5 minutos).
+ * @returns {number[]} Um array de timestamps.
+ */
+function getLoginAttempts() {
+    const attempts = JSON.parse(localStorage.getItem(LOGIN_ATTEMPTS_KEY)) || [];
+    const fiveMinutesAgo = Date.now() - LOCKOUT_MINUTES * 60 * 1000;
+    // Filtra para manter apenas as tentativas dentro da janela de tempo.
+    const recentAttempts = attempts.filter(timestamp => timestamp > fiveMinutesAgo);
+    localStorage.setItem(LOGIN_ATTEMPTS_KEY, JSON.stringify(recentAttempts));
+    return recentAttempts;
+}
+
+/**
+ * Adiciona um timestamp da tentativa de login atual.
+ */
+function addLoginAttempt() {
+    const attempts = getLoginAttempts();
+    attempts.push(Date.now());
+    localStorage.setItem(LOGIN_ATTEMPTS_KEY, JSON.stringify(attempts));
+}
+
+/**
+ * Limpa o histórico de tentativas de login.
+ */
+function clearLoginAttempts() {
+    localStorage.removeItem(LOGIN_ATTEMPTS_KEY);
+}
+// --- FIM DA LÓGICA DE RATE LIMIT ---
+
 
 // Objeto para manter o estado atual dos filtros
 let currentFilters = {
@@ -24,7 +59,7 @@ document.addEventListener('DOMContentLoaded', () => {
         setupAjudaPage();
     } else if (currentPage === 'login-ajuda.html') {
         setupLoginAjudaPage();
-    } else if (currentPage === 'relatorios-vistoriador.html') { // NOVA CONDIÇÃO
+    } else if (currentPage === 'relatorios-vistoriador.html') {
         setupRelatoriosVistoriadorPage();
     }
 
@@ -68,6 +103,16 @@ function setupLoginPage() {
 
     loginForm.addEventListener('submit', async (event) => {
         event.preventDefault();
+        
+        // --- VERIFICAÇÃO DE RATE LIMIT ---
+        const recentAttempts = getLoginAttempts();
+        if (recentAttempts.length >= MAX_ATTEMPTS) {
+            errorMessageDiv.textContent = `Demasiadas tentativas. Por favor, aguarde ${LOCKOUT_MINUTES} minutos.`;
+            errorMessageDiv.classList.remove('hidden');
+            return; // Bloqueia a submissão do formulário
+        }
+        // --- FIM DA VERIFICAÇÃO ---
+
         errorMessageDiv.classList.add('hidden');
         loginButton.disabled = true;
         loginButton.innerHTML = `
@@ -96,10 +141,17 @@ function setupLoginPage() {
             
             saveLoginData(data.access_token, data.user_info);
             
+            // Limpa as tentativas em caso de sucesso
+            clearLoginAttempts();
+            
             redirectToDashboard();
 
         } catch (error) {
-            errorMessageDiv.textContent = error.message;
+            // Adiciona uma tentativa em caso de falha
+            addLoginAttempt();
+            const remainingAttempts = MAX_ATTEMPTS - getLoginAttempts().length;
+            
+            errorMessageDiv.textContent = `${error.message} (${remainingAttempts} tentativas restantes.)`;
             errorMessageDiv.classList.remove('hidden');
             loginButton.disabled = false;
             loginButton.innerHTML = `
