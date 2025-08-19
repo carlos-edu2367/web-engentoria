@@ -235,8 +235,8 @@ async function renderHorariosManager(container, vistoriadorId) {
         { value: '6', text: 'Domingo' }
     ];
     
-    const horariosDisponiveis = Array.from({ length: 23 }, (_, i) => `${String(i).padStart(2, '0')}:00`);
-
+    // MODIFICAÇÃO: Removida a lista de horários fixos.
+    
     container.innerHTML = `
         <h4 class="font-bold text-cyan-300 mb-3">Horários Fixos</h4>
         <div id="horarios-fixos-list-${vistoriadorId}" class="space-y-2 mb-4 p-3 bg-gray-800/50 rounded-lg max-h-48 overflow-y-auto">
@@ -244,14 +244,16 @@ async function renderHorariosManager(container, vistoriadorId) {
         </div>
         <form id="form-add-horario-fixo-${vistoriadorId}" class="grid grid-cols-3 gap-2 items-end">
             <select name="dia_semana" class="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white">${diasSemana.map(d => `<option value="${d.value}">${d.text}</option>`).join('')}</select>
-            <select name="horario" class="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white">${horariosDisponiveis.map(h => `<option value="${h}">${h}</option>`).join('')}</select>
+            <!-- MODIFICAÇÃO: Substituído select por input type="time" -->
+            <input type="time" name="horario" required class="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white">
             <button type="submit" class="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white font-bold rounded-lg transition h-full">Adicionar</button>
         </form>
 
         <h4 class="font-bold text-cyan-300 mt-6 mb-3">Adicionar Horário Avulso</h4>
         <form id="form-add-horario-avulso-${vistoriadorId}" class="grid grid-cols-3 gap-2 items-end">
             <input type="date" name="data" required class="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white">
-            <select name="horario" class="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white">${horariosDisponiveis.map(h => `<option value="${h}">${h}</option>`).join('')}</select>
+            <!-- MODIFICAÇÃO: Substituído select por input type="time" -->
+            <input type="time" name="horario" required class="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white">
             <button type="submit" class="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white font-bold rounded-lg transition h-full">Adicionar</button>
         </form>
     `;
