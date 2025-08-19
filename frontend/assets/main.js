@@ -425,34 +425,37 @@ function renderAgenda(vistorias) {
 }
 
 function createVistoriaCard(vistoria) {
-    const { horario, tipo_vistoria, imovel, cliente } = vistoria;
+    // CORREÇÃO: Acessa a propriedade 'tipo' em vez de 'tipo_vistoria'.
+    // O objeto 'cliente' é acessado através de 'vistoria.imovel.cliente'.
+    const { horario, tipo, imovel } = vistoria;
     
     const isBooked = !!imovel;
     const cardBgClass = isBooked ? 'bg-gray-700/40' : 'bg-gray-700/20';
     const borderColorClass = isBooked ? 'border-cyan-500/50' : 'border-gray-600/50';
 
     const subtitleHTML = isBooked 
-        ? `<p class="text-sm text-gray-300">Cód. Imóvel: ${imovel['Código']}</p>`
+        // CORREÇÃO: Usa 'imovel.cod_imovel' em vez de 'imovel['Código']'.
+        ? `<p class="text-sm text-gray-300">Cód. Imóvel: ${imovel.cod_imovel}</p>`
         : `<p class="text-sm text-cyan-400">Horário Livre</p>`;
 
+    // CORREÇÃO: Todo o bloco foi atualizado para usar os nomes corretos das propriedades (snake_case).
     const detalhesImovelHTML = isBooked ? `
         <h4 class="font-semibold text-cyan-300 mt-4 border-t border-gray-600/50 pt-3">Detalhes do Imóvel</h4>
-        <p><strong>Tipo de Vistoria:</strong> ${(tipo_vistoria || 'N/D').replace(/_/g, ' ')}</p>
-        <p><strong>Código:</strong> ${imovel['Código'] || 'N/D'}</p>
-        <p><strong>Endereço:</strong> ${imovel['Endereço'] || 'N/D'}</p>
-        <p><strong>CEP:</strong> ${imovel['CEP'] || 'N/D'}</p>
-        <p><strong>Referência:</strong> ${imovel['Referência'] || 'N/D'}</p>
-        <p><strong>Tamanho:</strong> ${imovel['Tamanho'] ? imovel['Tamanho'] + 'm²' : 'N/D'}</p>
-        <p><strong>Mobília:</strong> ${(imovel['Mobília'] || '').replace(/_/g, ' ')}</p>
+        <p><strong>Tipo de Vistoria:</strong> ${(tipo || 'N/D').replace(/_/g, ' ')}</p>
+        <p><strong>Código:</strong> ${imovel.cod_imovel || 'N/D'}</p>
+        <p><strong>Endereço:</strong> ${imovel.endereco || 'N/D'}</p>
+        <p><strong>CEP:</strong> ${imovel.cep || 'N/D'}</p>
+        <p><strong>Referência:</strong> ${imovel.referencia || 'N/D'}</p>
+        <p><strong>Tamanho:</strong> ${imovel.tamanho ? imovel.tamanho + 'm²' : 'N/D'}</p>
+        <p><strong>Mobília:</strong> ${(imovel.mobiliado || '').replace(/_/g, ' ')}</p>
         <p><strong>Imobiliária:</strong> ${imovel.imobiliaria ? imovel.imobiliaria.nome : 'N/D'}</p>
     ` : '';
 
-    const detalhesClienteHTML = cliente ? `
+    // CORREÇÃO: Verifica a existência de 'imovel.cliente' e acessa suas propriedades.
+    const detalhesClienteHTML = (imovel && imovel.cliente) ? `
         <h4 class="font-semibold text-cyan-300 mt-4 border-t border-gray-600/50 pt-3">Detalhes do Cliente</h4>
-        <p><strong>Nome:</strong> ${cliente.nome || 'N/D'}</p>
-        <p><strong>Email:</strong> ${cliente.email || 'N/D'}</p>
-        <p><strong>Telefone 1:</strong> ${cliente['Telefone 1'] || 'N/D'}</p>
-        <p><strong>Telefone 2:</strong> ${cliente['Telefone 2'] || 'N/D'}</p>
+        <p><strong>Nome:</strong> ${imovel.cliente.nome || 'N/D'}</p>
+        <p><strong>Email:</strong> ${imovel.cliente.email || 'N/D'}</p>
     ` : '';
 
     return `
