@@ -14,34 +14,41 @@ let reagendamentoState = { active: false, event: null }; // Controla o modo de r
  */
 function renderEventContent(eventInfo) {
     const props = eventInfo.event.extendedProps;
-    let iconClass, title, subtitle;
+    let iconHtml, title, subtitle, textColorClass;
+
+    const isListView = eventInfo.view.type.includes('list');
 
     if (props.tipo === 'LIVRE') {
-        iconClass = 'bg-green-400';
-        title = eventInfo.timeText;
-        subtitle = props.vistoriador.nome.split(' ')[0];
+        textColorClass = 'text-green-400';
+        iconHtml = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>`;
+        title = isListView ? 'Horário Livre' : eventInfo.timeText;
+        subtitle = props.vistoriador?.nome.split(' ')[0] || 'Vistoriador';
     } else if (props.tipo === 'FECHADO') {
-        iconClass = 'bg-yellow-500';
-        title = eventInfo.timeText;
-        subtitle = 'Fechado';
-    } else {
-        iconClass = 'bg-gray-500';
-        title = eventInfo.timeText;
-        subtitle = props.imovel ? `CT ${props.imovel.cod_imovel}` : 'Ocupado';
+        textColorClass = 'text-yellow-400';
+        iconHtml = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>`;
+        title = isListView ? 'Horário Fechado' : eventInfo.timeText;
+        subtitle = props.motivo_fechamento || 'Fechado';
+    } else { // Ocupado
+        textColorClass = 'text-cyan-400';
+        iconHtml = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"></path></svg>`;
+        title = isListView ? `CT ${props.imovel?.cod_imovel || 'Vistoria'}` : eventInfo.timeText;
+        // REVERTIDO: O subtítulo agora mostra apenas o código do imóvel, como solicitado.
+        subtitle = props.imovel ? `CT ${props.imovel?.cod_imovel}` : 'Ocupado';
     }
 
     return {
         html: `
-            <div class="fc-event-main-frame flex items-center gap-2 overflow-hidden">
-                <div class="w-2 h-2 rounded-full flex-shrink-0 ${iconClass}"></div>
-                <div class="fc-event-title-container flex-grow">
-                    <div class="fc-event-title font-bold">${title}</div>
+            <div class="fc-event-main-frame w-full h-full flex items-start gap-2 overflow-hidden p-1">
+                <div class="flex-shrink-0 mt-0.5 ${textColorClass}">${iconHtml}</div>
+                <div class="flex-grow min-w-0">
+                    <div class="fc-event-title font-semibold text-white">${title}</div>
                     <div class="text-xs text-gray-400 truncate">${sanitizeHTML(subtitle)}</div>
                 </div>
             </div>
         `
     };
 }
+
 
 /**
  * Lida com o clique em um evento do calendário.
@@ -60,7 +67,7 @@ function handleEventClick(clickInfo) {
         const modalHTML = `
             <h3 class="text-xl font-bold text-white mb-4">Ação para Horário Livre</h3>
             <p class="text-gray-400 mb-6">
-                Vistoriador: ${sanitizeHTML(props.vistoriador.nome)}<br>
+                Vistoriador: ${sanitizeHTML(props.vistoriador?.nome || 'N/A')}<br>
                 Data: ${event.start.toLocaleDateString('pt-BR')} às ${event.start.toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'})}
             </p>
             <div class="flex justify-center gap-4">
@@ -121,7 +128,7 @@ function renderVistoriaDetailsModal(event) {
             <h3 class="text-2xl font-bold text-cyan-300 mb-4">Detalhes da Vistoria</h3>
             <div class="space-y-3 text-gray-300">
                 <p><strong>Cód. Imóvel:</strong> ${sanitizeHTML(imovel.cod_imovel || 'N/A')}</p>
-                <p><strong>Vistoriador:</strong> ${sanitizeHTML(props.vistoriador.nome)}</p>
+                <p><strong>Vistoriador:</strong> ${sanitizeHTML(props.vistoriador?.nome || 'N/A')}</p>
                 <p><strong>Cliente:</strong> ${sanitizeHTML(cliente.nome || 'N/A')}</p>
                 <p><strong>Imobiliária:</strong> ${sanitizeHTML(imobiliaria.nome || 'N/A')}</p>
                 <p><strong>Endereço:</strong> ${sanitizeHTML(imovel.endereco || 'N/A')}</p>
@@ -358,7 +365,7 @@ function enterReagendamentoMode(event) {
     banner.id = 'reagendamento-banner';
     banner.className = 'bg-purple-600 text-white text-center p-2 font-bold sticky top-0 z-30';
     banner.innerHTML = `
-        Reagendando vistoria de ${sanitizeHTML(event.extendedProps.imovel.cod_imovel)}. 
+        Reagendando vistoria de ${sanitizeHTML(event.extendedProps.imovel?.cod_imovel || 'Vistoria')}. 
         Selecione um novo horário ou <button id="cancel-reagendamento" class="underline hover:text-purple-200">cancele</button>.
     `;
     document.getElementById('calendar-container').prepend(banner);
@@ -383,7 +390,7 @@ function handleReagendamentoSelect(targetEvent) {
     const modalHTML = `
         <h3 class="text-xl font-bold text-white mb-4">Confirmar Reagendamento</h3>
         <p class="text-gray-300 mb-2"><strong>De:</strong> ${originalEvent.start.toLocaleString('pt-BR')}</p>
-        <p class="text-gray-300 mb-6"><strong>Para:</strong> ${targetEvent.start.toLocaleString('pt-BR')} com ${sanitizeHTML(targetEvent.extendedProps.vistoriador.nome)}</p>
+        <p class="text-gray-300 mb-6"><strong>Para:</strong> ${targetEvent.start.toLocaleString('pt-BR')} com ${sanitizeHTML(targetEvent.extendedProps.vistoriador?.nome || 'N/A')}</p>
         <div class="flex justify-end gap-4">
             <button id="btn-cancel" class="px-4 py-2 bg-gray-600 hover:bg-gray-500 rounded-lg transition">Cancelar</button>
             <button id="btn-confirm" class="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-lg transition">Confirmar</button>
@@ -446,13 +453,37 @@ export async function initAgenda() {
 
     const calendarEl = document.getElementById('calendar');
     calendar = new FullCalendar.Calendar(calendarEl, {
-        initialView: 'dayGridMonth',
-        locale: 'pt-br',
         headerToolbar: {
             left: 'prev,next today',
             center: 'title',
-            right: 'dayGridMonth,timeGridWeek,timeGridDay'
+            right: 'dayGridMonth,timeGridWeek,timeGridDay,listWeek'
         },
+        initialView: 'dayGridMonth',
+        locale: 'pt-br',
+        buttonText: {
+            today: 'Hoje',
+            month: 'Mês',
+            week: 'Semana',
+            day: 'Dia',
+            list: 'Lista'
+        },
+        // MODIFICAÇÃO: Adiciona formato customizado para o cabeçalho da lista
+        listDayFormat: (info) => {
+            const date = info.date.marker;
+            const weekday = new Intl.DateTimeFormat('pt-BR', { weekday: 'long' }).format(date);
+            const capitalizedWeekday = weekday.charAt(0).toUpperCase() + weekday.slice(1);
+            
+            const day = String(date.getDate()).padStart(2, '0');
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const year = date.getFullYear();
+
+            return `${capitalizedWeekday} (${day}/${month}/${year})`;
+        },
+        slotDuration: '00:15:00',
+        slotLabelInterval: '01:00:00',
+        slotMinTime: '07:00:00',
+        slotMaxTime: '20:00:00',
+        expandRows: true,
         events: async (fetchInfo, successCallback, failureCallback) => {
             try {
                 const start = fetchInfo.startStr.split('T')[0];
@@ -472,19 +503,75 @@ export async function initAgenda() {
         eventContent: renderEventContent,
         eventClick: handleEventClick,
         eventClassNames: (arg) => {
+            let classes = [];
+            const props = arg.event.extendedProps;
+
             if (reagendamentoState.active) {
-                return arg.event.extendedProps.tipo === 'LIVRE' ? 'event-reagendamento-disponivel' : 'event-reagendamento-indisponivel';
+                classes.push(props.tipo === 'LIVRE' ? 'event-reagendamento-disponivel' : 'event-reagendamento-indisponivel');
             }
-            return '';
+
+            switch(props.tipo) {
+                case 'LIVRE':
+                    classes.push('event-livre');
+                    break;
+                case 'FECHADO':
+                    classes.push('event-fechado');
+                    break;
+                default: // Ocupado
+                    classes.push('event-ocupado');
+                    break;
+            }
+            return classes.join(' ');
         }
     });
 
-    // Adiciona estilos para o modo de reagendamento
     const style = document.createElement('style');
     style.innerHTML = `
         .event-reagendamento-disponivel { cursor: pointer; background-color: #a78bfa !important; border-color: #8b5cf6 !important; }
         .event-reagendamento-indisponivel { opacity: 0.3; filter: grayscale(1); }
         .action-btn { padding: 0.5rem 1rem; color: white; font-weight: bold; border-radius: 0.5rem; transition: background-color 0.2s; }
+        
+        /* Novo Design dos Eventos */
+        .fc-event {
+            border-width: 1px !important;
+            border-left-width: 4px !important;
+            padding: 0 !important; /* Reset padding to allow internal control */
+            border-radius: 4px;
+        }
+        .event-livre {
+            background-color: rgba(16, 185, 129, 0.1) !important;
+            border-color: #10B981 !important;
+        }
+        .event-fechado {
+            background-color: rgba(245, 158, 11, 0.1) !important;
+            border-color: #F59E0B !important;
+        }
+        .event-ocupado {
+            background-color: rgba(6, 182, 212, 0.1) !important;
+            border-color: #06B6D4 !important;
+        }
+        .fc-daygrid-event-dot {
+            display: none; /* Oculta o ponto padrão na visualização de mês */
+        }
+        .fc-event-main {
+            padding: 2px;
+        }
+
+        /* MODIFICAÇÃO: Estilos para a Visualização em Lista */
+        .fc .fc-list-day-cushion {
+            background-color: #374151; /* Cor de fundo mais escura e sólida */
+            padding: 8px 14px;
+        }
+        .fc .fc-list-day-text, .fc .fc-list-day-side-text {
+            color: #e5e7eb;
+            font-weight: 600;
+        }
+        .fc .fc-list-event:hover td {
+            background-color: rgba(6, 182, 212, 0.2) !important;
+        }
+        .fc .fc-list-table {
+            border-bottom: none;
+        }
     `;
     document.head.appendChild(style);
 
