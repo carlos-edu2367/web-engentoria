@@ -82,7 +82,12 @@ export const api = {
     addHorarioAvulso: (data) => apiFetch('/horarios-avulsos/', 'POST', data),
 
     // Clientes
-    getClientes: () => apiFetch('/clientes/'),
+    getClientes: (searchTerm = '') => {
+        const endpoint = searchTerm 
+            ? `/clientes/?search=${encodeURIComponent(searchTerm)}` 
+            : '/clientes/';
+        return apiFetch(endpoint);
+    },
     createCliente: (data) => apiFetch('/clientes/', 'POST', data),
     updateCliente: (id, data) => apiFetch(`/clientes/${id}`, 'PUT', data),
     deleteCliente: (id) => apiFetch(`/clientes/${id}`, 'DELETE'),
@@ -94,7 +99,7 @@ export const api = {
 
     // Agenda
     getAgendaEvents: (start, end) => apiFetch(`/agenda/all?start=${start}&end=${end}`),
-    generateAgenda: () => apiFetch('/agenda/gerar', 'POST'), // <-- NOVA FUNÇÃO ADICIONADA
+    generateAgenda: () => apiFetch('/agenda/gerar', 'POST'),
     scheduleVistoria: (data) => apiFetch('/agenda/agendar', 'POST', data),
     updateVistoria: (id, data) => apiFetch(`/agenda/${id}`, 'PUT', data),
     cancelarVistoria: (id) => apiFetch(`/agenda/${id}/cancelar`, 'PUT'),

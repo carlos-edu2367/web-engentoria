@@ -2,12 +2,13 @@
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import and_, extract, func
+from sqlalchemy import and_, extract, func, or_
 from typing import List, Dict
 from uuid import UUID
 from datetime import date, timedelta, datetime
 from decimal import Decimal
 from dateutil.relativedelta import relativedelta
+from typing import Optional
 
 
 from .. import models, schemas, auth
@@ -341,8 +342,27 @@ def create_cliente(cliente: schemas.ClienteCreate, db: Session = Depends(get_db)
     return db_cliente
 
 @router.get("/clientes/", response_model=List[schemas.ClienteDisplay], summary="Listar todos os clientes")
-def read_clientes(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    clientes = db.query(models.Cliente).filter(models.Cliente.is_deleted == False).order_by(models.Cliente.nome).offset(skip).limit(limit).all()
+def read_clientes(
+    search: Optional[str] = None, 
+    skip: int = 0, 
+    limit: int = 10, # Reduzir o limite padrão para buscas é uma boa prática
+    db: Session = Depends(get_db)
+):
+    """
+    Lista os clientes com suporte a busca por nome ou e-mail e paginação.
+    """
+    query = db.query(models.Cliente).filter(models.Cliente.is_deleted == False)
+
+    if search:
+        search_term = f"%{search}%"
+        query = query.filter(
+            or_(
+                models.Cliente.nome.ilike(search_term),
+                models.Cliente.email.ilike(search_term)
+            )
+        )
+
+    clientes = query.order_by(models.Cliente.nome).offset(skip).limit(limit).all()
     return clientes
 
 @router.put("/clientes/{cliente_id}", response_model=schemas.ClienteDisplay, summary="Atualizar um cliente")

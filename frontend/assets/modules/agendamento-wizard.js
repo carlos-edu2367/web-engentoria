@@ -7,9 +7,26 @@ let wizardState = {};
 let calendarRef = null;
 let cache = {
     imobiliarias: null,
-    clientes: null,
     imoveis: {} // Cache de imóveis por imobiliária
 };
+
+/**
+ * Atraso na execução de uma função para evitar chamadas excessivas.
+ * Usado na barra de busca para não chamar a API a cada tecla digitada.
+ * @param {Function} func A função a ser executada.
+ * @param {number} [delay=400] O tempo de espera em milissegundos.
+ * @returns {Function}
+ */
+function debounce(func, delay = 400) {
+    let timeout;
+    return (...args) => {
+        clearTimeout(timeout);
+        timeout = setTimeout(() => {
+            func.apply(this, args);
+        }, delay);
+    };
+}
+
 
 // --- Funções de Renderização dos Passos ---
 
@@ -69,23 +86,15 @@ async function renderStep1() {
 }
 
 async function renderStep2() {
-    if (!cache.clientes) {
-        cache.clientes = await api.getClientes();
-    }
-     const wizardHTML = `
+    const wizardHTML = `
         <div id="wizard-content">
             <h3 class="text-xl font-bold text-white mb-4">Passo 2 de 4: Selecione o Cliente</h3>
             <div class="flex gap-2 mb-3">
-                <input type="text" id="search-cliente" class="w-full bg-gray-700 rounded p-2" placeholder="Pesquisar cliente...">
+                <input type="text" id="search-cliente" class="w-full bg-gray-700 rounded p-2" placeholder="Digite para pesquisar por nome ou e-mail...">
                 <button id="add-new-cliente" class="p-2 bg-green-600 hover:bg-green-500 rounded-lg">Novo</button>
             </div>
             <ul id="cliente-list" class="max-h-64 overflow-y-auto space-y-2">
-                ${cache.clientes.map(c => `
-                    <li class="p-3 rounded-lg hover:bg-cyan-800/50 cursor-pointer" data-id="${c.id}">
-                        <p class="font-bold">${sanitizeHTML(c.nome)}</p>
-                        <p class="text-sm text-gray-400">${sanitizeHTML(c.email)}</p>
-                    </li>
-                `).join('')}
+                <li class="p-3 text-center text-gray-400">Comece a digitar para buscar um cliente.</li>
             </ul>
         </div>
         <div class="flex justify-between mt-6">
@@ -99,24 +108,50 @@ async function renderStep2() {
     document.getElementById('cancel-wizard').onclick = hideModal;
     document.getElementById('add-new-cliente').onclick = renderNewClienteForm;
 
-    const list = document.getElementById('cliente-list');
-    list.onclick = (e) => {
+    const searchInput = document.getElementById('search-cliente');
+    const clienteList = document.getElementById('cliente-list');
+
+    const performSearch = async (term) => {
+        if (term.length < 2) {
+            clienteList.innerHTML = '<li class="p-3 text-center text-gray-400">Digite pelo menos 2 caracteres.</li>';
+            return;
+        }
+        clienteList.innerHTML = '<li class="p-3 text-center text-gray-400">Buscando...</li>';
+
+        try {
+            const clientes = await api.getClientes(term);
+            if (clientes.length === 0) {
+                clienteList.innerHTML = '<li class="p-3 text-center text-gray-400">Nenhum cliente encontrado.</li>';
+            } else {
+                clienteList.innerHTML = clientes.map(c => `
+                    <li class="p-3 rounded-lg hover:bg-cyan-800/50 cursor-pointer" data-id="${c.id}">
+                        <p class="font-bold">${sanitizeHTML(c.nome)}</p>
+                        <p class="text-sm text-gray-400">${sanitizeHTML(c.email)}</p>
+                    </li>
+                `).join('');
+            }
+        } catch (error) {
+            clienteList.innerHTML = '<li class="p-3 text-center text-red-400">Erro ao buscar clientes.</li>';
+            console.error("Search error:", error);
+        }
+    };
+    
+    // Usamos o debounce para evitar uma chamada de API a cada tecla pressionada
+    searchInput.addEventListener('keyup', debounce((e) => {
+        performSearch(e.target.value.trim());
+    }));
+
+    clienteList.onclick = (e) => {
         const li = e.target.closest('li');
-        if (li) {
+        if (li && li.dataset.id) { // Garante que não é um item de "carregando"
             wizardState.cliente_id = li.dataset.id;
             wizardState.cliente_nome = li.querySelector('p').textContent.trim();
             wizardState.step = 3;
             renderWizard();
         }
     };
-    
-    document.getElementById('search-cliente').onkeyup = (e) => {
-        const searchTerm = e.target.value.toLowerCase();
-        list.querySelectorAll('li').forEach(li => {
-            li.style.display = li.textContent.toLowerCase().includes(searchTerm) ? '' : 'none';
-        });
-    };
 }
+
 
 async function renderStep3() {
     if (!cache.imoveis[wizardState.imobiliaria_id]) {
@@ -263,7 +298,7 @@ function renderNewClienteForm() {
         try {
             const novoCliente = await api.createCliente(data);
             showAlert('Cliente criado com sucesso!');
-            cache.clientes = null; // Invalida o cache para buscar a lista atualizada
+            // Não precisa invalidar cache, pois a busca é dinâmica
             wizardState.cliente_id = novoCliente.id;
             wizardState.cliente_nome = novoCliente.nome;
             wizardState.step = 3;
@@ -321,7 +356,6 @@ function renderNewImovelForm() {
             const novoImovel = await api.createImovel(data);
             showAlert('Imóvel criado com sucesso!');
             
-            // CORREÇÃO: Adiciona o novo imóvel ao cache em vez de invalidá-lo
             if (cache.imoveis[wizardState.imobiliaria_id]) {
                 cache.imoveis[wizardState.imobiliaria_id].push(novoImovel);
             } else {

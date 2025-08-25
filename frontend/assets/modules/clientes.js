@@ -3,7 +3,22 @@
 import { api } from '../api.js';
 import { showModal, hideModal, showAlert, renderPageContent, sanitizeHTML } from '../ui.js';
 
-let clientesCache = null;
+/**
+ * Atraso na execução de uma função para evitar chamadas excessivas.
+ * Usado na barra de busca para não chamar a API a cada tecla digitada.
+ * @param {Function} func A função a ser executada.
+ * @param {number} [delay=400] O tempo de espera em milissegundos.
+ * @returns {Function}
+ */
+function debounce(func, delay = 400) {
+    let timeout;
+    return (...args) => {
+        clearTimeout(timeout);
+        timeout = setTimeout(() => {
+            func.apply(this, args);
+        }, delay);
+    };
+}
 
 /**
  * Renderiza o formulário para criar ou editar um cliente.
@@ -79,7 +94,9 @@ async function handleFormSubmit(event) {
             showAlert('Cliente cadastrado com sucesso!');
         }
         hideModal();
-        await refreshClientesList();
+        // Atualiza a lista para refletir as mudanças
+        const currentSearch = document.getElementById('search-cliente-input')?.value || '';
+        await refreshClientesList(currentSearch);
     } catch (error) {
         showAlert(error.message || 'Não foi possível salvar o cliente.', 'error');
     }
@@ -107,7 +124,8 @@ function renderConfirmDeleteModal(id, nome) {
             await api.deleteCliente(id);
             showAlert('Cliente excluído com sucesso!');
             hideModal();
-            await refreshClientesList();
+            const currentSearch = document.getElementById('search-cliente-input')?.value || '';
+            await refreshClientesList(currentSearch);
         } catch (error) {
             showAlert(error.message || 'Não foi possível excluir o cliente.', 'error');
         }
@@ -133,7 +151,7 @@ function renderClientesTable(clientes) {
             <td class="p-4">${sanitizeHTML(cliente.email)}</td>
             <td class="p-4">${sanitizeHTML(cliente.telefone1) || '---'}</td>
             <td class="p-4 text-right">
-                <button class="edit-btn p-2 text-cyan-400 hover:text-cyan-300" data-id="${cliente.id}">
+                <button class="edit-btn p-2 text-cyan-400 hover:text-cyan-300" data-cliente='${JSON.stringify(cliente)}'>
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.5L15.232 5.232z"></path></svg>
                 </button>
                 <button class="delete-btn p-2 text-red-500 hover:text-red-400" data-id="${cliente.id}" data-nome="${sanitizeHTML(cliente.nome)}">
@@ -145,33 +163,39 @@ function renderClientesTable(clientes) {
 }
 
 /**
- * Busca os dados da API e renderiza a tabela.
+ * Busca os dados da API com base no termo de busca e renderiza a tabela.
+ * @param {string} [searchTerm=''] - O termo para buscar.
  */
-async function refreshClientesList() {
+async function refreshClientesList(searchTerm = '') {
+    const tableBody = document.getElementById('clientes-table-body');
+    if(tableBody) {
+        tableBody.innerHTML = '<tr><td colspan="4" class="text-center py-8 text-gray-500">Buscando...</td></tr>';
+    }
+
     try {
-        const clientes = await api.getClientes();
-        clientesCache = clientes;
+        const clientes = await api.getClientes(searchTerm);
         renderClientesTable(clientes);
     } catch (error) {
         showAlert('Não foi possível carregar a lista de clientes.', 'error');
+        if(tableBody) {
+            tableBody.innerHTML = '<tr><td colspan="4" class="text-center py-8 text-red-400">Erro ao carregar dados.</td></tr>';
+        }
     }
 }
 
 /**
- * Lida com cliques nos botões de ação.
+ * Lida com cliques nos botões de ação (Editar, Excluir).
  * @param {Event} event
  */
 function handleActions(event) {
     const target = event.target.closest('button');
     if (!target) return;
 
-    const id = target.dataset.id;
     if (target.classList.contains('edit-btn')) {
-        const clienteToEdit = clientesCache.find(c => c.id === id);
-        if (clienteToEdit) {
-            renderClienteForm(clienteToEdit);
-        }
+        const clienteData = JSON.parse(target.dataset.cliente);
+        renderClienteForm(clienteData);
     } else if (target.classList.contains('delete-btn')) {
+        const id = target.dataset.id;
         const nome = target.dataset.nome;
         renderConfirmDeleteModal(id, nome);
     }
@@ -182,12 +206,15 @@ function handleActions(event) {
  */
 export async function initClientes() {
     const pageHTML = `
-        <div class="flex justify-between items-center mb-8">
+        <div class="flex justify-between items-center mb-8 flex-wrap gap-4">
             <h1 class="text-3xl font-bold text-cyan-300">Gestão de Clientes</h1>
-            <button id="add-cliente-btn" class="bg-cyan-500 hover:bg-cyan-400 text-black font-bold py-2 px-4 rounded-lg transition flex items-center gap-2">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
-                Cadastrar Novo
-            </button>
+            <div class="flex items-center gap-4">
+                <input type="text" id="search-cliente-input" class="bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-cyan-400 focus:border-cyan-400" placeholder="Buscar por nome ou e-mail...">
+                <button id="add-cliente-btn" class="bg-cyan-500 hover:bg-cyan-400 text-black font-bold py-2 px-4 rounded-lg transition flex items-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
+                    Cadastrar Novo
+                </button>
+            </div>
         </div>
         <div class="bg-gray-800/50 rounded-xl neon-border overflow-hidden">
             <table class="w-full text-left">
@@ -209,6 +236,12 @@ export async function initClientes() {
 
     document.getElementById('add-cliente-btn').addEventListener('click', () => renderClienteForm());
     document.getElementById('page-content').addEventListener('click', handleActions);
+    
+    const searchInput = document.getElementById('search-cliente-input');
+    searchInput.addEventListener('keyup', debounce((e) => {
+        refreshClientesList(e.target.value.trim());
+    }));
 
+    // Carga inicial dos primeiros clientes
     await refreshClientesList();
 }
