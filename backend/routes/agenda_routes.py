@@ -49,7 +49,6 @@ def read_agenda_do_vistoriador(
 
     # Aplico os filtros de PERÍODO
     today = date.today()
-
     if periodo == "hoje":
         query = query.filter(models.Agenda.data == today)
 
@@ -78,8 +77,9 @@ def read_agenda_do_vistoriador(
         # Domingo da semana passada
         end_of_last_week = start_of_last_week + timedelta(days=6)
         query = query.filter(models.Agenda.data.between(start_of_last_week, end_of_last_week))
-        # Ordeno os resultados por data e horário.
-        vistorias = query.order_by(models.Agenda.data, models.Agenda.horario).all()
+    
+    # Ordeno os resultados por data e horário.
+    vistorias = query.order_by(models.Agenda.data, models.Agenda.horario).all()
 
     return vistorias
 
