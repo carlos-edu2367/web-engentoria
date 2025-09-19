@@ -205,7 +205,7 @@ class AgendaDisplay(AgendaBase):
     observacao_privada: Optional[str] = None
     valor_final_vistoria: Optional[float] = 0
     valor_vistoriador: Optional[float] = 0
-    vistoriador: UsuarioDisplay
+    vistoriador: UsuarioDisplay | None
     imovel: Optional[ImovelDisplay] = None
 
     class Config:
