@@ -6,6 +6,7 @@ from sqlalchemy import extract
 from typing import List, Optional
 from datetime import date, timedelta
 from decimal import Decimal
+from calendar import monthrange
 
 from .. import models, schemas, auth
 from ..config import get_db
@@ -48,24 +49,37 @@ def read_agenda_do_vistoriador(
 
     # Aplico os filtros de PERÍODO
     today = date.today()
+
     if periodo == "hoje":
         query = query.filter(models.Agenda.data == today)
+
     elif periodo == "amanha":
         tomorrow = today + timedelta(days=1)
         query = query.filter(models.Agenda.data == tomorrow)
+
     elif periodo == "semana":
-        end_of_week = today + timedelta(days=7)
-        query = query.filter(models.Agenda.data.between(today, end_of_week))
+        # Segunda-feira da semana atual
+        start_of_week = today - timedelta(days=today.weekday())
+        # Domingo da semana atual
+        end_of_week = start_of_week + timedelta(days=6)
+        query = query.filter(models.Agenda.data.between(start_of_week, end_of_week))
+
     elif periodo == "mes":
-        end_of_month = today + timedelta(days=30)
-        query = query.filter(models.Agenda.data.between(today, end_of_month))
+        # Primeiro dia do mês atual
+        start_of_month = today.replace(day=1)
+        # Último dia do mês atual
+        last_day = monthrange(today.year, today.month)[1]
+        end_of_month = today.replace(day=last_day)
+        query = query.filter(models.Agenda.data.between(start_of_month, end_of_month))
+
     elif periodo == "semana_passada":
+        # Segunda-feira da semana passada
         start_of_last_week = today - timedelta(days=today.weekday() + 7)
+        # Domingo da semana passada
         end_of_last_week = start_of_last_week + timedelta(days=6)
         query = query.filter(models.Agenda.data.between(start_of_last_week, end_of_last_week))
-    
-    # Ordeno os resultados por data e horário.
-    vistorias = query.order_by(models.Agenda.data, models.Agenda.horario).all()
+        # Ordeno os resultados por data e horário.
+        vistorias = query.order_by(models.Agenda.data, models.Agenda.horario).all()
 
     return vistorias
 
