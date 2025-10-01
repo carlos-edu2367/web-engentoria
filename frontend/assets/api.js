@@ -3,31 +3,24 @@
 const API_BASE_URL_ADMIN = window.APP_CONFIG.API_BASE_URL_ADMIN;
 
 /**
- * Função principal para realizar chamadas à API.
- * Abstrai a lógica de autenticação e tratamento de erros.
- * @param {string} endpoint O endpoint da API a ser chamado.
- * @param {string} method O método HTTP (GET, POST, PUT, DELETE).
- * @param {object} [body=null] O corpo da requisição para POST/PUT.
+ * Função principal para realizar chamadas à API que retornam JSON.
+ * @param {string} endpoint O endpoint da API.
+ * @param {string} method O método HTTP.
+ * @param {object} [body=null] O corpo da requisição.
  * @returns {Promise<any>} A resposta da API em JSON.
  */
 async function apiFetch(endpoint, method = 'GET', body = null) {
     const token = getToken();
     if (!token) {
         logout();
-        return;
+        throw new Error("Token de autenticação não encontrado.");
     }
 
-    const headers = new Headers({
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-    });
-
-    const config = {
-        method,
-        headers,
-    };
+    const headers = new Headers({ 'Authorization': `Bearer ${token}` });
+    const config = { method, headers };
 
     if (body) {
+        headers.append('Content-Type', 'application/json');
         config.body = JSON.stringify(body);
     }
 
@@ -35,26 +28,81 @@ async function apiFetch(endpoint, method = 'GET', body = null) {
         const response = await fetch(`${API_BASE_URL_ADMIN}${endpoint}`, config);
 
         if (response.status === 401 || response.status === 403) {
-            console.error('Acesso não autorizado. Fazendo logout...');
             logout();
-            return;
+            throw new Error("Acesso não autorizado.");
         }
 
+        const responseBody = await response.text();
+
         if (!response.ok) {
-            const errorData = await response.json().catch(() => ({ detail: `Erro HTTP: ${response.status}` }));
-            throw new Error(errorData.detail || 'Ocorreu um erro na comunicação com o servidor.');
+            try {
+                const errorData = JSON.parse(responseBody);
+                throw new Error(errorData.detail || `Erro HTTP: ${response.status}`);
+            } catch (e) {
+                throw new Error(responseBody || `Erro HTTP: ${response.status}`);
+            }
         }
         
-        if (response.status === 204) {
+        if (response.status === 204 || !responseBody) {
             return { success: true };
         }
 
-        return await response.json();
+        return JSON.parse(responseBody);
     } catch (error) {
         console.error(`Erro na chamada da API para ${endpoint}:`, error);
         throw error;
     }
 }
+
+/**
+ * Função especializada para fazer download de arquivos da API.
+ * @param {URLSearchParams} params - Os parâmetros de query para a URL.
+ * @returns {Promise<void>}
+ */
+async function downloadApiFile(endpoint, params) {
+    const token = getToken();
+    if (!token) {
+        logout();
+        throw new Error("Token de autenticação não encontrado.");
+    }
+    const url = `${API_BASE_URL_ADMIN}${endpoint}?${params.toString()}`;
+
+    try {
+        const response = await fetch(url, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.detail || `Falha ao iniciar o download (Status: ${response.status})`);
+        }
+
+        const blob = await response.blob();
+        const contentDisposition = response.headers.get('content-disposition');
+        let filename = 'relatorio.xlsx'; // fallback
+        if (contentDisposition) {
+            const match = contentDisposition.match(/filename="?([^"]+)"?/);
+            if (match && match[1]) {
+                filename = match[1];
+            }
+        }
+        
+        const downloadUrl = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.style.display = 'none';
+        a.href = downloadUrl;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(downloadUrl);
+        a.remove();
+
+    } catch (error) {
+        console.error(`Erro no download do arquivo de ${endpoint}:`, error);
+        throw error;
+    }
+}
+
 
 export const api = {
     // Dashboard
@@ -99,7 +147,7 @@ export const api = {
 
     // Agenda
     getAgendaEvents: (start, end) => apiFetch(`/agenda/all?start=${start}&end=${end}`),
-    generateAgenda: () => apiFetch('/agenda/gerar', 'POST'),
+    generateAgenda: () => apiFetch('/agenda/gerar?semanas=4', 'POST'), 
     scheduleVistoria: (data) => apiFetch('/agenda/agendar', 'POST', data),
     updateVistoria: (id, data) => apiFetch(`/agenda/${id}`, 'PUT', data),
     cancelarVistoria: (id) => apiFetch(`/agenda/${id}/cancelar`, 'PUT'),
@@ -108,10 +156,14 @@ export const api = {
     fecharHorario: (id, motivo) => apiFetch(`/agenda/${id}/fechar`, 'PUT', { motivo }),
 
     // Relatórios
-    getRelatorioImobiliaria: (imobiliariaId, mes, ano) => apiFetch(`/relatorios/imobiliaria/${imobiliariaId}?mes=${mes}&ano=${ano}`),
-    getRelatorioVistoriador: (vistoriadorId, mes, ano) => apiFetch(`/relatorios/vistoriador/${vistoriadorId}?mes=${mes}&ano=${ano}`),
+    // INÍCIO DA MODIFICAÇÃO: Corrigido o endpoint para visualização de relatórios.
+    getRelatorioImobiliaria: (imobiliariaId, mes, ano) => apiFetch(`/imobiliarias/${imobiliariaId}/relatorio?mes=${mes}&ano=${ano}`),
+    getRelatorioVistoriador: (vistoriadorId, mes, ano) => apiFetch(`/vistoriadores/${vistoriadorId}/relatorio?mes=${mes}&ano=${ano}`),
+    // FIM DA MODIFICAÇÃO
+    downloadRelatorio: (params) => downloadApiFile('/relatorios/download', params),
 
     // Configurações
     getConfig: () => apiFetch('/configuracoes/'),
     updateConfig: (data) => apiFetch('/configuracoes/', 'PUT', data),
 };
+

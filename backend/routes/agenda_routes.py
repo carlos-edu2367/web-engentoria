@@ -18,7 +18,7 @@ router = APIRouter(
     dependencies=[Depends(auth.get_current_active_vistoriador)]
 )
 
-@router.get("/", response_model=List[schemas.AgendaDisplay])
+@router.get("/", response_model=List[schemas.AgendaVistoriadorDisplay]) # <-- ALTERADO para o novo schema
 def read_agenda_do_vistoriador(
     periodo: Optional[str] = Query("hoje", description="Filtre por 'hoje', 'amanha', 'semana', 'mes' ou 'semana_passada'"),
     status_filtro: Optional[str] = Query(None, description="Filtre por 'agendados' ou 'livres'"),
@@ -132,7 +132,8 @@ def get_meu_relatorio_vistoriador(
                 tipo_mobilia=v.imovel.mobiliado,
                 tipo_vistoria=v.tipo,
                 valor=v.valor_final_vistoria or 0,
-                comissao_vistoriador=v.valor_vistoriador or 0
+                comissao_vistoriador=v.valor_vistoriador or 0,
+                observacao_vistoriador=v.observacao_vistoriador
             ))
             total_comissao_vistorias += v.valor_vistoriador or 0
 

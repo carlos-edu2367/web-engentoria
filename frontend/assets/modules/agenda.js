@@ -126,7 +126,7 @@ function renderVistoriaDetailsModal(event) {
     const detailsHTML = `
         <div class="p-2">
             <h3 class="text-2xl font-bold text-cyan-300 mb-4">Detalhes da Vistoria</h3>
-            <div class="space-y-3 text-gray-300">
+            <div class="space-y-3 text-gray-300 mb-4">
                 <p><strong>Cód. Imóvel:</strong> ${sanitizeHTML(imovel.cod_imovel || 'N/A')}</p>
                 <p><strong>Vistoriador:</strong> ${sanitizeHTML(props.vistoriador?.nome || 'N/A')}</p>
                 <p><strong>Cliente:</strong> ${sanitizeHTML(cliente.nome || 'N/A')}</p>
@@ -134,8 +134,21 @@ function renderVistoriaDetailsModal(event) {
                 <p><strong>Endereço:</strong> ${sanitizeHTML(imovel.endereco || 'N/A')}</p>
                 <p><strong>Valor Vistoria:</strong> R$ ${props.valor_final_vistoria?.toFixed(2) || '0.00'}</p>
                 <p><strong>Valor Vistoriador:</strong> R$ ${props.valor_vistoriador?.toFixed(2) || '0.00'}</p>
-                <p><strong>Obs. Privada:</strong> ${sanitizeHTML(props.observacao_privada || 'Nenhuma')}</p>
             </div>
+
+            <!-- INÍCIO DA MODIFICAÇÃO: Seção de Observações -->
+            <div class="border-t border-gray-700 mt-4 pt-4 space-y-3">
+                 <div>
+                    <h4 class="font-semibold text-amber-300 text-sm">Observação para Vistoriador:</h4>
+                    <p class="text-gray-300 whitespace-pre-wrap pl-2 border-l-2 border-amber-300/50 mt-1">${sanitizeHTML(props.observacao_vistoriador || 'Nenhuma')}</p>
+                </div>
+                 <div>
+                    <h4 class="font-semibold text-gray-400 text-sm">Observação Privada (Admin):</h4>
+                    <p class="text-gray-300 whitespace-pre-wrap pl-2 border-l-2 border-gray-400/50 mt-1">${sanitizeHTML(props.observacao_privada || 'Nenhuma')}</p>
+                </div>
+            </div>
+            <!-- FIM DA MODIFICAÇÃO -->
+
             <div id="vistoria-actions" class="border-t border-gray-700 mt-6 pt-6 flex flex-wrap justify-center gap-3">
                 <button data-action="edit" class="action-btn bg-blue-600 hover:bg-blue-500">Editar</button>
                 <button data-action="reschedule" class="action-btn bg-purple-600 hover:bg-purple-500">Reagendar</button>
@@ -158,6 +171,7 @@ function renderVistoriaDetailsModal(event) {
         }
     });
 }
+
 
 function handleCancelarAgendamento(event) {
     const modalHTML = `
@@ -291,6 +305,12 @@ function handleEditarVistoria(event) {
                         <input type="number" step="0.01" id="valor_vistoriador" class="w-full bg-gray-700 rounded px-3 py-2 mt-1" placeholder="Automático" value="${props.valor_vistoriador || ''}">
                     </div>
                 </div>
+                <!-- INÍCIO DA MODIFICAÇÃO: Adicionado campo de observação para o vistoriador -->
+                 <div class="mt-4">
+                    <label for="observacao_vistoriador" class="block text-sm">Observação para Vistoriador</label>
+                    <textarea id="observacao_vistoriador" rows="2" class="w-full bg-gray-700 rounded px-3 py-2 mt-1">${props.observacao_vistoriador || ''}</textarea>
+                </div>
+                <!-- FIM DA MODIFICAÇÃO -->
                  <div class="mt-4">
                     <label for="observacao_privada" class="block text-sm">Observação Privada</label>
                     <textarea id="observacao_privada" rows="2" class="w-full bg-gray-700 rounded px-3 py-2 mt-1">${props.observacao_privada || ''}</textarea>
@@ -329,6 +349,7 @@ function handleEditarVistoria(event) {
 
     document.getElementById('form-edit-vistoria').onsubmit = async (e) => {
         e.preventDefault();
+        // INÍCIO DA MODIFICAÇÃO: Captura o valor da nova observação
         const data = {
             // Dados do imóvel
             cod_imovel: document.getElementById('cod_imovel').value,
@@ -338,7 +359,9 @@ function handleEditarVistoria(event) {
             // Dados da vistoria
             tipo_vistoria: document.getElementById('tipo_vistoria').value,
             observacao_privada: document.getElementById('observacao_privada').value,
+            observacao_vistoriador: document.getElementById('observacao_vistoriador').value
         };
+        // FIM DA MODIFICAÇÃO
 
         if (!recalcularCheckbox.checked) {
             data.valor_final_vistoria = parseFloat(valorVistoriaInput.value) || null;
@@ -577,3 +600,4 @@ export async function initAgenda() {
 
     calendar.render();
 }
+

@@ -145,6 +145,7 @@ class ImovelDisplay(ImovelBase):
 
 class HorarioFixoCreate(BaseModel):
     vistoriador_id: UUID
+    # O dia da semana deve ser uma string de "0" (Segunda) a "6" (Domingo).
     dia_semana: str
     horario: str
 
@@ -171,7 +172,8 @@ class AgendaCreate(BaseModel):
     imovel_id: UUID
     imobiliaria_id: UUID
     tipo: TipoVistoriaEnum # Validação com Enum
-    force_single_slot: Optional[bool] = False # Para forçar agendamento em horário único
+    observacao_vistoriador: Optional[str] = None # <-- NOVO CAMPO
+    force_single_slot: Optional[bool] = False
 
 class AgendaUpdate(BaseModel):
     cod_imovel: Optional[str] = None
@@ -184,6 +186,7 @@ class AgendaUpdate(BaseModel):
     valor_final_vistoria: Optional[float] = None
     valor_vistoriador: Optional[float] = None
     observacao_privada: Optional[str] = None
+    observacao_vistoriador: Optional[str] = None # <-- NOVO CAMPO
 
 class AgendaObservacaoUpdate(BaseModel):
     observacao_privada: str
@@ -198,11 +201,27 @@ class AgendaReagendar(BaseModel):
 class AgendaFecharHorario(BaseModel):
     motivo: str
 
+# Schema de exibição para Administradores (contém todos os campos)
 class AgendaDisplay(AgendaBase):
     id: UUID
     disponivel: bool
     tipo: Optional[str] = None
     observacao_privada: Optional[str] = None
+    observacao_vistoriador: Optional[str] = None
+    valor_final_vistoria: Optional[float] = 0
+    valor_vistoriador: Optional[float] = 0
+    vistoriador: UsuarioDisplay | None
+    imovel: Optional[ImovelDisplay] = None
+
+    class Config:
+        from_attributes = True
+
+# NOVO: Schema específico para a visão do Vistoriador (sem o campo privado)
+class AgendaVistoriadorDisplay(AgendaBase):
+    id: UUID
+    disponivel: bool
+    tipo: Optional[str] = None
+    observacao_vistoriador: Optional[str] = None
     valor_final_vistoria: Optional[float] = 0
     valor_vistoriador: Optional[float] = 0
     vistoriador: UsuarioDisplay | None
@@ -305,7 +324,8 @@ class RelatorioVistoriaItem(BaseModel):
     tipo_vistoria: str
     valor: float
     comissao_vistoriador: float
-    observacao_privada: Optional[str] = None # <-- CAMPO ADICIONADO
+    observacao_privada: Optional[str] = None
+    observacao_vistoriador: Optional[str] = None # <-- NOVO CAMPO
 
 class RelatorioImprodutivaItem(BaseModel):
     data_vistoria_original: date
@@ -331,6 +351,22 @@ class RelatorioVistoriador(BaseModel):
     total_comissao_vistorias: float
     total_comissao_improdutivas: float
     total_geral_comissao: float
+    
+class RelatorioGeralItem(BaseModel):
+    imobiliaria_nome: str
+    total_vistorias: int
+    total_improdutivas: int
+    valor_total_vistorias: float
+    valor_total_improdutivas: float
+
+class RelatorioGeral(BaseModel):
+    periodo: str
+    data: List[RelatorioGeralItem]
+    total_geral_vistorias: int
+    total_geral_improdutivas: int
+    valor_final_vistorias: float
+    valor_final_improdutivas: float
+    faturamento_total: float
 
 # =================================================================
 # --- Schemas de Suporte e TI ---
@@ -446,3 +482,4 @@ class ConfiguracaoDisplay(BaseModel):
 
     class Config:
         from_attributes = True
+

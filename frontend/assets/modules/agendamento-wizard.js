@@ -237,6 +237,12 @@ async function renderStep4() {
                     <option value="COMPLEMENTO_VISITA">Complemento/Visita</option>
                 </select>
             </div>
+            <!-- INÍCIO DA MODIFICAÇÃO: Adicionado campo de observação -->
+            <div class="mt-4">
+                <label for="observacao_vistoriador" class="block text-sm">Observação para Vistoriador (Opcional)</label>
+                <textarea id="observacao_vistoriador" class="w-full bg-gray-700 rounded px-3 py-2 mt-1 h-24" placeholder="Ex: Chave na portaria com Sr. João..."></textarea>
+            </div>
+            <!-- FIM DA MODIFICAÇÃO -->
         </div>
         <div class="flex justify-between mt-6">
             <button id="back-wizard" class="px-4 py-2 bg-gray-600 hover:bg-gray-500 rounded-lg transition">Voltar</button>
@@ -247,13 +253,17 @@ async function renderStep4() {
     
     document.getElementById('back-wizard').onclick = () => { wizardState.step = 3; renderWizard(); };
     document.getElementById('confirm-agendamento').onclick = async () => {
+        // INÍCIO DA MODIFICAÇÃO: Captura o valor da observação
+        const observacao = document.getElementById('observacao_vistoriador').value;
         const data = {
             horario_id: wizardState.horario_id,
             imovel_id: wizardState.imovel_id,
             imobiliaria_id: wizardState.imobiliaria_id,
             tipo: document.getElementById('tipo_vistoria').value,
-            force_single_slot: document.getElementById('force-single')?.checked || false
+            force_single_slot: document.getElementById('force-single')?.checked || false,
+            observacao_vistoriador: observacao // Adiciona ao payload
         };
+        // FIM DA MODIFICAÇÃO
         try {
             await api.scheduleVistoria(data);
             showAlert('Vistoria agendada com sucesso!');

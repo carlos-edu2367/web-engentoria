@@ -1,17 +1,31 @@
 # backend/routes/admin_panel_routes.py
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import and_, extract, func, or_
-from typing import List, Dict
+from typing import List, Dict, Union
 from uuid import UUID
 from datetime import date, timedelta, datetime
 from decimal import Decimal
 from dateutil.relativedelta import relativedelta
 from typing import Optional
+import io
 
 
 from .. import models, schemas, auth
+
+# Imports para geração de relatórios
+import openpyxl
+from openpyxl.styles import Font, PatternFill, Alignment
+from openpyxl.utils import get_column_letter
+from openpyxl.workbook import Workbook
+
+from reportlab.lib.pagesizes import letter, landscape
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib import colors
+
 
 # Importa a função para obter a sessão do banco e a função de hash de senha
 from ..config import get_db
@@ -488,23 +502,57 @@ def add_horario_avulso(horario: schemas.HorarioAvulsoCreate, db: Session = Depen
     db.refresh(db_agenda)
     return db_agenda
 
-@router.post("/agenda/gerar", summary="Gerar agenda com base nos horários fixos")
+@router.post("/agenda/gerar", summary="CORRIGIDO: Gerar agenda com base nos horários fixos")
 def generate_agenda(semanas: int = 4, db: Session = Depends(get_db)):
+    """
+    Gera horários livres na agenda para as próximas semanas com base nos horários
+    de trabalho fixos cadastrados para cada vistoriador.
+    CORREÇÃO: Adicionado tratamento de erro e lógica de comparação de dias ajustada.
+    """
     today = date.today()
     horarios_fixos = db.query(models.HorarioFixo).filter(models.HorarioFixo.is_deleted == False).all()
+    if not horarios_fixos:
+        return {"message": "Nenhum horário de trabalho fixo cadastrado. Nenhum horário foi gerado."}
+
     novos_agendamentos = 0
-    for i in range(7 * semanas):
-        current_date = today + timedelta(days=i)
-        dia_semana_str = str(current_date.weekday())
-        for hf in horarios_fixos:
-            if hf.dia_semana == dia_semana_str:
-                existe = db.query(models.Agenda).filter(and_(models.Agenda.vistoriador_id == hf.vistoriador_id, models.Agenda.data == current_date, models.Agenda.horario == hf.horario)).first()
-                if not existe:
-                    novo_agendamento = models.Agenda(vistoriador_id=hf.vistoriador_id, data=current_date, horario=hf.horario, disponivel=True, tipo="LIVRE")
-                    db.add(novo_agendamento)
-                    novos_agendamentos += 1
-    db.commit()
-    return {"message": f"Geração de agenda concluída. {novos_agendamentos} novos horários disponíveis foram criados."}
+    try:
+        for i in range(7 * semanas):
+            current_date = today + timedelta(days=i)
+            # weekday() retorna 0 para Segunda e 6 para Domingo. Convertemos para string.
+            dia_semana_str = str(current_date.weekday())
+            
+            for hf in horarios_fixos:
+                if hf.dia_semana == dia_semana_str:
+                    existe = db.query(models.Agenda).filter(
+                        models.Agenda.vistoriador_id == hf.vistoriador_id,
+                        models.Agenda.data == current_date,
+                        models.Agenda.horario == hf.horario
+                    ).first()
+                    
+                    if not existe:
+                        novo_agendamento = models.Agenda(
+                            vistoriador_id=hf.vistoriador_id,
+                            data=current_date,
+                            horario=hf.horario,
+                            disponivel=True,
+                            tipo="LIVRE"
+                        )
+                        db.add(novo_agendamento)
+                        novos_agendamentos += 1
+        
+        if novos_agendamentos > 0:
+            db.commit()
+            return {"message": f"Geração de agenda concluída. {novos_agendamentos} novos horários disponíveis foram criados."}
+        else:
+            return {"message": "Geração de agenda concluída. Nenhum novo horário precisou ser criado (possivelmente já existem)."}
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Ocorreu um erro ao gerar a agenda: {str(e)}"
+        )
+
 
 # =================================================================
 # --- Gestão de Vistorias ---
@@ -537,7 +585,6 @@ def schedule_vistoria(agendamento: schemas.AgendaCreate, db: Session = Depends(g
     if necessita_horario_duplo and not agendamento.force_single_slot:
         try:
             horario_principal_dt = datetime.strptime(db_agenda_1.horario, '%H:%M')
-            periodo_principal = 'manha' if horario_principal_dt.hour < 12 else 'tarde'
         except ValueError:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Formato de horário inválido no banco de dados.")
 
@@ -553,18 +600,6 @@ def schedule_vistoria(agendamento: schemas.AgendaCreate, db: Session = Depends(g
                 status_code=status.HTTP_409_CONFLICT, 
                 detail="Este imóvel necessita de 2 horários, mas não há um segundo slot disponível no mesmo dia."
             )
-
-        try:
-            horario_secundario_dt = datetime.strptime(db_agenda_2.horario, '%H:%M')
-            periodo_secundario = 'manha' if horario_secundario_dt.hour < 12 else 'tarde'
-        except ValueError:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Formato de horário inválido para o slot consecutivo.")
-
-        if periodo_principal != periodo_secundario:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT, 
-                detail="Este imóvel necessita de 2 horários, mas o próximo slot livre não está no mesmo período (manhã/tarde)."
-            )
             
         db_agenda_2.imovel_id = agendamento.imovel_id
         db_agenda_2.tipo = agendamento.tipo.value
@@ -572,18 +607,14 @@ def schedule_vistoria(agendamento: schemas.AgendaCreate, db: Session = Depends(g
         db_agenda_2.valor_final_vistoria = 0
         db_agenda_2.valor_vistoriador = 0
 
-        db_agenda_1.imovel_id = agendamento.imovel_id
-        db_agenda_1.tipo = agendamento.tipo.value
-        db_agenda_1.disponivel = False
-        db_agenda_1.valor_final_vistoria = valor_final if valor_final is not None else 0
-        db_agenda_1.valor_vistoriador = valor_comissao if valor_comissao is not None else 0
-
-    else:
-        db_agenda_1.imovel_id = agendamento.imovel_id
-        db_agenda_1.tipo = agendamento.tipo.value
-        db_agenda_1.disponivel = False
-        db_agenda_1.valor_final_vistoria = valor_final if valor_final is not None else 0
-        db_agenda_1.valor_vistoriador = valor_comissao if valor_comissao is not None else 0
+    # Atualiza o horário principal (ou único)
+    db_agenda_1.imovel_id = agendamento.imovel_id
+    db_agenda_1.tipo = agendamento.tipo.value
+    db_agenda_1.disponivel = False
+    db_agenda_1.valor_final_vistoria = valor_final if valor_final is not None else 0
+    db_agenda_1.valor_vistoriador = valor_comissao if valor_comissao is not None else 0
+    # ADICIONADO: Salva a observação para o vistoriador
+    db_agenda_1.observacao_vistoriador = agendamento.observacao_vistoriador
 
     db.commit()
     db.refresh(db_agenda_1)
@@ -633,6 +664,10 @@ def update_vistoria(
 
     if "observacao_privada" in update_payload:
         db_agenda.observacao_privada = update_payload["observacao_privada"]
+    
+    # ADICIONADO: Atualiza a observação para o vistoriador
+    if "observacao_vistoriador" in update_payload:
+        db_agenda.observacao_vistoriador = update_payload["observacao_vistoriador"]
 
     db.commit()
     db.refresh(db_agenda)
@@ -686,6 +721,7 @@ def mark_vistoria_improdutiva(
     db_agenda.valor_final_vistoria = None
     db_agenda.valor_vistoriador = None
     db_agenda.observacao_privada = None
+    db_agenda.observacao_vistoriador = None
 
     try:
         db.commit()
@@ -711,6 +747,7 @@ def cancelar_vistoria(
     db_agenda.valor_final_vistoria = None
     db_agenda.valor_vistoriador = None
     db_agenda.observacao_privada = None
+    db_agenda.observacao_vistoriador = None
 
     db.commit()
     db.refresh(db_agenda)
@@ -731,6 +768,7 @@ def reagendar_vistoria(agenda_id: UUID, reagendamento: schemas.AgendaReagendar, 
     db_agenda_destino.imovel_id = db_agenda_origem.imovel_id
     db_agenda_destino.tipo = db_agenda_origem.tipo
     db_agenda_destino.observacao_privada = db_agenda_origem.observacao_privada
+    db_agenda_destino.observacao_vistoriador = db_agenda_origem.observacao_vistoriador
     db_agenda_destino.valor_final_vistoria = db_agenda_origem.valor_final_vistoria
     db_agenda_destino.valor_vistoriador = db_agenda_origem.valor_vistoriador
     db_agenda_destino.disponivel = False
@@ -739,6 +777,7 @@ def reagendar_vistoria(agenda_id: UUID, reagendamento: schemas.AgendaReagendar, 
     db_agenda_origem.tipo = "LIVRE"
     db_agenda_origem.disponivel = True
     db_agenda_origem.observacao_privada = None
+    db_agenda_origem.observacao_vistoriador = None
     db_agenda_origem.valor_final_vistoria = None
     db_agenda_origem.valor_vistoriador = None
 
@@ -758,7 +797,7 @@ def fechar_horario(
         models.Agenda.tipo == 'LIVRE'
     ).first()
     if not db_agenda:
-        raise HTTPException(status_code=404, detail="Horário não está livre ou não foi encontrado.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Horário não está livre ou não foi encontrado.")
 
     db_agenda.tipo = "FECHADO"
     db_agenda.disponivel = False
@@ -798,24 +837,19 @@ def update_configuracoes(config_update: schemas.ConfiguracaoUpdate, db: Session 
 # --- Geração de Relatórios ---
 # =================================================================
 
-@router.get("/relatorios/imobiliaria/{imobiliaria_id}", response_model=schemas.RelatorioImobiliaria, summary="Gerar relatório mensal por imobiliária")
-def get_relatorio_imobiliaria(imobiliaria_id: UUID, mes: int = Query(..., ge=1, le=12), ano: int = Query(..., ge=2020), db: Session = Depends(get_db)):
+def _get_relatorio_imobiliaria_data(imobiliaria_id: UUID, mes: int, ano: int, db: Session) -> schemas.RelatorioImobiliaria:
     db_imobiliaria = db.query(models.Imobiliaria).filter(models.Imobiliaria.id == imobiliaria_id).first()
     if not db_imobiliaria:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Imobiliária não encontrada.")
 
-    # Busca vistorias normais da tabela 'agenda'
     vistorias_normais = db.query(models.Agenda).options(joinedload(models.Agenda.imovel)).join(models.Imovel).filter(
         models.Imovel.imobiliaria_id == imobiliaria_id,
         extract('year', models.Agenda.data) == ano,
         extract('month', models.Agenda.data) == mes,
         models.Agenda.tipo.in_(['ENTRADA', 'SAIDA', 'CONFERENCIA', 'AVERIGUACAO', 'COMPLEMENTO_VISITA'])
     ).all()
-
-    # CORREÇÃO: Busca vistorias improdutivas da tabela 'vistorias_improdutivas'
-    improdutivas = db.query(models.VistoriaImprodutiva).options(
-        joinedload(models.VistoriaImprodutiva.imovel)
-    ).filter(
+    
+    improdutivas = db.query(models.VistoriaImprodutiva).options(joinedload(models.VistoriaImprodutiva.imovel)).filter(
         models.VistoriaImprodutiva.imobiliaria_id == imobiliaria_id,
         extract('year', models.VistoriaImprodutiva.data_vistoria_original) == ano,
         extract('month', models.VistoriaImprodutiva.data_vistoria_original) == mes,
@@ -827,16 +861,14 @@ def get_relatorio_imobiliaria(imobiliaria_id: UUID, mes: int = Query(..., ge=1, 
             data=v.data,
             cod_imovel=v.imovel.cod_imovel,
             endereco=v.imovel.endereco,
-            tamanho=v.imovel.tamanho,
+            tamanho=float(v.imovel.tamanho),
             tipo_mobilia=v.imovel.mobiliado,
             tipo_vistoria=v.tipo,
-            valor=v.valor_final_vistoria or 0,
-            comissao_vistoriador=v.valor_vistoriador or 0,
-            observacao_privada=v.observacao_privada # <-- CAMPO ADICIONADO
+            valor=float(v.valor_final_vistoria or 0),
+            comissao_vistoriador=float(v.valor_vistoriador or 0),
+            observacao_privada=v.observacao_privada
         ) for v in vistorias_normais if v.imovel
     ]
-
-    # CORREÇÃO: Formata os dados da tabela correta, usando os campos corretos
     improdutivas_formatadas = [
         schemas.RelatorioImprodutivaItem(
             data_vistoria_original=i.data_vistoria_original,
@@ -860,13 +892,11 @@ def get_relatorio_imobiliaria(imobiliaria_id: UUID, mes: int = Query(..., ge=1, 
         total_geral=total_vistorias + total_improdutivas
     )
 
-@router.get("/relatorios/vistoriador/{vistoriador_id}", response_model=schemas.RelatorioVistoriador, summary="Gerar relatório mensal por vistoriador")
-def get_relatorio_vistoriador(vistoriador_id: UUID, mes: int = Query(..., ge=1, le=12), ano: int = Query(..., ge=2020), db: Session = Depends(get_db)):
+def _get_relatorio_vistoriador_data(vistoriador_id: UUID, mes: int, ano: int, db: Session) -> schemas.RelatorioVistoriador:
     db_vistoriador = db.query(models.Usuario).filter(models.Usuario.id == vistoriador_id).first()
     if not db_vistoriador:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vistoriador não encontrado.")
 
-    # CORREÇÃO: Busca vistorias normais separadamente
     vistorias_normais = db.query(models.Agenda).filter(
         models.Agenda.vistoriador_id == vistoriador_id,
         extract('year', models.Agenda.data) == ano,
@@ -874,12 +904,9 @@ def get_relatorio_vistoriador(vistoriador_id: UUID, mes: int = Query(..., ge=1, 
         models.Agenda.tipo.in_(['ENTRADA', 'SAIDA', 'CONFERENCIA', 'AVERIGUACAO', 'COMPLEMENTO_VISITA'])
     ).options(joinedload(models.Agenda.imovel).joinedload(models.Imovel.imobiliaria)).all()
 
-    # CORREÇÃO: Busca vistorias improdutivas da tabela correta, fazendo join com agenda para filtrar pelo vistoriador
     improdutivas = db.query(models.VistoriaImprodutiva).join(
         models.Agenda, models.VistoriaImprodutiva.agenda_id_original == models.Agenda.id
-    ).options(
-        joinedload(models.VistoriaImprodutiva.imovel).joinedload(models.Imovel.imobiliaria)
-    ).filter(
+    ).options(joinedload(models.VistoriaImprodutiva.imovel)).filter(
         models.Agenda.vistoriador_id == vistoriador_id,
         extract('year', models.VistoriaImprodutiva.data_vistoria_original) == ano,
         extract('month', models.VistoriaImprodutiva.data_vistoria_original) == mes,
@@ -898,26 +925,25 @@ def get_relatorio_vistoriador(vistoriador_id: UUID, mes: int = Query(..., ge=1, 
                 data=v.data,
                 cod_imovel=v.imovel.cod_imovel,
                 endereco=v.imovel.endereco,
-                tamanho=v.imovel.tamanho,
+                tamanho=float(v.imovel.tamanho),
                 tipo_mobilia=v.imovel.mobiliado,
                 tipo_vistoria=v.tipo,
-                valor=v.valor_final_vistoria or 0,
-                comissao_vistoriador=v.valor_vistoriador or 0,
-                observacao_privada=v.observacao_privada # <-- CAMPO ADICIONADO
+                valor=float(v.valor_final_vistoria or 0),
+                comissao_vistoriador=float(v.valor_vistoriador or 0),
+                observacao_privada=v.observacao_privada,
             ))
             total_comissao_vistorias += v.valor_vistoriador or 0
 
-    improdutivas_formatadas = []
-    total_comissao_improdutivas = Decimal(0)
-    for i in improdutivas:
-        improdutivas_formatadas.append(schemas.RelatorioImprodutivaItem(
+    improdutivas_formatadas = [
+        schemas.RelatorioImprodutivaItem(
             data_vistoria_original=i.data_vistoria_original,
             cod_imovel=i.imovel.cod_imovel if i.imovel else "N/A",
             motivo_improdutividade=i.motivo_improdutividade or "N/A",
             valor_cobrado=i.valor_cobranca or 0,
             comissao_vistoriador=i.valor_para_vistoriador or 0
-        ))
-        total_comissao_improdutivas += i.valor_para_vistoriador or 0
+        ) for i in improdutivas
+    ]
+    total_comissao_improdutivas = sum(i.comissao_vistoriador for i in improdutivas_formatadas)
 
     return schemas.RelatorioVistoriador(
         vistoriador_nome=db_vistoriador.nome,
@@ -926,5 +952,268 @@ def get_relatorio_vistoriador(vistoriador_id: UUID, mes: int = Query(..., ge=1, 
         improdutivas=improdutivas_formatadas,
         total_comissao_vistorias=total_comissao_vistorias,
         total_comissao_improdutivas=total_comissao_improdutivas,
-        total_geral_comissao=total_comissao_vistorias + total_comissao_improdutivas
+        total_geral_comissao=total_comissao_vistorias + Decimal(total_comissao_improdutivas)
     )
+
+def _get_relatorio_geral_data(mes: int, ano: int, db: Session) -> List[schemas.RelatorioImobiliaria]:
+    """
+    NOVA VERSÃO: Retorna uma lista de relatórios detalhados, um para cada imobiliária.
+    """
+    imobiliarias = db.query(models.Imobiliaria).filter(models.Imobiliaria.is_deleted == False).order_by(models.Imobiliaria.nome).all()
+    
+    relatorios_detalhados = []
+    for imob in imobiliarias:
+        # Reutiliza a função que já busca dados detalhados por imobiliária
+        report_data = _get_relatorio_imobiliaria_data(imob.id, mes, ano, db)
+        relatorios_detalhados.append(report_data)
+        
+    return relatorios_detalhados
+
+# --- Funções Auxiliares para Geração de Arquivos ---
+def _create_excel_report(data_sections: Dict[str, List[Dict]], file_title: str, value_column_name: str):
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Relatorio"
+
+    titulo_font = Font(bold=True, color="FFFFFF", size=14)
+    titulo_fill = PatternFill("solid", fgColor="003366")
+    header_font = Font(bold=True, color="FFFFFF")
+    header_fill = PatternFill("solid", fgColor="4F81BD")
+    total_font = Font(bold=True)
+    total_geral_font = Font(bold=True, size=12)
+    alignment_style = Alignment(horizontal='center', vertical='center', wrap_text=True)
+    currency_format = 'R$ #,##0.00'
+
+    width_map = {
+        "Cód. Imóvel": 15, "Data": 15, "Área(m2)": 15, "Valor": 15, "Comissão Vistoriador": 20,
+        "Tipo de Mobília": 20, "Tipo Vistoria": 20,
+        "Endereço": 40, "Observação Privada": 40, "Motivo": 40,
+        "Imobiliária": 30, "Vistorias (Qtd)": 15, "Improdutivas (Qtd)": 15,
+        "Valor Vistorias": 18, "Valor Improdutivas": 18, "Valor Total": 18
+    }
+
+    current_row = 1
+    total_geral = 0.0
+
+    # Main Title (Optional, can be added)
+    # ws.cell(row=current_row, column=1, value=file_title) ...
+    # current_row += 2
+
+    for titulo, data_list in data_sections.items():
+        if not data_list:
+            continue
+
+        headers = list(data_list[0].keys())
+        num_cols = len(headers)
+
+        # Section Title
+        ws.merge_cells(start_row=current_row, start_column=1, end_row=current_row, end_column=num_cols)
+        cell_titulo = ws.cell(row=current_row, column=1, value=titulo)
+        cell_titulo.font = titulo_font
+        cell_titulo.fill = titulo_fill
+        cell_titulo.alignment = Alignment(horizontal='center', vertical='center')
+        current_row += 2
+
+        # Headers
+        for c_idx, col_name in enumerate(headers, 1):
+            cell = ws.cell(row=current_row, column=c_idx, value=col_name)
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = alignment_style
+            col_letter = get_column_letter(c_idx)
+            ws.column_dimensions[col_letter].width = width_map.get(col_name, 25) # default width
+        current_row += 1
+
+        # Data Rows
+        section_total = 0.0
+        for row_dict in data_list:
+            # Need to ensure the order is correct
+            row_values = [row_dict.get(h) for h in headers]
+            ws.append(row_values)
+            
+            # Formatting and summing
+            for c_idx, col_name in enumerate(headers, 1):
+                cell = ws.cell(row=current_row, column=c_idx)
+                cell.alignment = alignment_style
+
+                # This is the crucial part for summing
+                if col_name == value_column_name:
+                    value = row_dict.get(col_name)
+                    if isinstance(value, (int, float, Decimal)):
+                        cell.number_format = currency_format
+                        section_total += float(value)
+                
+                if isinstance(cell.value, (datetime, date)):
+                    cell.number_format = 'DD/MM/YYYY'
+
+            current_row += 1
+
+        total_geral += section_total
+
+        # Section Total
+        label_col_idx = max(1, num_cols - 1)
+        value_col_idx = num_cols
+        
+        total_label_cell = ws.cell(row=current_row, column=label_col_idx, value="Total da Categoria:")
+        total_label_cell.font = total_font
+        total_value_cell = ws.cell(row=current_row, column=value_col_idx, value=section_total)
+        total_value_cell.font = total_font
+        total_value_cell.number_format = currency_format
+        current_row += 3
+
+    # Grand Total
+    # The condition `len(data_sections) > 1` is good
+    if total_geral > 0 and len(data_sections) > 1:
+        max_cols = max((len(list(d[0].keys())) for d in data_sections.values() if d), default=1)
+        label_col_geral = max(1, max_cols - 1)
+        value_col_geral = max_cols
+        
+        ws.cell(row=current_row, column=label_col_geral, value="VALOR TOTAL GERAL:").font = total_geral_font
+        total_cell = ws.cell(row=current_row, column=value_col_geral, value=total_geral)
+        total_cell.font = total_geral_font
+        total_cell.number_format = currency_format
+
+    virtual_workbook = io.BytesIO()
+    wb.save(virtual_workbook)
+    virtual_workbook.seek(0)
+    return virtual_workbook
+
+
+def _create_pdf_report(report_data: Union[schemas.RelatorioImobiliaria, schemas.RelatorioVistoriador, schemas.RelatorioGeral]):
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=landscape(letter))
+    elements = []
+    styles = getSampleStyleSheet()
+    
+    if isinstance(report_data, schemas.RelatorioGeral):
+        elements.append(Paragraph(f"Relatório Geral de Faturamento - {report_data.periodo}", styles['h1']))
+        elements.append(Spacer(1, 12))
+        data = [["Imobiliária", "Vistorias", "Improdutivas", "Valor Vistorias", "Valor Improdutivas"]]
+        for item in report_data.data:
+            data.append([item.imobiliaria_nome, item.total_vistorias, item.total_improdutivas, f"R$ {item.valor_total_vistorias:.2f}", f"R$ {item.valor_total_improdutivas:.2f}"])
+        data.append(["TOTAIS", report_data.total_geral_vistorias, report_data.total_geral_improdutivas, f"R$ {report_data.valor_final_vistorias:.2f}", f"R$ {report_data.valor_final_improdutivas:.2f}"])
+        t = Table(data)
+        t.setStyle(TableStyle([('BACKGROUND', (0, 0), (-1, 0), colors.grey), ('GRID', (0, 0), (-1, -1), 1, colors.black)]))
+        elements.append(t)
+    
+    doc.build(elements)
+    buffer.seek(0)
+    return buffer
+
+# CORREÇÃO: Alterando os paths para corresponder ao uso do frontend
+@router.get("/imobiliarias/{imobiliaria_id}/relatorio", response_model=schemas.RelatorioImobiliaria, summary="Gerar relatório mensal por imobiliária para visualização")
+def get_imobiliaria_relatorio(imobiliaria_id: UUID, mes: int = Query(..., ge=1, le=12), ano: int = Query(..., ge=2020), db: Session = Depends(get_db)):
+    """
+    Retorna os dados do relatório de uma imobiliária específica em formato JSON.
+    """
+    return _get_relatorio_imobiliaria_data(imobiliaria_id, mes, ano, db)
+
+@router.get("/vistoriadores/{vistoriador_id}/relatorio", response_model=schemas.RelatorioVistoriador, summary="Gerar relatório mensal por vistoriador para visualização")
+def get_vistoriador_relatorio(vistoriador_id: UUID, mes: int = Query(..., ge=1, le=12), ano: int = Query(..., ge=2020), db: Session = Depends(get_db)):
+    """
+    Retorna os dados do relatório de um vistoriador específico em formato JSON.
+    """
+    return _get_relatorio_vistoriador_data(vistoriador_id, mes, ano, db)
+
+@router.get("/relatorios/geral", response_model=List[schemas.RelatorioImobiliaria], summary="Gerar relatório geral detalhado para visualização")
+def get_relatorio_geral_view(mes: int = Query(..., ge=1, le=12), ano: int = Query(..., ge=2020), db: Session = Depends(get_db)):
+    """
+    Retorna os dados do relatório geral de faturamento em formato JSON.
+    """
+    return _get_relatorio_geral_data(mes, ano, db)
+
+
+@router.get("/relatorios/download", summary="Fazer download de relatórios consolidados")
+def download_relatorio(
+    mes: int = Query(..., ge=1, le=12),
+    ano: int = Query(..., ge=2020),
+    formato: str = Query(..., pattern="^(excel|pdf)$"),
+    imobiliaria_id: Optional[UUID] = Query(None),
+    vistoriador_id: Optional[UUID] = Query(None),
+    db: Session = Depends(get_db)
+):
+    """
+    Endpoint unificado para download de relatórios.
+    """
+    data_for_excel = {}
+    report_data = None
+    filename_prefix = "relatorio"
+    value_column_name = "Valor"
+
+    if imobiliaria_id:
+        report_data = _get_relatorio_imobiliaria_data(imobiliaria_id, mes, ano, db)
+        filename_prefix = f"relatorio_imob_{report_data.imobiliaria_nome.replace(' ', '_')}"
+        
+        vistorias_list = [{
+            "Data": v.data, "Cód. Imóvel": v.cod_imovel, "Endereço": v.endereco,
+            "Área(m2)": v.tamanho, "Tipo de Mobília": v.tipo_mobilia,
+            "Tipo Vistoria": v.tipo_vistoria, "Valor": v.valor,
+            "Observação Privada": v.observacao_privada
+        } for v in report_data.vistorias]
+        
+        improdutivas_list = [{
+            "Data": i.data_vistoria_original, "Cód. Imóvel": i.cod_imovel,
+            "Motivo": i.motivo_improdutividade, "Valor": i.valor_cobrado
+        } for i in report_data.improdutivas]
+        
+        data_for_excel = {
+            "Vistorias Agendadas": vistorias_list,
+            "Vistorias Improdutivas": improdutivas_list
+        }
+
+    elif vistoriador_id:
+        report_data = _get_relatorio_vistoriador_data(vistoriador_id, mes, ano, db)
+        filename_prefix = f"relatorio_vist_{report_data.vistoriador_nome.replace(' ', '_')}"
+        value_column_name = "Comissão Vistoriador"
+        
+        for imob, vistorias in report_data.vistorias_por_imobiliaria.items():
+            data_for_excel[f"IMOBILIÁRIA: {imob.upper()}"] = [{
+                "Data": v.data, "Cód. Imóvel": v.cod_imovel, "Endereço": v.endereco,
+                "Tipo Vistoria": v.tipo_vistoria, "Comissão Vistoriador": v.comissao_vistoriador,
+                "Observação Privada": v.observacao_privada
+            } for v in vistorias]
+
+        if report_data.improdutivas:
+            data_for_excel["VISTORIAS IMPRODUTIVAS"] = [{
+                "Data": i.data_vistoria_original, "Cód. Imóvel": i.cod_imovel,
+                "Motivo": i.motivo_improdutividade, "Comissão Vistoriador": i.comissao_vistoriador
+            } for i in report_data.improdutivas]
+
+    else: # Relatório Geral
+        list_of_reports = _get_relatorio_geral_data(mes, ano, db)
+        filename_prefix = "relatorio_geral_detalhado"
+        value_column_name = "Valor"
+        
+        data_for_excel = {}
+        for report in list_of_reports:
+            if report.vistorias:
+                vistorias_list = [{
+                    "Data": v.data, "Cód. Imóvel": v.cod_imovel, "Endereço": v.endereco,
+                    "Área(m2)": v.tamanho, "Tipo de Mobília": v.tipo_mobilia,
+                    "Tipo Vistoria": v.tipo_vistoria, "Valor": v.valor,
+                    "Observação Privada": v.observacao_privada
+                } for v in report.vistorias]
+                data_for_excel[f"IMOBILIÁRIA: {report.imobiliaria_nome.upper()} - VISTORIAS"] = vistorias_list
+
+            if report.improdutivas:
+                improdutivas_list = [{
+                    "Data": i.data_vistoria_original, "Cód. Imóvel": i.cod_imovel,
+                    "Motivo": i.motivo_improdutividade, "Valor": i.valor_cobrado
+                } for i in report.improdutivas]
+                data_for_excel[f"IMOBILIÁRIA: {report.imobiliaria_nome.upper()} - IMPRODUTIVAS"] = improdutivas_list
+
+    if not data_for_excel:
+        raise HTTPException(status_code=404, detail="Nenhum dado encontrado para gerar o relatório.")
+
+    filename = f"{filename_prefix}_{mes:02d}_{ano}.{'xlsx' if formato == 'excel' else 'pdf'}"
+    
+    if formato == "excel":
+        file_stream = _create_excel_report(data_for_excel, filename_prefix, value_column_name)
+        media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    else: # pdf
+        file_stream = _create_pdf_report(report_data) # PDF continua com a lógica antiga por enquanto
+        media_type = "application/pdf"
+
+    headers = {'Content-Disposition': f'attachment; filename="{filename}"'}
+    return StreamingResponse(file_stream, media_type=media_type, headers=headers)
+

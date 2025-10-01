@@ -425,20 +425,25 @@ function renderAgenda(vistorias) {
 }
 
 function createVistoriaCard(vistoria) {
-    // CORREÇÃO: Acessa a propriedade 'tipo' em vez de 'tipo_vistoria'.
-    // O objeto 'cliente' é acessado através de 'vistoria.imovel.cliente'.
-    const { horario, tipo, imovel } = vistoria;
+    const { horario, tipo, imovel, observacao_vistoriador } = vistoria;
     
     const isBooked = !!imovel;
     const cardBgClass = isBooked ? 'bg-gray-700/40' : 'bg-gray-700/20';
     const borderColorClass = isBooked ? 'border-cyan-500/50' : 'border-gray-600/50';
 
     const subtitleHTML = isBooked 
-        // CORREÇÃO: Usa 'imovel.cod_imovel' em vez de 'imovel['Código']'.
         ? `<p class="text-sm text-gray-300">Cód. Imóvel: ${imovel.cod_imovel}</p>`
         : `<p class="text-sm text-cyan-400">Horário Livre</p>`;
 
-    // CORREÇÃO: Todo o bloco foi atualizado para usar os nomes corretos das propriedades (snake_case).
+    // INÍCIO DA MODIFICAÇÃO: Adiciona a observação do vistoriador
+    const observacaoHTML = observacao_vistoriador ? `
+        <div class="mt-3 pt-3 border-t border-gray-600/30">
+            <h4 class="font-semibold text-amber-300 text-sm">Observações:</h4>
+            <p class="text-sm text-gray-300 whitespace-pre-wrap">${observacao_vistoriador}</p>
+        </div>
+    ` : '';
+    // FIM DA MODIFICAÇÃO
+
     const detalhesImovelHTML = isBooked ? `
         <h4 class="font-semibold text-cyan-300 mt-4 border-t border-gray-600/50 pt-3">Detalhes do Imóvel</h4>
         <p><strong>Tipo de Vistoria:</strong> ${(tipo || 'N/D').replace(/_/g, ' ')}</p>
@@ -451,7 +456,6 @@ function createVistoriaCard(vistoria) {
         <p><strong>Imobiliária:</strong> ${imovel.imobiliaria ? imovel.imobiliaria.nome : 'N/D'}</p>
     ` : '';
 
-    // CORREÇÃO: Verifica a existência de 'imovel.cliente' e acessa suas propriedades.
     const detalhesClienteHTML = (imovel && imovel.cliente) ? `
         <h4 class="font-semibold text-cyan-300 mt-4 border-t border-gray-600/50 pt-3">Detalhes do Cliente</h4>
         <p><strong>Nome:</strong> ${imovel.cliente.nome || 'N/D'}</p>
@@ -473,6 +477,7 @@ function createVistoriaCard(vistoria) {
             </div>
             ${isBooked ? `
             <div class="details hidden mt-4 space-y-1 text-sm text-gray-300">
+                ${observacaoHTML}
                 ${detalhesImovelHTML}
                 ${detalhesClienteHTML}
             </div>
@@ -480,6 +485,7 @@ function createVistoriaCard(vistoria) {
         </div>
     `;
 }
+
 
 function setupAjudaPage() {
     const supportForm = document.getElementById('support-form');

@@ -121,6 +121,8 @@ class Agenda(Base):
     disponivel = Column(Boolean, default=True)
     tipo = Column(TEXT, nullable=True, index=True)
     observacao_privada = Column(Text, nullable=True)
+    # ALTERAÇÃO: Campo renomeado para maior clareza.
+    observacao_vistoriador = Column(Text, nullable=True)
     valor_final_vistoria = Column(Numeric(10, 2), nullable=True)
     valor_vistoriador = Column(Numeric(10, 2), nullable=True)
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
