@@ -102,7 +102,7 @@ def get_meu_relatorio_vistoriador(
         models.Agenda.tipo.in_(['ENTRADA', 'SAIDA', 'CONFERENCIA', 'AVERIGUACAO', 'COMPLEMENTO_VISITA'])
     ).options(
         joinedload(models.Agenda.imovel).joinedload(models.Imovel.imobiliaria)
-    ).all()
+    ).order_by(models.Agenda.data.asc()).all()
 
     # Busca vistorias improdutivas do vistoriador no período
     improdutivas = db.query(models.VistoriaImprodutiva).join(
@@ -114,7 +114,7 @@ def get_meu_relatorio_vistoriador(
         extract('year', models.VistoriaImprodutiva.data_vistoria_original) == ano,
         extract('month', models.VistoriaImprodutiva.data_vistoria_original) == mes,
         models.VistoriaImprodutiva.is_deleted == False
-    ).all()
+    ).order_by(models.Agenda.data.asc()).all()
 
     vistorias_por_imobiliaria = {}
     total_comissao_vistorias = Decimal(0)
