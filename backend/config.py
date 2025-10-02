@@ -32,11 +32,12 @@ class Settings:
     DATABASE_URL: str = os.getenv("DATABASE_URL")
     SECRET_KEY: str = os.getenv("SECRET_KEY")
     
-    # Para estas, defino um valor padrão diretamente na chamada do getenv.
     ALGORITHM: str = os.getenv("ALGORITHM", "HS256")
-    
-    # Leio a variável e já converto para int, com um padrão de 60 minutos.
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "10080"))
+
+    SENDGRID_API_KEY: str = os.getenv("SENDGRID_API_KEY", "YOUR_SENDGRID_API_KEY")
+    EMAIL_FROM: str = os.getenv("EMAIL_FROM", "engentoriasuporte@gmail.com")
+    PASSWORD_RECOVERY_URL: str = os.getenv("PASSWORD_RECOVERY_URL", "http://localhost:8081/reset-password")
 
 # Crio uma instância única das configurações para usar no resto da aplicação.
 settings = Settings()

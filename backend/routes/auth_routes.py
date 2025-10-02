@@ -1,9 +1,9 @@
 # backend/routes/auth_routes.py
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from .. import models, schemas, auth
 from ..config import settings, get_db
@@ -51,3 +51,75 @@ def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db:
     )
 
     return {"access_token": access_token, "token_type": "bearer", "user_info": user_info}
+
+
+@router.post("/recover-password", status_code=status.HTTP_200_OK)
+def request_password_recovery(
+    recovery_data: schemas.PasswordRecoveryRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
+):
+    """
+    Inicia o fluxo de recuperação de senha.
+    Recebe um e-mail e, se ele existir, envia um link de redefinição.
+    """
+    user = auth.get_user(db, email=recovery_data.email)
+
+    if user:
+        # Invalida tokens antigos para este e-mail
+        db.query(models.PasswordResetToken).filter(
+            models.PasswordResetToken.email == recovery_data.email
+        ).update({"used": True})
+
+        # Gera e salva o novo token
+        token = auth.generate_reset_token()
+        expires_at = datetime.utcnow() + timedelta(minutes=15)
+        
+        db_token = models.PasswordResetToken(
+            email=recovery_data.email,
+            token=token,
+            expires_at=expires_at
+        )
+        db.add(db_token)
+        db.commit()
+
+        # Envia o e-mail em segundo plano para não travar a resposta
+        background_tasks.add_task(auth.send_password_reset_email, email_to=user.email, token=token)
+
+    # Resposta genérica para evitar enumeração de e-mails
+    return {"message": "Se um usuário com este e-mail existir, um link de recuperação foi enviado. (VERIFIQUE O SPAM)"}
+
+
+@router.post("/reset-password", status_code=status.HTTP_200_OK)
+def reset_password(
+    reset_data: schemas.PasswordResetConfirm,
+    db: Session = Depends(get_db)
+):
+    """
+    Confirma a redefinição de senha usando um token válido.
+    """
+    db_token = auth.get_password_reset_token(db, token=reset_data.token)
+
+    # Validações do token
+    if not db_token or db_token.used or datetime.utcnow() > db_token.expires_at:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Token inválido ou expirado."
+        )
+
+    user = auth.get_user(db, email=db_token.email)
+    if not user:
+        # Caso raro, mas seguro de se ter
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Usuário associado a este token não foi encontrado."
+        )
+
+    # Atualiza a senha e invalida o token
+    hashed_password = auth.get_password_hash(reset_data.new_password)
+    user.senha = hashed_password
+    db_token.used = True
+    
+    db.commit()
+
+    return {"message": "Sua senha foi redefinida com sucesso."}

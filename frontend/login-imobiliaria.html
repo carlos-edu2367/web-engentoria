@@ -4,11 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Login - Portal da Imobiliária</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' font-size='90' font-family='Inter, sans-serif' font-weight='700' fill='%2300ffb3'>e</text></svg>">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="[https://cdn.tailwindcss.com](https://cdn.tailwindcss.com)"></script>
+    <link rel="preconnect" href="[https://fonts.googleapis.com](https://fonts.googleapis.com)">
+    <link rel="preconnect" href="[https://fonts.gstatic.com](https://fonts.gstatic.com)" crossorigin>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='[http://www.w3.org/2000/svg](http://www.w3.org/2000/svg)' viewBox='0 0 100 100'><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' font-size='90' font-family='Inter, sans-serif' font-weight='700' fill='%2300ffb3'>e</text></svg>">
+    <link href="[https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap](https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap)" rel="stylesheet">
     <style>
         body { 
             font-family: 'Inter', sans-serif;
@@ -99,7 +99,10 @@
                 </div>
             </div>
             <div>
-                <label for="password" class="block text-sm font-medium text-gray-300 mb-2">Senha</label>
+                 <div class="flex justify-between items-center mb-2">
+                    <label for="password" class="block text-sm font-medium text-gray-300">Senha</label>
+                    <a href="recuperar-senha.html" class="text-xs text-cyan-400 hover:underline">Esqueceu a senha?</a>
+                </div>
                 <div class="relative">
                     <input type="password" id="password" name="password" required
                            class="block w-full bg-gray-700/50 border border-gray-600 text-white rounded-lg shadow-sm py-3 px-4 pl-10 focus:outline-none input-focus-effect transition placeholder-gray-500"

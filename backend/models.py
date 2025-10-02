@@ -237,3 +237,13 @@ class Configuracao(Base):
     id = Column(Integer, primary_key=True, default=1)
     percentual_comissao_improdutiva = Column(Numeric(10, 2), nullable=False, default=30.0)
     updated_at = Column(TIMESTAMP(timezone=True), default=func.now(), onupdate=func.now())
+
+# --- Tabela para Tokens de Recuperação de Senha ---
+class PasswordResetToken(Base):
+    __tablename__ = "password_reset_tokens"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    email = Column(String, index=True, nullable=False)
+    token = Column(String, unique=True, index=True, nullable=False)
+    expires_at = Column(TIMESTAMP(timezone=True), nullable=False)
+    used = Column(Boolean, default=False, nullable=False)
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())

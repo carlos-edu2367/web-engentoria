@@ -71,7 +71,9 @@ function protectPage() {
             'login.html',
             'login-imobiliaria.html',
             'login-ti.html',
-            'login-ajuda.html'
+            'login-ajuda.html',
+            'recuperar-senha.html',
+            'redefinir-senha.html'
         ];
         if (!publicPages.includes(currentPage)) {
             window.location.href = 'index.html';
@@ -108,3 +110,4 @@ function protectImobiliariaPage() {
 
 // Executa a proteção em todas as páginas
 protectPage();
+

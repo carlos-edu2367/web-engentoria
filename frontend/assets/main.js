@@ -61,7 +61,12 @@ document.addEventListener('DOMContentLoaded', () => {
         setupLoginAjudaPage();
     } else if (currentPage === 'relatorios-vistoriador.html') {
         setupRelatoriosVistoriadorPage();
+    } else if (currentPage === 'recuperar-senha.html') {
+        setupRecoveryPage();
+    } else if (currentPage === 'redefinir-senha.html') {
+        setupResetPasswordPage();
     }
+
 
     // Adiciona evento de clique para todos os botões de logout
     const logoutButton = document.getElementById('logout-button');
@@ -157,6 +162,109 @@ function setupLoginPage() {
             loginButton.innerHTML = `
                 <svg class="h-5 w-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1"></path></svg>
                 Entrar`;
+        }
+    });
+}
+
+function setupRecoveryPage() {
+    const recoveryForm = document.getElementById('recovery-form');
+    if (!recoveryForm) return;
+
+    const formMessageDiv = document.getElementById('form-message');
+    const recoveryButton = document.getElementById('recovery-button');
+
+    recoveryForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        formMessageDiv.className = 'hidden';
+        recoveryButton.disabled = true;
+        recoveryButton.textContent = 'Enviando...';
+
+        const formData = new FormData(recoveryForm);
+        const body = { email: formData.get('email') };
+
+        try {
+            const response = await fetch(`${API_BASE_URL}/auth/recover-password`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            });
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.detail || 'Ocorreu um erro.');
+
+            formMessageDiv.textContent = result.message || 'Link enviado com sucesso!';
+            formMessageDiv.className = 'block mt-4 text-center p-3 rounded-lg bg-green-900/30 text-green-300 border-green-700/50';
+            recoveryForm.reset();
+        } catch (error) {
+            formMessageDiv.textContent = error.message;
+            formMessageDiv.className = 'block mt-4 text-center p-3 rounded-lg bg-red-900/30 text-red-400 border-red-700/50';
+        } finally {
+            recoveryButton.disabled = false;
+            recoveryButton.textContent = 'Enviar Link de Recuperação';
+        }
+    });
+}
+
+function setupResetPasswordPage() {
+    const resetForm = document.getElementById('reset-password-form');
+    if (!resetForm) return;
+
+    const formMessageDiv = document.getElementById('form-message');
+    const resetButton = document.getElementById('reset-button');
+    const tokenInput = document.getElementById('token');
+    const loginLinkContainer = document.getElementById('login-link-container');
+
+    // Extrai o token da URL
+    const urlParams = new URLSearchParams(window.location.search);
+    const token = urlParams.get('token');
+    
+    if (token) {
+        tokenInput.value = token;
+    } else {
+        formMessageDiv.textContent = 'Token de redefinição não encontrado ou inválido.';
+        formMessageDiv.className = 'block mt-4 text-center p-3 rounded-lg bg-red-900/30 text-red-400 border-red-700/50';
+        resetButton.disabled = true;
+    }
+
+    resetForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        formMessageDiv.className = 'hidden';
+        
+        const newPassword = document.getElementById('new_password').value;
+        const confirmPassword = document.getElementById('confirm_password').value;
+
+        if (newPassword !== confirmPassword) {
+            formMessageDiv.textContent = 'As senhas não coincidem.';
+            formMessageDiv.className = 'block mt-4 text-center p-3 rounded-lg bg-red-900/30 text-red-400 border-red-700/50';
+            return;
+        }
+
+        resetButton.disabled = true;
+        resetButton.textContent = 'Redefinindo...';
+
+        const body = {
+            token: tokenInput.value,
+            new_password: newPassword,
+        };
+
+        try {
+            const response = await fetch(`${API_BASE_URL}/auth/reset-password`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            });
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.detail || 'Ocorreu um erro.');
+
+            formMessageDiv.textContent = result.message || 'Senha redefinida com sucesso!';
+            formMessageDiv.className = 'block mt-4 text-center p-3 rounded-lg bg-green-900/30 text-green-300 border-green-700/50';
+            resetForm.reset();
+            resetButton.style.display = 'none'; // Esconde o botão de redefinir
+            loginLinkContainer.classList.remove('hidden'); // Mostra o link para o login
+        } catch (error) {
+            formMessageDiv.textContent = error.message;
+            formMessageDiv.className = 'block mt-4 text-center p-3 rounded-lg bg-red-900/30 text-red-400 border-red-700/50';
+            resetButton.disabled = false;
+            resetButton.textContent = 'Redefinir Senha';
         }
     });
 }
@@ -688,3 +796,5 @@ function renderVistoriadorReport(container, data) {
         </div>
     `;
 }
+
+

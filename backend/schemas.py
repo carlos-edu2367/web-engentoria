@@ -34,6 +34,13 @@ class Token(BaseModel):
 class TokenData(BaseModel):
     email: Optional[str] = None
 
+class PasswordRecoveryRequest(BaseModel):
+    email: EmailStr
+
+class PasswordResetConfirm(BaseModel):
+    token: str
+    new_password: str = Field(..., min_length=6)
+
 class UsuarioBase(BaseModel):
     nome: str
     email: EmailStr
@@ -482,4 +489,3 @@ class ConfiguracaoDisplay(BaseModel):
 
     class Config:
         from_attributes = True
-
