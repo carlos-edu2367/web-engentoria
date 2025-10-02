@@ -14,3 +14,4 @@ bcrypt
 python-dateutil
 openpyxl
 reportlab
+sendgrid
