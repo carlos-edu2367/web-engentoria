@@ -25,7 +25,7 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
 def verify_password(plain_password, hashed_password):
     """Verifica se a senha fornecida corresponde ao hash armazenado."""
     try:
-        return pwd_context.verify(plain_password, hashed_password)
+        return pwd_context.verify(plain_password[:72], hashed_password)
     except UnknownHashError:
         # Se o hash armazenado não for reconhecido, a senha é inválida.
         return False
