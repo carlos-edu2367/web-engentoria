@@ -31,7 +31,7 @@ def verify_password(plain_password, hashed_password):
 
 def get_password_hash(password):
     """Gera o hash de uma senha, garantindo que não exceda o limite do bcrypt."""
-    
+    # O bcrypt tem um limite de 72 bytes. Truncamos a senha para evitar erros.
     return pwd_context.hash(password[:72])
 
 # --- Utilitários de Token JWT (Acesso) ---
@@ -44,6 +44,7 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None):
     else:
         expire = datetime.utcnow() + timedelta(minutes=15)
     to_encode.update({"exp": expire})
+    # CORREÇÃO: Usar os nomes corretos das variáveis de settings
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
     return encoded_jwt
 
@@ -55,7 +56,7 @@ def generate_reset_token():
 
 def send_password_reset_email(email_to: str, token: str):
     """Envia o e-mail de redefinição de senha."""
-    reset_link = f"{settings.FRONTEND_URL}/resetar-senha.html?token={token}"
+    reset_link = f"{settings.FRONTEND_URL}/resetar-senha?token={token}"
     
     # Se a chave da API não estiver configurada, imprime o link no console para desenvolvimento
     if not settings.SENDGRID_API_KEY:
@@ -66,7 +67,7 @@ def send_password_reset_email(email_to: str, token: str):
         return
 
     message = Mail(
-        from_email=settings.SENDGRID_FROM_EMAIL,
+        from_email=settings.EMAIL_FROM,
         to_emails=email_to,
         subject='Recuperação de Senha',
         html_content=f"""
@@ -114,6 +115,7 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
         headers={"WWW-Authenticate": "Bearer"},
     )
     try:
+        # CORREÇÃO: Usar os nomes corretos das variáveis de settings
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
         email: str = payload.get("sub")
         if email is None:
