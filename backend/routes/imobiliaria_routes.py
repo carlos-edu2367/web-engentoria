@@ -325,7 +325,8 @@ def download_monthly_report(
     if not report_data:
         raise HTTPException(status_code=404, detail="Nenhum dado encontrado para gerar o relatório.")
 
-    filename = f"relatorio_{current_user.nome.replace(' ', '_')}_{mes}_{ano}"
+    nome_user = current_user.nome.strip()
+    filename = f"relatorio_{nome_user.replace(' ', '_')}_{mes}_{ano}"
     
     if formato == "excel":
         file_stream = create_excel_report(report_data)
