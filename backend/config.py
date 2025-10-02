@@ -38,6 +38,7 @@ class Settings:
     SENDGRID_API_KEY: str = os.getenv("SENDGRID_API_KEY", "YOUR_SENDGRID_API_KEY")
     EMAIL_FROM: str = os.getenv("EMAIL_FROM", "engentoriasuporte@gmail.com")
     PASSWORD_RECOVERY_URL: str = os.getenv("PASSWORD_RECOVERY_URL", "http://localhost:8081/reset-password")
+    FRONT_END_URL: str = "https://web-engentoria-production.up.railway.app"
 
 # Crio uma instância única das configurações para usar no resto da aplicação.
 settings = Settings()

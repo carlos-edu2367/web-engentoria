@@ -55,7 +55,7 @@ def generate_reset_token():
 
 def send_password_reset_email(email_to: str, token: str):
     """Envia o e-mail de redefinição de senha."""
-    reset_link = f"{settings.FRONTEND_URL}/resetar-senha?token={token}"
+    reset_link = f"{settings.FRONTEND_URL}/resetar-senha.html?token={token}"
     
     # Se a chave da API não estiver configurada, imprime o link no console para desenvolvimento
     if not settings.SENDGRID_API_KEY:
