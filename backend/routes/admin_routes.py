@@ -2,16 +2,15 @@
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import func, desc, and_, inspect, text, case
-from typing import List, Optional, Dict, Any
+from sqlalchemy import func, desc, case
+from typing import List, Optional
 from uuid import UUID
 from datetime import datetime, date
 
 from .. import models, schemas, auth
-from ..config import get_db, Base
+from ..config import get_db
 
-# Crio um roteador dedicado para o painel de gestão.
-# Todas as rotas aqui dentro serão protegidas pela dependência de gestor.
+# Roteador para o painel de gestão, protegido para acesso de gestores (TI).
 router = APIRouter(
     prefix="/admin",
     tags=["Painel de Gestão de TI"],
@@ -29,8 +28,7 @@ router = APIRouter(
 )
 def get_dashboard_stats(db: Session = Depends(get_db)):
     """
-    Retorna as contagens principais do sistema para exibição nos cards do dashboard.
-    Acesso restrito a usuários com nível de acesso 'gestor'.
+    Retorna as contagens principais para os cards do dashboard de gestão.
     """
     try:
         total_users = db.query(models.Usuario).filter(models.Usuario.is_deleted == False).count()
@@ -64,8 +62,7 @@ def get_dashboard_stats(db: Session = Depends(get_db)):
 )
 def get_feedback_stats_for_chart(db: Session = Depends(get_db)):
     """
-    Busca a nota média de feedback por versão do app, para as últimas 5 versões com feedback.
-    Acesso restrito a usuários com nível de acesso 'gestor'.
+    Busca a nota média de feedback para as últimas 5 versões do app com avaliações.
     """
     try:
         latest_versions_subquery = db.query(models.Feedback.app_version)\
@@ -105,13 +102,17 @@ def get_feedback_stats_for_chart(db: Session = Depends(get_db)):
     summary="Lista todos os usuários do sistema (app e clientes)"
 )
 def get_all_system_users(db: Session = Depends(get_db)):
+    """Lista todos os usuários (app) e clientes, unificando a resposta."""
     all_users = []
+    
     app_users = db.query(models.Usuario).filter(models.Usuario.is_deleted == False).order_by(models.Usuario.nome).all()
     for user in app_users:
         all_users.append(schemas.AdminUserDisplay(id=user.id, nome=user.nome, email=user.email, tipo=user.tipo, table='usuarios'))
+        
     client_users = db.query(models.Cliente).filter(models.Cliente.is_deleted == False).order_by(models.Cliente.nome).all()
     for user in client_users:
         all_users.append(schemas.AdminUserDisplay(id=user.id, nome=user.nome, email=user.email, tipo='cliente', table='clientes'))
+        
     return all_users
 
 @router.post(
@@ -121,26 +122,45 @@ def get_all_system_users(db: Session = Depends(get_db)):
     summary="Cria um novo usuário (admin, vistoriador ou cliente)"
 )
 def create_user(user_data: schemas.AdminUserCreate, db: Session = Depends(get_db)):
+    """Cria um novo usuário, verificando a unicidade do e-mail em todo o sistema."""
     existing_user = auth.get_user(db, email=user_data.email)
     if existing_user:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Este email já está cadastrado no sistema.")
+
     if user_data.tipo in ['admin', 'vistoriador']:
         if not user_data.senha:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="A senha é obrigatória para usuários do tipo 'admin' ou 'vistoriador'.")
+        
         hashed_password = auth.get_password_hash(user_data.senha)
-        new_user = models.Usuario(nome=user_data.nome, email=user_data.email, tipo=user_data.tipo, senha=hashed_password)
-        db.add(new_user)
-        db.commit()
-        db.refresh(new_user)
-        return schemas.AdminUserDisplay(id=new_user.id, nome=new_user.nome, email=new_user.email, tipo=new_user.tipo, table='usuarios')
+        new_user = models.Usuario(
+            nome=user_data.nome, 
+            email=user_data.email, 
+            tipo=user_data.tipo, 
+            senha=hashed_password
+        )
+        table_name = 'usuarios'
+
     elif user_data.tipo == 'cliente':
         new_user = models.Cliente(nome=user_data.nome, email=user_data.email)
+        table_name = 'clientes'
+
+    else:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Tipo de usuário inválido. Use 'admin', 'vistoriador' ou 'cliente'.")
+
+    try:
         db.add(new_user)
         db.commit()
         db.refresh(new_user)
-        return schemas.AdminUserDisplay(id=new_user.id, nome=new_user.nome, email=new_user.email, tipo='cliente', table='clientes')
-    else:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Tipo de usuário inválido. Use 'admin', 'vistoriador' ou 'cliente'.")
+        return schemas.AdminUserDisplay(
+            id=new_user.id, 
+            nome=new_user.nome, 
+            email=new_user.email, 
+            tipo=getattr(new_user, 'tipo', 'cliente'), 
+            table=table_name
+        )
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Erro ao criar usuário: {e}")
 
 @router.put(
     "/users/{table}/{user_id}",
@@ -148,21 +168,42 @@ def create_user(user_data: schemas.AdminUserCreate, db: Session = Depends(get_db
     summary="Atualiza um usuário existente"
 )
 def update_user(table: str, user_id: UUID, user_data: schemas.AdminUserUpdate, db: Session = Depends(get_db)):
+    """Atualiza um usuário, garantindo que o novo e-mail não entre em conflito com outros."""
     if table not in ['usuarios', 'clientes']:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Tabela inválida.")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Tabela de usuário inválida.")
+    
     Model = models.Usuario if table == 'usuarios' else models.Cliente
-    db_user = db.query(Model).filter(Model.id == user_id).first()
+    db_user = db.query(Model).filter(Model.id == user_id, Model.is_deleted == False).first()
+
     if not db_user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuário não encontrado.")
+
+    if user_data.email != db_user.email:
+        existing_user = auth.get_user(db, email=user_data.email)
+        if existing_user and existing_user.id != user_id:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="O novo e-mail já está em uso.")
+    
     db_user.nome = user_data.nome
     db_user.email = user_data.email
+    
     if table == 'usuarios':
         db_user.tipo = user_data.tipo
         if user_data.senha:
             db_user.senha = auth.get_password_hash(user_data.senha)
-    db.commit()
-    db.refresh(db_user)
-    return schemas.AdminUserDisplay(id=db_user.id, nome=db_user.nome, email=db_user.email, tipo=db_user.tipo if table == 'usuarios' else 'cliente', table=table)
+            
+    try:
+        db.commit()
+        db.refresh(db_user)
+        return schemas.AdminUserDisplay(
+            id=db_user.id, 
+            nome=db_user.nome, 
+            email=db_user.email, 
+            tipo=getattr(db_user, 'tipo', 'cliente'), 
+            table=table
+        )
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Erro ao atualizar usuário: {e}")
 
 @router.delete(
     "/users/{table}/{user_id}",
@@ -170,12 +211,16 @@ def update_user(table: str, user_id: UUID, user_data: schemas.AdminUserUpdate, d
     summary="Move um usuário para a lixeira (soft delete)"
 )
 def soft_delete_user(table: str, user_id: UUID, db: Session = Depends(get_db)):
+    """Marca um usuário como deletado, sem removê-lo fisicamente do banco."""
     if table not in ['usuarios', 'clientes']:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Tabela inválida.")
+        
     Model = models.Usuario if table == 'usuarios' else models.Cliente
     db_user = db.query(Model).filter(Model.id == user_id, Model.is_deleted == False).first()
+    
     if not db_user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuário não encontrado ou já deletado.")
+    
     db_user.is_deleted = True
     db.commit()
     return None
@@ -194,10 +239,10 @@ def create_imobiliaria_group(
     group_data: schemas.GrupoImobiliariaCreate,
     db: Session = Depends(get_db)
 ):
-    """Cria um novo login de grupo para imobiliárias."""
-    existing_group = db.query(models.GrupoImobiliaria).filter(models.GrupoImobiliaria.email == group_data.email).first()
-    if existing_group:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Este email já está em uso por outro grupo.")
+    """Cria um novo login de grupo, verificando a unicidade do e-mail em todo o sistema."""
+    existing_user = auth.get_user(db, email=group_data.email)
+    if existing_user:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Este email já está cadastrado no sistema.")
     
     hashed_password = auth.get_password_hash(group_data.senha)
     new_group = models.GrupoImobiliaria(
@@ -216,9 +261,76 @@ def create_imobiliaria_group(
     summary="Lista todos os grupos de imobiliárias"
 )
 def get_all_imobiliaria_groups(db: Session = Depends(get_db)):
-    """Retorna uma lista de todos os grupos de imobiliárias cadastrados."""
-    groups = db.query(models.GrupoImobiliaria).options(joinedload(models.GrupoImobiliaria.imobiliarias)).filter(models.GrupoImobiliaria.is_deleted == False).order_by(models.GrupoImobiliaria.nome).all()
+    """Retorna uma lista de todos os grupos de imobiliárias não deletados."""
+    groups = db.query(models.GrupoImobiliaria).options(
+        joinedload(models.GrupoImobiliaria.imobiliarias)
+    ).filter(
+        models.GrupoImobiliaria.is_deleted == False
+    ).order_by(models.GrupoImobiliaria.nome).all()
     return groups
+
+@router.put(
+    "/grupos-imobiliarias/{group_id}",
+    response_model=schemas.GrupoImobiliariaDisplay,
+    summary="Atualiza um grupo de imobiliárias"
+)
+def update_imobiliaria_group(
+    group_id: UUID,
+    group_data: schemas.GrupoImobiliariaUpdate,
+    db: Session = Depends(get_db)
+):
+    """Atualiza nome, e-mail e, opcionalmente, a senha de um grupo de imobiliárias."""
+    db_group = db.query(models.GrupoImobiliaria).filter(
+        models.GrupoImobiliaria.id == group_id, 
+        models.GrupoImobiliaria.is_deleted == False
+    ).first()
+
+    if not db_group:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Grupo não encontrado.")
+
+    if group_data.email != db_group.email:
+        existing_user = auth.get_user(db, email=group_data.email)
+        if existing_user and existing_user.id != group_id:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="O novo e-mail já está em uso.")
+    
+    db_group.nome = group_data.nome
+    db_group.email = group_data.email
+    if group_data.senha:
+        db_group.senha = auth.get_password_hash(group_data.senha)
+
+    db.commit()
+    db.refresh(db_group)
+    return db_group
+
+@router.delete(
+    "/grupos-imobiliarias/{group_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Move um grupo de imobiliárias para a lixeira"
+)
+def soft_delete_imobiliaria_group(group_id: UUID, db: Session = Depends(get_db)):
+    """Marca um grupo como deletado, se não houver imobiliárias vinculadas."""
+    db_group = db.query(models.GrupoImobiliaria).filter(
+        models.GrupoImobiliaria.id == group_id, 
+        models.GrupoImobiliaria.is_deleted == False
+    ).first()
+    
+    if not db_group:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Grupo não encontrado ou já deletado.")
+
+    imobiliarias_vinculadas = db.query(models.Imobiliaria).filter(
+        models.Imobiliaria.grupo_id == group_id,
+        models.Imobiliaria.is_deleted == False
+    ).count()
+
+    if imobiliarias_vinculadas > 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Não é possível excluir. Existem {imobiliarias_vinculadas} imobiliárias ativas vinculadas a este grupo."
+        )
+
+    db_group.is_deleted = True
+    db.commit()
+    return None
 
 @router.get(
     "/imobiliarias",
@@ -230,7 +342,6 @@ def get_all_imobiliarias(db: Session = Depends(get_db)):
     imobiliarias = db.query(models.Imobiliaria).options(joinedload(models.Imobiliaria.grupo)).filter(models.Imobiliaria.is_deleted == False).order_by(models.Imobiliaria.nome).all()
     return imobiliarias
 
-# NOVO: Endpoint para criar uma imobiliária
 @router.post(
     "/imobiliarias",
     response_model=schemas.ImobiliariaDetail,
@@ -252,7 +363,6 @@ def create_imobiliaria(
     db.refresh(new_imobiliaria)
     return new_imobiliaria
 
-# NOVO: Endpoint para atualizar uma imobiliária
 @router.put(
     "/imobiliarias/{imobiliaria_id}",
     response_model=schemas.ImobiliariaDetail,
@@ -268,7 +378,6 @@ def update_imobiliaria(
     if not db_imobiliaria:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Imobiliária não encontrada.")
     
-    # Verifica se o nome já existe em outra imobiliária (ignorando a atual)
     existing_with_name = db.query(models.Imobiliaria).filter(
         models.Imobiliaria.nome == imobiliaria_data.nome,
         models.Imobiliaria.id != imobiliaria_id,
@@ -284,7 +393,6 @@ def update_imobiliaria(
     db.refresh(db_imobiliaria)
     return db_imobiliaria
 
-# NOVO: Endpoint para deletar (soft) uma imobiliária
 @router.delete(
     "/imobiliarias/{imobiliaria_id}",
     status_code=status.HTTP_204_NO_CONTENT,
@@ -300,7 +408,6 @@ def soft_delete_imobiliaria(imobiliaria_id: UUID, db: Session = Depends(get_db))
     db.commit()
     return None
 
-
 @router.put(
     "/imobiliarias/{imobiliaria_id}/link-group",
     response_model=schemas.ImobiliariaDetail,
@@ -313,7 +420,7 @@ def link_imobiliaria_to_group(
 ):
     """
     Atualiza o vínculo de uma imobiliária a um grupo.
-    Para desvincular, envie `{"grupo_id": null}`.
+    Para desvincular, envie `{\"grupo_id\": null}`.
     """
     db_imobiliaria = db.query(models.Imobiliaria).filter(models.Imobiliaria.id == imobiliaria_id).first()
     if not db_imobiliaria:
@@ -340,8 +447,7 @@ def link_imobiliaria_to_group(
 )
 def get_all_chamados(db: Session = Depends(get_db)):
     """
-    Busca todos os chamados que não foram deletados, juntando com os dados do usuário
-    que abriu o chamado. A ordenação prioriza os chamados abertos e mais antigos.
+    Busca todos os chamados não deletados, priorizando os abertos e mais antigos.
     """
     order_logic = case(
         (models.Chamado.status == 'Aberto', 1),
@@ -377,18 +483,35 @@ def get_all_chamados(db: Session = Depends(get_db)):
     summary="Resolve um chamado de suporte"
 )
 def resolve_chamado(chamado_id: UUID, resolve_data: schemas.ChamadoResolve, db: Session = Depends(get_db)):
-    db_chamado = db.query(models.Chamado).filter(models.Chamado.id == chamado_id, models.Chamado.is_deleted == False).first()
+    db_chamado = db.query(models.Chamado).options(joinedload(models.Chamado.usuario)).filter(models.Chamado.id == chamado_id, models.Chamado.is_deleted == False).first()
     if not db_chamado:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chamado não encontrado.")
     if db_chamado.status == 'Resolvido':
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Este chamado já está resolvido.")
+    
     db_chamado.status = 'Resolvido'
     db_chamado.comentario_conclusao = resolve_data.comentario_conclusao
     db_chamado.data_conclusao = datetime.utcnow()
     db_chamado.notificacao_vista = False
     db.commit()
     db.refresh(db_chamado)
-    return schemas.ChamadoAdminDisplay(id=db_chamado.id, titulo=db_chamado.titulo, status=db_chamado.status, prioridade=db_chamado.prioridade, categoria=db_chamado.categoria, nome_usuario=db_chamado.usuario.nome if db_chamado.usuario else "Usuário não encontrado", data_abertura=db_chamado.data_abertura, descricao=db_chamado.descricao, comentario_conclusao=db_chamado.comentario_conclusao)
+    
+    # Recarrega o usuário para garantir que está na sessão, se existir
+    if db_chamado.usuario:
+        db.refresh(db_chamado.usuario)
+    
+    return schemas.ChamadoAdminDisplay(
+        id=db_chamado.id,
+        titulo=db_chamado.titulo,
+        status=db_chamado.status,
+        prioridade=db_chamado.prioridade,
+        categoria=db_chamado.categoria,
+        nome_usuario=db_chamado.usuario.nome if db_chamado.usuario else "Usuário não encontrado",
+        data_abertura=db_chamado.data_abertura,
+        descricao=db_chamado.descricao,
+        comentario_conclusao=db_chamado.comentario_conclusao
+    )
+
 
 @router.get(
     "/feedbacks",
@@ -399,7 +522,13 @@ def get_all_feedbacks(db: Session = Depends(get_db)):
     feedbacks = db.query(models.Feedback).options(joinedload(models.Feedback.usuario)).filter(models.Feedback.is_deleted == False).order_by(desc(models.Feedback.data_envio)).all()
     response = []
     for fb in feedbacks:
-        response.append(schemas.FeedbackAdminDisplay(app_version=fb.app_version, nota=fb.nota, comentario=fb.comentario, data_envio=fb.data_envio, nome_usuario=fb.usuario.nome if fb.usuario else "Usuário não encontrado"))
+        response.append(schemas.FeedbackAdminDisplay(
+            app_version=fb.app_version,
+            nota=fb.nota,
+            comentario=fb.comentario,
+            data_envio=fb.data_envio,
+            nome_usuario=fb.usuario.nome if fb.usuario else "Usuário não encontrado"
+        ))
     return response
 
 # =================================================================
@@ -416,15 +545,28 @@ def search_improdutivas(
     data_vistoria: Optional[date] = Query(None, description="Filtrar por data exata da vistoria original (YYYY-MM-DD)"),
     db: Session = Depends(get_db)
 ):
-    query = db.query(models.VistoriaImprodutiva).options(joinedload(models.VistoriaImprodutiva.imovel), joinedload(models.VistoriaImprodutiva.cliente)).filter(models.VistoriaImprodutiva.is_deleted == False)
+    query = db.query(models.VistoriaImprodutiva).options(
+        joinedload(models.VistoriaImprodutiva.imovel), 
+        joinedload(models.VistoriaImprodutiva.cliente)
+    ).filter(models.VistoriaImprodutiva.is_deleted == False)
+    
     if cod_imovel:
         query = query.join(models.Imovel).filter(models.Imovel.cod_imovel.ilike(f"%{cod_imovel}%"))
     if data_vistoria:
         query = query.filter(models.VistoriaImprodutiva.data_vistoria_original == data_vistoria)
+        
     results = query.order_by(desc(models.VistoriaImprodutiva.data_vistoria_original)).all()
+    
     response = []
     for vi in results:
-        response.append(schemas.ImprodutivaDisplay(id=vi.id, data_vistoria=vi.data_vistoria_original.strftime('%d/%m/%Y'), horario=vi.horario_vistoria_original, cod_imovel=vi.imovel.cod_imovel if vi.imovel else "N/A", cliente=vi.cliente.nome if vi.cliente else "N/A", motivo=vi.motivo_improdutividade))
+        response.append(schemas.ImprodutivaDisplay(
+            id=vi.id,
+            data_vistoria=vi.data_vistoria_original.strftime('%d/%m/%Y'),
+            horario=vi.horario_vistoria_original,
+            cod_imovel=vi.imovel.cod_imovel if vi.imovel else "N/A",
+            cliente=vi.cliente.nome if vi.cliente else "N/A",
+            motivo=vi.motivo_improdutividade
+        ))
     return response
 
 @router.post(
@@ -433,22 +575,40 @@ def search_improdutivas(
     status_code=status.HTTP_200_OK
 )
 def revert_improdutiva(improdutiva_id: UUID, db: Session = Depends(get_db)):
+    """
+    Reverte uma vistoria improdutiva, liberando o horário na agenda e estornando
+    a cobrança do saldo devedor do cliente.
+    """
     try:
-        improdutiva = db.query(models.VistoriaImprodutiva).options(joinedload(models.VistoriaImprodutiva.agenda_original), joinedload(models.VistoriaImprodutiva.cliente)).filter(models.VistoriaImprodutiva.id == improdutiva_id).first()
+        improdutiva = db.query(models.VistoriaImprodutiva).options(
+            joinedload(models.VistoriaImprodutiva.agenda_original),
+            joinedload(models.VistoriaImprodutiva.cliente)
+        ).filter(models.VistoriaImprodutiva.id == improdutiva_id).first()
+        
         if not improdutiva:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vistoria improdutiva não encontrada.")
+            
         agenda_original = improdutiva.agenda_original
         cliente = improdutiva.cliente
-        valor_cobranca = improdutiva.valor_cobranca
+        
         if not agenda_original or not cliente:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dados associados (agenda ou cliente) não encontrados.")
-        cliente.saldo_devedor_total -= valor_cobranca
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dados associados (agenda ou cliente) não encontrados para a reversão.")
+
+        # Estorna o valor do saldo do cliente
+        if cliente.saldo_devedor_total is not None:
+             cliente.saldo_devedor_total -= improdutiva.valor_cobranca
+        
+        # Libera o horário na agenda
         agenda_original.tipo = 'LIVRE'
         agenda_original.disponivel = True
         agenda_original.imovel_id = None
+        
+        # Remove o registro da vistoria improdutiva
         db.delete(improdutiva)
+        
         db.commit()
         return {"message": "Vistoria improdutiva revertida com sucesso! O horário na agenda foi liberado e a cobrança estornada."}
+        
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Ocorreu um erro ao reverter a vistoria: {e}")
@@ -457,7 +617,6 @@ def revert_improdutiva(improdutiva_id: UUID, db: Session = Depends(get_db)):
 # --- Endpoints de Manutenção e Restauração ---
 # =================================================================
 
-# Mapeamento de nomes de tabela para os modelos SQLAlchemy
 TABLE_MODEL_MAP = {
     "usuarios": models.Usuario,
     "clientes": models.Cliente,
@@ -477,8 +636,7 @@ TABLE_MODEL_MAP = {
 )
 def get_deleted_records(db: Session = Depends(get_db)):
     """
-    Varre todas as tabelas gerenciáveis, busca por registros com `is_deleted = True`
-    e os retorna em uma lista unificada para a tela de restauração.
+    Varre as tabelas gerenciáveis, busca registros com `is_deleted = True` e os retorna.
     """
     deleted_records = []
     for table_name, model in TABLE_MODEL_MAP.items():
@@ -505,9 +663,7 @@ def get_deleted_records(db: Session = Depends(get_db)):
     summary="Restaura um registro específico"
 )
 def restore_record(table_name: str, record_id: UUID, db: Session = Depends(get_db)):
-    """
-    Restaura um item que foi movido para a lixeira, alterando `is_deleted` para `False`.
-    """
+    """Restaura um item da lixeira, alterando `is_deleted` para `False`."""
     if table_name not in TABLE_MODEL_MAP:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Nome de tabela inválido.")
     
@@ -547,14 +703,11 @@ def count_deleted_records(db: Session = Depends(get_db)):
 )
 def permanently_delete_records(db: Session = Depends(get_db)):
     """
-    **AÇÃO DESTRUTIVA E IRREVERSÍVEL.**
-    Deleta permanentemente todos os registros de todas as tabelas gerenciáveis
-    que estão marcados com `is_deleted = True`.
-    A ordem de exclusão respeita as dependências para evitar erros de chave estrangeira.
+    AÇÃO DESTRUTIVA: Deleta permanentemente todos os registros com `is_deleted = True`.
     """
     cleanup_order = [
         "vistorias_improdutivas", "agenda", "feedbacks", "chamados",
-        "imoveis", "clientes", "usuarios", "grupos_imobiliarias", "imobiliarias"
+        "imoveis", "clientes", "usuarios", "imobiliarias", "grupos_imobiliarias"
     ]
     
     total_deleted = 0
@@ -566,7 +719,7 @@ def permanently_delete_records(db: Session = Depends(get_db)):
                 total_deleted += deleted_count
         
         db.commit()
-        return {"message": f"Limpeza concluída com sucesso! Total de {total_deleted} registros permanentemente removidos."}
+        return {"message": f"Limpeza concluída! {total_deleted} registros permanentemente removidos."}
     except Exception as e:
         db.rollback()
         raise HTTPException(
@@ -611,3 +764,4 @@ def update_app_version(version_data: schemas.AppVersionUpdate, db: Session = Dep
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Ocorreu um erro ao atualizar a versão: {e}"
         )
+

@@ -1,12 +1,8 @@
 // frontend/assets/admin.js
-
-// Lógica para definir a URL da API dinamicamente
-const isLocalAdmin = window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost';
-const API_BASE_URL_ADMIN = isLocalAdmin ? 'http://127.0.0.1:8000/api/v1/admin' : '/api/v1/admin';
-
+import { api } from './api-ti.js';
 
 document.addEventListener('DOMContentLoaded', () => {
-    // CORREÇÃO: Chamando a função de proteção correta para a página de TI.
+    // Protege a página para acesso exclusivo do perfil de TI
     protectTiPage();
 
     const navLinks = document.querySelectorAll('.nav-link');
@@ -101,18 +97,10 @@ document.addEventListener('DOMContentLoaded', () => {
 async function renderDashboard() {
     const contentDiv = document.getElementById('page-content');
     try {
-        const token = getToken();
-        const response = await fetch(`${API_BASE_URL_ADMIN}/dashboard/stats`, {
-            headers: { 'Authorization': `Bearer ${token}` }
-        });
-        
-        if (!response.ok) {
-            const errorData = await response.json().catch(() => null);
-            const detail = errorData ? errorData.detail : `Erro ${response.status}`;
-            throw new Error(detail || 'Falha ao buscar estatísticas.');
-        }
-        
-        const stats = await response.json();
+        const [stats, chartData] = await Promise.all([
+            api.getDashboardStats(),
+            api.getFeedbackChartData()
+        ]);
 
         contentDiv.innerHTML = `
             <h1 class="text-3xl font-bold text-white mb-6">Dashboard</h1>
@@ -138,11 +126,76 @@ async function renderDashboard() {
                     <p class="text-3xl font-bold text-orange-400 mt-2">${stats.open_tickets}</p>
                 </div>
             </div>
+            <div class="mt-8 bg-gray-800/80 p-6 rounded-xl neon-border">
+                <h2 class="text-lg font-semibold text-white mb-4">Média de Avaliação por Versão do App</h2>
+                <div class="h-80">
+                    <canvas id="feedbackChart"></canvas>
+                </div>
+            </div>
         `;
+
+        renderFeedbackChart(chartData);
+
     } catch (error) {
         contentDiv.innerHTML = `<div class="text-center text-red-400 bg-red-900/50 p-4 rounded-md"><strong>Erro ao carregar dashboard:</strong> ${error.message}</div>`;
     }
 }
+
+/**
+ * Renderiza o gráfico de feedback.
+ * @param {Array<object>} chartData - Os dados para o gráfico.
+ */
+function renderFeedbackChart(chartData) {
+    const canvasElement = document.getElementById('feedbackChart');
+    if (!canvasElement) return;
+
+    const labels = chartData.map(item => `v${item.version}`);
+    const data = chartData.map(item => item.avg_rating);
+
+    const ctx = canvasElement.getContext('2d');
+    
+    new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Média de Avaliação',
+                data: data,
+                backgroundColor: 'rgba(249, 115, 22, 0.6)',
+                borderColor: 'rgba(249, 115, 22, 1)',
+                borderWidth: 1,
+                borderRadius: 4,
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return `Média: ${context.parsed.y.toFixed(2)}`;
+                        }
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    max: 5,
+                    ticks: { color: '#9ca3af' },
+                    grid: { color: 'rgba(255, 255, 255, 0.1)' }
+                },
+                x: {
+                    ticks: { color: '#9ca3af' },
+                    grid: { display: false }
+                }
+            }
+        }
+    });
+}
+
 
 /**
  * Renderiza a página de Gerenciamento de Usuários
@@ -166,13 +219,7 @@ async function renderUsers() {
 
     const fetchAndDisplayUsers = async () => {
         try {
-            const token = getToken();
-            const response = await fetch(`${API_BASE_URL_ADMIN}/users`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            if (!response.ok) throw new Error('Falha ao buscar usuários.');
-            
-            allUsers = await response.json();
+            allUsers = await api.getAllUsers();
             displayUsers(allUsers);
         } catch (error) {
             userListDiv.innerHTML = `<p class="text-red-400 col-span-full">${error.message}</p>`;
@@ -270,17 +317,13 @@ async function renderImobiliarias() {
         document.getElementById('group-list').innerHTML = '<p>Carregando grupos...</p>';
         document.getElementById('imobiliaria-list').innerHTML = '<p>Carregando imobiliárias...</p>';
         try {
-            const token = getToken();
-            const [groupsRes, imobiliariasRes] = await Promise.all([
-                fetch(`${API_BASE_URL_ADMIN}/grupos-imobiliarias`, { headers: { 'Authorization': `Bearer ${token}` } }),
-                fetch(`${API_BASE_URL_ADMIN}/imobiliarias`, { headers: { 'Authorization': `Bearer ${token}` } })
+            const [groups, imobiliarias] = await Promise.all([
+                api.getGrupos(),
+                api.getImobiliarias()
             ]);
 
-            if (!groupsRes.ok) throw new Error('Falha ao buscar grupos.');
-            if (!imobiliariasRes.ok) throw new Error('Falha ao buscar imobiliárias.');
-
-            allGroups = await groupsRes.json();
-            allImobiliarias = await imobiliariasRes.json();
+            allGroups = groups;
+            allImobiliarias = imobiliarias;
             
             displayGroups(allGroups);
             displayImobiliarias(allImobiliarias, allGroups);
@@ -310,6 +353,7 @@ async function renderImobiliarias() {
                 </div>
                 <div class="flex gap-2">
                     <button class="edit-group-btn text-sm bg-blue-500/80 hover:bg-blue-600/80 px-3 py-1 rounded-md transition-colors" data-group-id="${group.id}">Editar</button>
+                    <button class="delete-group-btn text-sm bg-red-500/80 hover:bg-red-600/80 px-3 py-1 rounded-md transition-colors" data-group-id="${group.id}" data-group-name="${group.nome}">Excluir</button>
                 </div>
             `;
             container.appendChild(groupCard);
@@ -352,6 +396,9 @@ async function renderImobiliarias() {
             const group = allGroups.find(g => g.id === e.target.dataset.groupId);
             showGroupModal(group, fetchAndDisplayData);
         }
+        if (e.target.classList.contains('delete-group-btn')) {
+            showDeleteConfirmModal('group', { id: e.target.dataset.groupId, name: e.target.dataset.groupName }, fetchAndDisplayData);
+        }
         if (e.target.classList.contains('edit-imobiliaria-btn')) {
             const imob = allImobiliarias.find(i => i.id === e.target.dataset.imobId);
             showImobiliariaModal(imob, fetchAndDisplayData);
@@ -383,13 +430,7 @@ async function renderChamados() {
     let allChamados = [];
 
     try {
-        const token = getToken();
-        const response = await fetch(`${API_BASE_URL_ADMIN}/chamados`, {
-            headers: { 'Authorization': `Bearer ${token}` }
-        });
-        if (!response.ok) throw new Error('Falha ao buscar chamados.');
-
-        allChamados = await response.json();
+        allChamados = await api.getChamados();
         
         if (allChamados.length === 0) {
             chamadoListDiv.innerHTML = '<p class="text-gray-400 text-center">Nenhum chamado encontrado.</p>';
@@ -425,13 +466,7 @@ async function renderFeedbacks() {
 
     const feedbackListDiv = document.getElementById('feedback-list');
     try {
-        const token = getToken();
-        const response = await fetch(`${API_BASE_URL_ADMIN}/feedbacks`, {
-            headers: { 'Authorization': `Bearer ${token}` }
-        });
-        if (!response.ok) throw new Error('Falha ao buscar feedbacks.');
-
-        const feedbacks = await response.json();
+        const feedbacks = await api.getFeedbacks();
         
         if (feedbacks.length === 0) {
             feedbackListDiv.innerHTML = '<p class="text-gray-400 text-center">Nenhum feedback encontrado.</p>';
@@ -468,20 +503,13 @@ async function renderImprodutivas() {
         const codImovel = document.getElementById('improdutiva-cod-imovel').value;
         const dataVistoria = document.getElementById('improdutiva-data').value;
         
-        let url = `${API_BASE_URL_ADMIN}/improdutivas?`;
         const params = new URLSearchParams();
         if (codImovel) params.append('cod_imovel', codImovel);
         if (dataVistoria) params.append('data_vistoria', dataVistoria);
-        url += params.toString();
 
         tableContainer.innerHTML = '<p>Buscando...</p>';
         try {
-            const token = getToken();
-            const response = await fetch(url, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            if (!response.ok) throw new Error('Falha ao buscar vistorias improdutivas.');
-            const improdutivas = await response.json();
+            const improdutivas = await api.searchImprodutivas(params);
             
             if (improdutivas.length === 0) {
                 tableContainer.innerHTML = '<p class="text-gray-400 text-center">Nenhuma vistoria improdutiva encontrada.</p>';
@@ -550,12 +578,7 @@ async function renderRestore() {
     const fetchAndDisplayRecords = async () => {
         tableContainer.innerHTML = '<p>Buscando registros na lixeira...</p>';
         try {
-            const token = getToken();
-            const response = await fetch(`${API_BASE_URL_ADMIN}/restore/records`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            if (!response.ok) throw new Error('Falha ao buscar registros excluídos.');
-            const records = await response.json();
+            const records = await api.getDeletedRecords();
 
             if (records.length === 0) {
                 tableContainer.innerHTML = '<p class="text-gray-400 text-center">A lixeira está vazia.</p>';
@@ -641,12 +664,7 @@ async function renderMaintenance() {
         const previewDiv = document.getElementById('cleanup-preview');
         const cleanupBtn = document.getElementById('cleanup-btn');
         try {
-            const token = getToken();
-            const response = await fetch(`${API_BASE_URL_ADMIN}/maintenance/cleanup-preview`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            if (!response.ok) throw new Error('Falha ao verificar registros.');
-            const data = await response.json();
+            const data = await api.getCleanupPreview();
 
             if (data.total === 0) {
                 previewDiv.innerHTML = '<p>Nenhum registro encontrado na lixeira para limpeza.</p>';
@@ -675,15 +693,7 @@ async function renderMaintenance() {
         versionMsg.className = 'text-sm mt-3 text-yellow-400';
         
         try {
-            const token = getToken();
-            const response = await fetch(`${API_BASE_URL_ADMIN}/maintenance/app-version`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify(data)
-            });
-            const result = await response.json();
-            if (!response.ok) throw new Error(result.detail || 'Erro desconhecido.');
-            
+            const result = await api.updateAppVersion(data);
             versionMsg.textContent = result.message;
             versionMsg.className = 'text-sm mt-3 text-green-400';
             e.target.reset();
@@ -770,24 +780,11 @@ function showUserModal(user = null) {
             delete data.senha;
         }
 
-        const token = getToken();
-        const url = isEdit 
-            ? `${API_BASE_URL_ADMIN}/users/${user.table}/${user.id}` 
-            : `${API_BASE_URL_ADMIN}/users`;
-        const method = isEdit ? 'PUT' : 'POST';
-
         try {
-            const response = await fetch(url, {
-                method: method,
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify(data)
-            });
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.detail || 'Ocorreu um erro.');
+            if (isEdit) {
+                await api.updateUser(user.table, user.id, data);
+            } else {
+                await api.createUser(data);
             }
             closeModal();
             renderUsers();
@@ -802,10 +799,7 @@ function showUserModal(user = null) {
  * Exibe o modal de confirmação para exclusão.
  */
 function showDeleteConfirmModal(type, item, onSuccess) {
-    const itemType = type === 'user' ? 'usuário' : 'imobiliária';
-    const url = type === 'user' 
-        ? `${API_BASE_URL_ADMIN}/users/${item.table}/${item.id}`
-        : `${API_BASE_URL_ADMIN}/imobiliarias/${item.id}`;
+    const itemType = type === 'user' ? 'usuário' : (type === 'group' ? 'grupo' : 'imobiliária');
 
     const modalHTML = `
         <h2 class="text-2xl font-bold mb-4 text-red-400">Confirmar Exclusão</h2>
@@ -821,15 +815,13 @@ function showDeleteConfirmModal(type, item, onSuccess) {
 
     document.getElementById('cancel-btn').addEventListener('click', closeModal);
     document.getElementById('confirm-delete-btn').addEventListener('click', async () => {
-        const token = getToken();
         try {
-            const response = await fetch(url, {
-                method: 'DELETE',
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            if (!response.ok) {
-                 const errorData = await response.json().catch(() => ({}));
-                throw new Error(errorData.detail || 'Ocorreu um erro ao excluir.');
+            if (type === 'user') {
+                await api.deleteUser(item.table, item.id);
+            } else if (type === 'imobiliaria') {
+                await api.deleteImobiliaria(item.id);
+            } else if (type === 'group') {
+                await api.deleteGrupo(item.id);
             }
             closeModal();
             onSuccess();
@@ -883,21 +875,11 @@ function showGroupModal(group = null, onSuccess) {
             delete data.senha;
         }
 
-        const token = getToken();
-        const url = isEdit 
-            ? `${API_BASE_URL_ADMIN}/grupos-imobiliarias/${group.id}`
-            : `${API_BASE_URL_ADMIN}/grupos-imobiliarias`;
-        const method = isEdit ? 'PUT' : 'POST';
-
         try {
-            const response = await fetch(url, {
-                method: method,
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify(data)
-            });
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.detail || 'Ocorreu um erro.');
+            if (isEdit) {
+                await api.updateGrupo(group.id, data);
+            } else {
+                await api.createGrupo(data);
             }
             closeModal();
             onSuccess();
@@ -957,21 +939,11 @@ function showImobiliariaModal(imob = null, onSuccess) {
             valor_mobiliado: parseFloat(formData.get('valor_mobiliado')),
         };
 
-        const token = getToken();
-        const url = isEdit 
-            ? `${API_BASE_URL_ADMIN}/imobiliarias/${imob.id}` 
-            : `${API_BASE_URL_ADMIN}/imobiliarias`;
-        const method = isEdit ? 'PUT' : 'POST';
-
         try {
-            const response = await fetch(url, {
-                method: method,
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify(data)
-            });
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.detail || 'Ocorreu um erro.');
+            if (isEdit) {
+                await api.updateImobiliaria(imob.id, data);
+            } else {
+                await api.createImobiliaria(data);
             }
             closeModal();
             onSuccess();
@@ -1017,18 +989,8 @@ function showLinkGroupModal(imob, groups, onSuccess) {
             grupo_id: grupoId || null // Envia null se a opção "Nenhum" for selecionada
         };
 
-        const token = getToken();
-        const url = `${API_BASE_URL_ADMIN}/imobiliarias/${imob.id}/link-group`;
         try {
-            const response = await fetch(url, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify(data)
-            });
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.detail || 'Ocorreu um erro.');
-            }
+            await api.linkImobiliariaToGroup(imob.id, data);
             closeModal();
             onSuccess();
         } catch (error) {
@@ -1104,22 +1066,8 @@ function showResolveChamadoModal(chamado) {
         e.preventDefault();
         const formData = new FormData(e.target);
         const data = Object.fromEntries(formData.entries());
-        const token = getToken();
-        const url = `${API_BASE_URL_ADMIN}/chamados/${chamado.id}/resolve`;
-
         try {
-            const response = await fetch(url, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify(data)
-            });
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.detail || 'Ocorreu um erro.');
-            }
+            await api.resolveChamado(chamado.id, data);
             closeModal();
             renderChamados(); // Recarrega a lista de chamados
         } catch (error) {
@@ -1171,17 +1119,8 @@ function showRevertConfirmModal(improdutivaId, onRevertSuccess) {
 
     document.getElementById('cancel-btn').addEventListener('click', closeModal);
     document.getElementById('confirm-revert-btn').addEventListener('click', async () => {
-        const token = getToken();
-        const url = `${API_BASE_URL_ADMIN}/improdutivas/${improdutivaId}/revert`;
         try {
-            const response = await fetch(url, {
-                method: 'POST',
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            if (!response.ok) {
-                 const errorData = await response.json();
-                throw new Error(errorData.detail || 'Ocorreu um erro ao reverter.');
-            }
+            await api.revertImprodutiva(improdutivaId);
             closeModal();
             onRevertSuccess(); // Recarrega a lista de improdutivas
         } catch (error) {
@@ -1209,17 +1148,8 @@ function showRestoreConfirmModal(recordId, recordTable, recordName, onRestoreSuc
 
     document.getElementById('cancel-btn').addEventListener('click', closeModal);
     document.getElementById('confirm-restore-btn').addEventListener('click', async () => {
-        const token = getToken();
-        const url = `${API_BASE_URL_ADMIN}/restore/records/${recordTable}/${recordId}`;
         try {
-            const response = await fetch(url, {
-                method: 'POST',
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            if (!response.ok) {
-                 const errorData = await response.json();
-                throw new Error(errorData.detail || 'Ocorreu um erro ao restaurar.');
-            }
+            await api.restoreRecord(recordTable, recordId);
             closeModal();
             onRestoreSuccess(); // Recarrega a lista
         } catch (error) {
@@ -1247,17 +1177,8 @@ function showCleanupConfirmModal(onCleanupSuccess) {
 
     document.getElementById('cancel-btn').addEventListener('click', closeModal);
     document.getElementById('confirm-cleanup-btn').addEventListener('click', async () => {
-        const token = getToken();
-        const url = `${API_BASE_URL_ADMIN}/maintenance/cleanup-execute`;
         try {
-            const response = await fetch(url, {
-                method: 'DELETE',
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            if (!response.ok) {
-                 const errorData = await response.json();
-                throw new Error(errorData.detail || 'Ocorreu um erro na limpeza.');
-            }
+            await api.executeCleanup();
             closeModal();
             onCleanupSuccess(); // Recarrega a contagem
         } catch (error) {
@@ -1266,3 +1187,4 @@ function showCleanupConfirmModal(onCleanupSuccess) {
         }
     });
 }
+

@@ -1,6 +1,6 @@
 # backend/schemas.py
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, model_validator
 from typing import Optional, List, Dict, Any
 from uuid import UUID
 from datetime import date, datetime
@@ -105,6 +105,9 @@ class GrupoImobiliariaBase(BaseModel):
 
 class GrupoImobiliariaCreate(GrupoImobiliariaBase):
     senha: str = Field(..., min_length=6)
+
+class GrupoImobiliariaUpdate(GrupoImobiliariaBase):
+    senha: Optional[str] = Field(None, min_length=6)
 
 class GrupoImobiliariaDisplay(GrupoImobiliariaBase):
     id: UUID
@@ -417,7 +420,8 @@ class AdminUserDisplay(BaseModel):
     email: EmailStr
     tipo: str
     table: str
-    class Config: from_attributes = True
+    class Config: 
+        from_attributes = True
 
 class AdminUserCreate(BaseModel):
     nome: str
@@ -441,18 +445,39 @@ class ChamadoAdminDisplay(BaseModel):
     data_abertura: datetime
     descricao: Optional[str] = None
     comentario_conclusao: Optional[str] = None
-    class Config: from_attributes = True
+    class Config: 
+        from_attributes = True
+
+    @model_validator(mode='before')
+    def get_user_name(cls, data):
+        if hasattr(data, 'usuario') and data.usuario:
+            data.nome_usuario = data.usuario.nome
+        else:
+            data.nome_usuario = "Usuário não encontrado"
+        return data
+
 
 class ChamadoResolve(BaseModel):
     comentario_conclusao: str = Field(..., min_length=5)
 
 class FeedbackAdminDisplay(BaseModel):
+    id: UUID
     app_version: str
     nota: int
-    comentario: str
+    comentario: Optional[str]
     data_envio: datetime
     nome_usuario: str
-    class Config: from_attributes = True
+
+    class Config:
+        from_attributes = True
+
+    @model_validator(mode='before')
+    def get_user_name(cls, data):
+        if hasattr(data, 'usuario') and data.usuario:
+            data.nome_usuario = data.usuario.nome
+        else:
+            data.nome_usuario = "Usuário não encontrado"
+        return data
 
 class ImprodutivaDisplay(BaseModel):
     id: UUID
@@ -460,8 +485,26 @@ class ImprodutivaDisplay(BaseModel):
     horario: str
     cod_imovel: str
     cliente: str
-    motivo: str
-    class Config: from_attributes = True
+    motivo: Optional[str]
+
+    class Config:
+        from_attributes = True
+
+    @model_validator(mode='before')
+    def format_data(cls, data):
+        if hasattr(data, 'data_vistoria_original'):
+            data.data_vistoria = data.data_vistoria_original.strftime('%d/%m/%Y')
+        if hasattr(data, 'imovel') and data.imovel:
+            data.cod_imovel = data.imovel.cod_imovel
+        else:
+            data.cod_imovel = "N/A"
+        if hasattr(data, 'cliente') and data.cliente:
+            data.cliente = data.cliente.nome
+        else:
+            data.cliente = "N/A"
+        if hasattr(data, 'motivo_improdutividade'):
+            data.motivo = data.motivo_improdutividade
+        return data
 
 class AppVersionUpdate(BaseModel):
     new_version: str
@@ -471,7 +514,22 @@ class DeletedRecordInfo(BaseModel):
     nome_info: str
     data_delecao: str
     tabela: str
-    class Config: from_attributes = True
+
+    class Config:
+        from_attributes = True
+    
+    @model_validator(mode='before')
+    def extract_info(cls, data):
+        record = data.get('record')
+        table_name = data.get('table_name')
+        if record:
+            data['id'] = record.id
+            data['tabela'] = table_name
+            data['data_delecao'] = record.updated_at.strftime('%d/%m/%Y %H:%M')
+            
+            display_attr = getattr(record, 'nome', getattr(record, 'titulo', getattr(record, 'cod_imovel', None)))
+            data['nome_info'] = display_attr if display_attr else str(record.id)
+        return data
 
 class CleanupPreviewResponse(BaseModel):
     counts: Dict[str, int]
