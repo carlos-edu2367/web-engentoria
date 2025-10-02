@@ -704,6 +704,9 @@ async function downloadReport(format) {
         window.URL.revokeObjectURL(downloadUrl);
         a.remove();
 
+        button.disabled = false;
+        button.innerHTML = originalText
+
     } catch (error) {
         const errorDiv = document.createElement('div');
         errorDiv.className = 'fixed bottom-4 right-4 bg-red-900/80 text-red-100 px-4 py-3 rounded-lg shadow-lg flex items-start max-w-xs';
