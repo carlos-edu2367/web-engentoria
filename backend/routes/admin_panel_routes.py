@@ -1,6 +1,6 @@
 # backend/routes/admin_panel_routes.py
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, BackgroundTasks
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import and_, extract, func, or_
@@ -11,6 +11,7 @@ from decimal import Decimal
 from dateutil.relativedelta import relativedelta
 from typing import Optional
 import io
+import logging
 
 
 from .. import models, schemas, auth
@@ -26,9 +27,13 @@ from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, 
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib import colors
 
+# Imports para envio de e-mail
+from sendgrid import SendGridAPIClient
+from sendgrid.helpers.mail import Mail
+
 
 # Importa a função para obter a sessão do banco e a função de hash de senha
-from ..config import get_db
+from ..config import get_db, settings
 from ..auth import get_password_hash, get_current_admin_user
 
 # Cria um novo roteador para o painel de administração
@@ -38,6 +43,9 @@ router = APIRouter(
     tags=["Painel de Administração"],
     dependencies=[Depends(get_current_admin_user)]
 )
+
+# Configura o logger
+logger = logging.getLogger(__name__)
 
 # =================================================================
 # --- Funções Auxiliares de Lógica de Negócio ---
@@ -94,6 +102,24 @@ def _calculate_valor_comissao_vistoriador(tamanho_m2: float, mobiliado_status: s
             valor_final = 45.00
         
     return round(valor_final, 2)
+
+def _send_report_email(subject: str, html_content: str):
+    """
+    Função auxiliar para enviar e-mails usando SendGrid.
+    """
+    message = Mail(
+        from_email=settings.EMAIL_FROM,
+        to_emails=settings.EMAIL_REPORTS_TO,
+        subject=subject,
+        html_content=html_content
+    )
+    try:
+        sg = SendGridAPIClient(settings.SENDGRID_API_KEY)
+        response = sg.send(message)
+        logger.info(f"E-mail de relatório enviado com sucesso para {settings.EMAIL_REPORTS_TO}, Status: {response.status_code}")
+    except Exception as e:
+        logger.error(f"Falha ao enviar e-mail de relatório: {e}")
+
 
 # =================================================================
 # --- Dashboard ---
@@ -1216,4 +1242,117 @@ def download_relatorio(
 
     headers = {'Content-Disposition': f'attachment; filename="{filename}"'}
     return StreamingResponse(file_stream, media_type=media_type, headers=headers)
+
+# =================================================================
+# --- Relatório Mensal por E-mail ---
+# =================================================================
+
+@router.get("/valores_totais_email/{ano}/{mes}", status_code=status.HTTP_200_OK, summary="Calcula e envia o relatório de valores totais por e-mail")
+def get_valores_totais_email(
+    ano: int,
+    mes: int,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
+):
+    """
+    Calcula os valores totais faturados por grupo de imobiliárias e as comissões
+    totais por vistoriador para um determinado ano e mês, e envia um relatório por e-mail.
+    """
+    if not (1 <= mes <= 12):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Mês inválido. Forneça um valor entre 1 e 12.")
+
+    # --- Cálculo por Grupo de Imobiliária ---
+    grupos = db.query(models.GrupoImobiliaria).options(
+        joinedload(models.GrupoImobiliaria.imobiliarias)
+    ).filter(models.GrupoImobiliaria.is_deleted == False).all()
+
+    report_grupos = {}
+    for grupo in grupos:
+        imobiliaria_ids = [imob.id for imob in grupo.imobiliarias if not imob.is_deleted]
+        if not imobiliaria_ids:
+            report_grupos[grupo.nome] = 0.0
+            continue
+
+        total_agenda = db.query(func.sum(models.Agenda.valor_final_vistoria)).join(models.Imovel).filter(
+            models.Imovel.imobiliaria_id.in_(imobiliaria_ids),
+            extract('year', models.Agenda.data) == ano,
+            extract('month', models.Agenda.data) == mes
+        ).scalar() or Decimal(0)
+
+        total_improdutiva = db.query(func.sum(models.VistoriaImprodutiva.valor_cobranca)).filter(
+            models.VistoriaImprodutiva.imobiliaria_id.in_(imobiliaria_ids),
+            extract('year', models.VistoriaImprodutiva.data_vistoria_original) == ano,
+            extract('month', models.VistoriaImprodutiva.data_vistoria_original) == mes
+        ).scalar() or Decimal(0)
+
+        report_grupos[grupo.nome] = float(total_agenda + total_improdutiva)
+
+    # --- Cálculo por Vistoriador ---
+    vistoriadores = db.query(models.Usuario).filter(
+        models.Usuario.tipo == 'vistoriador', 
+        models.Usuario.is_deleted == False
+    ).all()
+
+    report_vistoriadores = {}
+    for vistoriador in vistoriadores:
+        comissao_agenda = db.query(func.sum(models.Agenda.valor_vistoriador)).filter(
+            models.Agenda.vistoriador_id == vistoriador.id,
+            extract('year', models.Agenda.data) == ano,
+            extract('month', models.Agenda.data) == mes
+        ).scalar() or Decimal(0)
+
+        comissao_improdutiva = db.query(func.sum(models.VistoriaImprodutiva.valor_para_vistoriador)).join(
+            models.Agenda, models.VistoriaImprodutiva.agenda_id_original == models.Agenda.id
+        ).filter(
+            models.Agenda.vistoriador_id == vistoriador.id,
+            extract('year', models.VistoriaImprodutiva.data_vistoria_original) == ano,
+            extract('month', models.VistoriaImprodutiva.data_vistoria_original) == mes
+        ).scalar() or Decimal(0)
+
+        report_vistoriadores[vistoriador.nome] = float(comissao_agenda + comissao_improdutiva)
+
+    # --- Montagem e Envio do E-mail ---
+    meses_pt = {1: "Janeiro", 2: "Fevereiro", 3: "Março", 4: "Abril", 5: "Maio", 6: "Junho", 7: "Julho", 8: "Agosto", 9: "Setembro", 10: "Outubro", 11: "Novembro", 12: "Dezembro"}
+    nome_mes = meses_pt.get(mes, "Mês Inválido")
+
+    subject = f"Relatório Mensal de Ganhos - {nome_mes}/{ano}"
+
+    # Formata os dados para o HTML
+    grupos_html = "".join([f"<li><strong>{nome}:</strong> R$ {valor:,.2f}</li>" for nome, valor in report_grupos.items()])
+    comissoes_html = "".join([f"<li><strong>{nome}:</strong> R$ {valor:,.2f}</li>" for nome, valor in report_vistoriadores.items()])
+
+    html_content = f"""
+    <html>
+    <head>
+        <style>
+            body {{ font-family: Arial, sans-serif; line-height: 1.6; }}
+            h2 {{ color: #2E6B98; }}
+            ul {{ list-style-type: none; padding-left: 0; }}
+            li {{ margin-bottom: 8px; }}
+            strong {{ color: #333; }}
+        </style>
+    </head>
+    <body>
+        <p>Boa tarde!</p>
+        <p>Aqui está o relatório de ganhos totais do mês de <strong>{nome_mes} de {ano}</strong>.</p>
+        
+        <h2>📊 Grupos de Imobiliárias:</h2>
+        <ul>
+            {grupos_html}
+        </ul>
+        
+        <h2>💼 Comissões de Vistoriadores:</h2>
+        <ul>
+            {comissoes_html}
+        </ul>
+        
+        <p>Atenciosamente,<br>Sistema Engentoria.</p>
+    </body>
+    </html>
+    """
+    
+    # Envia o e-mail em segundo plano
+    background_tasks.add_task(_send_report_email, subject, html_content)
+    
+    return {"message": f"O relatório de {nome_mes}/{ano} está sendo processado e será enviado em breve para o e-mail configurado."}
 

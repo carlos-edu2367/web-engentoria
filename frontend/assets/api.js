@@ -156,14 +156,12 @@ export const api = {
     fecharHorario: (id, motivo) => apiFetch(`/agenda/${id}/fechar`, 'PUT', { motivo }),
 
     // Relatórios
-    // INÍCIO DA MODIFICAÇÃO: Corrigido o endpoint para visualização de relatórios.
     getRelatorioImobiliaria: (imobiliariaId, mes, ano) => apiFetch(`/imobiliarias/${imobiliariaId}/relatorio?mes=${mes}&ano=${ano}`),
     getRelatorioVistoriador: (vistoriadorId, mes, ano) => apiFetch(`/vistoriadores/${vistoriadorId}/relatorio?mes=${mes}&ano=${ano}`),
-    // FIM DA MODIFICAÇÃO
     downloadRelatorio: (params) => downloadApiFile('/relatorios/download', params),
+    sendValoresTotaisEmail: (ano, mes) => apiFetch(`/valores_totais_email/${ano}/${mes}`),
 
     // Configurações
     getConfig: () => apiFetch('/configuracoes/'),
     updateConfig: (data) => apiFetch('/configuracoes/', 'PUT', data),
 };
-
