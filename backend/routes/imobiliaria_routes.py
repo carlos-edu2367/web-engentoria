@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Query, HTTPException, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import func, extract
+from sqlalchemy import func, extract, case
 from typing import List, Optional
 from datetime import date, timedelta, datetime
 from dateutil.relativedelta import relativedelta
@@ -45,13 +45,16 @@ def get_report_data(mes: int, ano: int, db: Session, current_user: models.GrupoI
 
     for imob in imobiliarias_do_grupo:
         # Busca vistorias normais da tabela 'agenda'
-        # MODIFICAÇÃO: Adicionado .order_by() para ordenar por data
+        # MODIFICAÇÃO: Ordenação por tipo 'ENTRADA' primeiro, depois por data.
         vistorias_normais = db.query(models.Agenda).join(models.Imovel).filter(
             models.Imovel.imobiliaria_id == imob.id,
             extract('year', models.Agenda.data) == ano,
             extract('month', models.Agenda.data) == mes,
             models.Agenda.tipo.in_(['ENTRADA', 'SAIDA', 'CONFERENCIA', 'AVERIGUACAO', 'COMPLEMENTO_VISITA'])
-        ).options(joinedload(models.Agenda.imovel)).order_by(models.Agenda.data.asc()).all()
+        ).options(joinedload(models.Agenda.imovel)).order_by(
+            case((models.Agenda.tipo == 'ENTRADA', 1), else_=2),
+            models.Agenda.data.asc()
+        ).all()
 
         # CORREÇÃO: Busca vistorias improdutivas da tabela 'vistorias_improdutivas'
         # MODIFICAÇÃO: Adicionado .order_by() para ordenar por data
@@ -338,3 +341,4 @@ def download_monthly_report(
     }
     
     return StreamingResponse(file_stream, media_type=media_type, headers=headers)
+
