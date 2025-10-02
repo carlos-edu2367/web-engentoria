@@ -1,5 +1,3 @@
-# backend/routes/imobiliaria_routes.py
-
 from fastapi import APIRouter, Depends, Query, HTTPException, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session, joinedload
@@ -47,14 +45,16 @@ def get_report_data(mes: int, ano: int, db: Session, current_user: models.GrupoI
 
     for imob in imobiliarias_do_grupo:
         # Busca vistorias normais da tabela 'agenda'
+        # MODIFICAÇÃO: Adicionado .order_by() para ordenar por data
         vistorias_normais = db.query(models.Agenda).join(models.Imovel).filter(
             models.Imovel.imobiliaria_id == imob.id,
             extract('year', models.Agenda.data) == ano,
             extract('month', models.Agenda.data) == mes,
             models.Agenda.tipo.in_(['ENTRADA', 'SAIDA', 'CONFERENCIA', 'AVERIGUACAO', 'COMPLEMENTO_VISITA'])
-        ).options(joinedload(models.Agenda.imovel)).all()
+        ).options(joinedload(models.Agenda.imovel)).order_by(models.Agenda.data.asc()).all()
 
         # CORREÇÃO: Busca vistorias improdutivas da tabela 'vistorias_improdutivas'
+        # MODIFICAÇÃO: Adicionado .order_by() para ordenar por data
         vistorias_improdutivas = db.query(models.VistoriaImprodutiva).options(
             joinedload(models.VistoriaImprodutiva.imovel)
         ).filter(
@@ -62,7 +62,7 @@ def get_report_data(mes: int, ano: int, db: Session, current_user: models.GrupoI
             extract('year', models.VistoriaImprodutiva.data_vistoria_original) == ano,
             extract('month', models.VistoriaImprodutiva.data_vistoria_original) == mes,
             models.VistoriaImprodutiva.is_deleted == False
-        ).all()
+        ).order_by(models.VistoriaImprodutiva.data_vistoria_original.asc()).all()
 
         valor_vistorias = sum(float(v.valor_final_vistoria or 0) for v in vistorias_normais)
         # CORREÇÃO: Soma o 'valor_cobranca' da tabela correta
@@ -215,7 +215,7 @@ def create_excel_report(report_data: List[schemas.RelatorioMensal]):
         row_cursor += 1
         headers_improdutivas = ["Data", "Cód. Imóvel", "Motivo", "Valor Cobrado"]
         for col, header in enumerate(headers_improdutivas, 1):
-             ws.cell(row=row_cursor, column=col, value=header).font = header_font
+            ws.cell(row=row_cursor, column=col, value=header).font = header_font
         
         for vistoria in report.vistorias_improdutivas:
             row_cursor += 1
