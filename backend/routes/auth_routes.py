@@ -3,7 +3,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from .. import models, schemas, auth
 from ..config import settings, get_db
@@ -73,7 +73,8 @@ def request_password_recovery(
 
         # Gera e salva o novo token
         token = auth.generate_reset_token()
-        expires_at = datetime.utcnow() + timedelta(minutes=15)
+        # CORREÇÃO: Usar datetime com timezone (aware)
+        expires_at = datetime.now(timezone.utc) + timedelta(minutes=15)
         
         db_token = models.PasswordResetToken(
             email=recovery_data.email,
@@ -87,7 +88,7 @@ def request_password_recovery(
         background_tasks.add_task(auth.send_password_reset_email, email_to=user.email, token=token)
 
     # Resposta genérica para evitar enumeração de e-mails
-    return {"message": "Se um usuário com este e-mail existir, um link de recuperação foi enviado. (VERIFIQUE O SPAM)"}
+    return {"message": "Se um usuário com este e-mail existir, um link de recuperação foi enviado."}
 
 
 @router.post("/reset-password", status_code=status.HTTP_200_OK)
@@ -101,7 +102,8 @@ def reset_password(
     db_token = auth.get_password_reset_token(db, token=reset_data.token)
 
     # Validações do token
-    if not db_token or db_token.used or datetime.utcnow() > db_token.expires_at:
+    # CORREÇÃO: Usar datetime com timezone (aware) na comparação
+    if not db_token or db_token.used or datetime.now(timezone.utc) > db_token.expires_at:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Token inválido ou expirado."
@@ -123,3 +125,4 @@ def reset_password(
     db.commit()
 
     return {"message": "Sua senha foi redefinida com sucesso."}
+
