@@ -695,7 +695,7 @@ async def aceitar_recusar_info(
     
     if aceito:
         dados = get_report_data(mes=info.month, ano=info.year, db=session, current_user=current_user)
-        total = dados.get("valor_total_grupo") or 0
+        total = dados["resumo_geral"].get("valor_total_grupo", 0)
         info.accepted = True
         info.total = total
     else:

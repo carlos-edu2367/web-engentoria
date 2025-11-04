@@ -3,7 +3,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query, BackgroundTasks, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import and_, extract, func, or_
+from sqlalchemy import and_, extract, func, or_, case
 from typing import List, Dict, Union
 from uuid import UUID
 from datetime import date, timedelta, datetime
@@ -48,6 +48,101 @@ router = APIRouter(
 
 # Configura o logger
 logger = logging.getLogger(__name__)
+
+def get_report_data(mes: int, ano: int, db: Session, id_grupo: UUID):
+    """
+    Busca e formata os dados para o relatório mensal de uma ou mais imobiliárias de um grupo,
+    e retorna também o resumo total do grupo.
+    """
+    current_user = db.query(models.GrupoImobiliaria).filter(models.GrupoImobiliaria.id == id_grupo).first()
+
+    imobiliarias_do_grupo = db.query(models.Imobiliaria).filter(
+        models.Imobiliaria.grupo_id == current_user.id,
+        models.Imobiliaria.is_deleted == False
+    ).all()
+
+    relatorios = []
+    
+    # ✅ acumuladores gerais do grupo
+    total_vistorias_grupo = 0
+    total_improdutivas_grupo = 0
+    soma_valor_vistorias_grupo = 0.0
+    soma_valor_improdutivas_grupo = 0.0
+
+    for imob in imobiliarias_do_grupo:
+        vistorias_normais = db.query(models.Agenda).join(models.Imovel).filter(
+            models.Imovel.imobiliaria_id == imob.id,
+            extract('year', models.Agenda.data) == ano,
+            extract('month', models.Agenda.data) == mes,
+            models.Agenda.tipo.in_(['ENTRADA', 'SAIDA', 'CONFERENCIA', 'AVERIGUACAO', 'COMPLEMENTO_VISITA'])
+        ).options(joinedload(models.Agenda.imovel)).order_by(
+            case((models.Agenda.tipo == 'ENTRADA', 1), else_=2),
+            models.Agenda.data.asc()
+        ).all()
+
+        vistorias_improdutivas = db.query(models.VistoriaImprodutiva).options(
+            joinedload(models.VistoriaImprodutiva.imovel)
+        ).filter(
+            models.VistoriaImprodutiva.imobiliaria_id == imob.id,
+            extract('year', models.VistoriaImprodutiva.data_vistoria_original) == ano,
+            extract('month', models.VistoriaImprodutiva.data_vistoria_original) == mes,
+            models.VistoriaImprodutiva.is_deleted == False
+        ).order_by(models.VistoriaImprodutiva.data_vistoria_original.asc()).all()
+
+        valor_vistorias = sum(float(v.valor_final_vistoria or 0) for v in vistorias_normais)
+        valor_improdutivas = sum(float(vi.valor_cobranca or 0) for vi in vistorias_improdutivas)
+
+        total_vistorias_grupo += len(vistorias_normais)
+        total_improdutivas_grupo += len(vistorias_improdutivas)
+        soma_valor_vistorias_grupo += valor_vistorias
+        soma_valor_improdutivas_grupo += valor_improdutivas
+
+        vistorias_agendadas_schema = [
+            schemas.VistoriaAgendadaRelatorio.model_validate({
+                "id": v.id, "data": v.data, "horario": v.horario, "tipo": v.tipo,
+                "cod_imovel": v.imovel.cod_imovel, "endereco": v.imovel.endereco,
+                "tamanho": float(v.imovel.tamanho), "mobiliado": v.imovel.mobiliado,
+                "valor": float(v.valor_final_vistoria or 0)
+            })
+            for v in vistorias_normais if v.imovel
+        ]
+
+        vistorias_improdutivas_schema = [
+            schemas.VistoriaImprodutivaRelatorio.model_validate({
+                "id": vi.id,
+                "data_vistoria_original": vi.data_vistoria_original,
+                "cod_imovel": vi.imovel.cod_imovel if vi.imovel else "N/A",
+                "motivo_improdutividade": vi.motivo_improdutividade or "Motivo não especificado",
+                "valor_cobranca": float(vi.valor_cobranca or 0)
+            })
+            for vi in vistorias_improdutivas
+        ]
+
+        relatorios.append(schemas.RelatorioMensal(
+            mes_ano=f"{datetime(ano, mes, 1).strftime('%B').capitalize()}/{ano}",
+            imobiliaria_nome=imob.nome,
+            total_vistorias=len(vistorias_normais),
+            total_improdutivas=len(vistorias_improdutivas),
+            valor_vistorias=valor_vistorias,
+            valor_improdutivas=valor_improdutivas,
+            valor_total=valor_vistorias + valor_improdutivas,
+            vistorias_agendadas=vistorias_agendadas_schema,
+            vistorias_improdutivas=vistorias_improdutivas_schema
+        ))
+
+    # ✅ resumo geral do grupo
+    resumo_geral = {
+        "total_vistorias_grupo": total_vistorias_grupo,
+        "total_improdutivas_grupo": total_improdutivas_grupo,
+        "valor_vistorias_grupo": soma_valor_vistorias_grupo,
+        "valor_improdutivas_grupo": soma_valor_improdutivas_grupo,
+        "valor_total_grupo": soma_valor_vistorias_grupo + soma_valor_improdutivas_grupo
+    }
+
+    return {
+        "relatorios": relatorios,
+        "resumo_geral": resumo_geral
+    }
 
 def sanitize_filename(filename):
     # remove acentos
@@ -1548,11 +1643,16 @@ async def mensal_info(mes: int, ano: int, grupo_id: str,
     mensagens = sorted(info.messages, key=lambda d: d.created_at, reverse=False)
     docs = sorted(info.documentos, key=lambda d: d.created_at, reverse=True)
 
+    dados = get_report_data(mes=info.month, ano=info.year, db=session, id_grupo=grupo.id)
+    total = dados["resumo_geral"].get("valor_total_grupo", 0)
+
+
     return {
         "id": info.id,
         "month": info.month,
         "year": info.year,
         "accepted": info.accepted,
+        "total": total,
         "updated_at": info.updated_at,
         "mensagens":[{
             "id": mensagem.id,

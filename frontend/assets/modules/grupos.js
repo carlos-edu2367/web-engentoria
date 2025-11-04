@@ -8,6 +8,15 @@ import { showModal, hideModal, showAlert, renderPageContent, sanitizeHTML } from
 let appStateCache = null; // Referência ao cache global (para imobiliárias)
 let currentGrupoData = null; // Cache para os detalhes do grupo selecionado
 
+/**
+ * Formata um número como moeda brasileira (BRL).
+ * @param {number} value - O valor a ser formatado.
+ * @returns {string} - A string formatada.
+ */
+function formatCurrency(value) {
+    return (value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+
 // --- Funções Principais de Renderização ---
 
 /**
@@ -392,9 +401,12 @@ async function handleResumoSearch(grupoId, mes, ano) {
 
         const resumoHTML = `
             <div class="bg-gray-800/50 p-4 rounded-lg neon-border">
-                <div class="flex justify-between items-center mb-4">
-                    <h3 class="text-xl font-bold text-purple-300">Acompanhamento (Mês ${mes}/${ano})</h3>
-                    <span class="font-bold ${statusColor}">${statusText}</span>
+                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-2">
+                    <div>
+                        <h3 class="text-xl font-bold text-purple-300">Acompanhamento (Mês ${mes}/${ano})</h3>
+                        <p class="text-2xl font-bold text-white mt-1">${formatCurrency(infoStatus.total)}</p>
+                    </div>
+                    <span class="font-bold ${statusColor} text-right">${statusText}</span>
                 </div>
 
                 <!-- Sub-Abas (Chat / Documentos) -->
@@ -555,23 +567,56 @@ async function renderInfoMensalDocumentos(infoStatus, containerId) {
         }
     });
 
+    // INÍCIO DA CORREÇÃO: Substituir confirm() por modal customizado
     container.querySelectorAll('.info-delete-doc-btn').forEach(btn => {
-        btn.addEventListener('click', async (e) => {
+        btn.addEventListener('click', (e) => { // Removido async
             const docId = e.currentTarget.dataset.docId;
-            if (confirm('Tem certeza que deseja deletar este documento?')) {
+            const fileName = e.currentTarget.closest('.flex').querySelector('a').title || 'este documento';
+
+            // 1. Cria o HTML do modal de confirmação
+            const modalHTML = `
+                <h2 class="text-2xl font-bold text-red-400 mb-4">Confirmar Exclusão</h2>
+                <p class="text-gray-300 mb-2">Tem certeza que deseja excluir o documento:</p>
+                <p class="text-gray-100 font-medium mb-6 truncate" title="${sanitizeHTML(fileName)}">${sanitizeHTML(fileName)}</p>
+                <p class="text-sm text-gray-400 mt-2">Esta ação não pode ser desfeita.</p>
+                <div id="delete-doc-error" class="text-red-400 text-sm hidden mt-2"></div>
+                <div class="flex justify-end gap-4 pt-4 mt-4 border-t border-gray-700/50">
+                    <button type="button" id="cancel-delete-doc-btn" class="py-2 px-4 rounded-lg bg-gray-600/50 hover:bg-gray-500/50 transition-colors">Cancelar</button>
+                    <button type="button" id="confirm-delete-doc-btn" class="py-2 px-4 rounded-lg text-white font-bold bg-gradient-to-r from-red-500 to-rose-500 hover:from-red-600 hover:to-rose-600 transition-all">Sim, Excluir</button>
+                </div>
+            `;
+            
+            // 2. Exibe o modal
+            showModal(modalHTML, 'max-w-md');
+
+            // 3. Adiciona listeners ao modal
+            document.getElementById('cancel-delete-doc-btn').onclick = hideModal;
+            
+            document.getElementById('confirm-delete-doc-btn').onclick = async () => {
+                const deleteBtn = document.getElementById('confirm-delete-doc-btn');
+                const errorDivModal = document.getElementById('delete-doc-error');
+                deleteBtn.disabled = true;
+                deleteBtn.textContent = 'Excluindo...';
+                errorDivModal.classList.add('hidden');
+
                 try {
                     await api.deleteInfoMensalDocumento(docId);
-                    // CORREÇÃO: Usar o 'currentGrupoData.grupo_id' cacheado em vez de '...detalhes.id'
+                    showAlert('Documento excluído com sucesso!');
+                    hideModal();
+                    // Recarrega a aba de documentos
                     const novoInfoStatus = await api.getInfoMensal(infoStatus.month, infoStatus.year, currentGrupoData.grupo_id);
                     renderInfoMensalDocumentos(novoInfoStatus, containerId); // Recarrega
                 } catch (e) { 
-                    const errorDiv = container.querySelector('#info-doc-error');
-                    errorDiv.textContent = e.message;
-                    errorDiv.classList.remove('hidden');
+                    // Exibe o erro dentro do modal
+                    errorDivModal.textContent = e.message;
+                    errorDivModal.classList.remove('hidden');
+                    deleteBtn.disabled = false;
+                    deleteBtn.textContent = 'Sim, Excluir';
                 }
-            }
+            };
         });
     });
+    // FIM DA CORREÇÃO
 }
 // --- FIM DA PARTE 4 ---
 
