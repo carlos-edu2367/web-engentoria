@@ -1,6 +1,6 @@
 # backend/routes/admin_panel_routes.py
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query, BackgroundTasks, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, status, Query, BackgroundTasks, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import and_, extract, func, or_
@@ -1451,8 +1451,8 @@ async def ver_documentos_agendamento(agendamento_id: str,
         }for d in docs]
     }
 
-@router.post("/agenda/{agendamento_id}/documento")
-async def add_documento(agendamento_id: str,
+@router.post("/agenda/documento")
+async def add_documento(agendamento_id: str = Form(...),
                         file: UploadFile = File(...),
                         session: Session = Depends(get_db)):
     try:
@@ -1589,3 +1589,126 @@ async def enviar_msg_mensal(info_id: str,
         session.rollback()
         logger.error(f"Erro ao enviar mensagem: {e}")
         raise HTTPException(status_code=500, detail="Erro ao enviar mensagem")
+
+@router.post("/mensal/documento")
+async def enviar_documento_mensal(id_info: str = Form(...),
+                                  file: UploadFile = File(...),
+                                  session: Session = Depends(get_db)):
+    try:
+        info_id = UUID(id_info)
+    except:
+        raise HTTPException(status_code=400, detail="ID inválido")
+    
+    info = session.query(models.InfoMensal).filter(models.InfoMensal.id == info_id).first()
+    if not info:
+        raise HTTPException(status_code=404, detail="Info não encontrada")
+    
+    config = session.query(models.Configuracao).first()
+    docs = session.query(models.DocumentosInfoMensal).filter(models.DocumentosInfoMensal.info_id == info.id).count()
+    if docs <= config.max_arquivos:
+        raise HTTPException(status_code=400, detail="Limite de documentos excedido")
+    
+    nome, extensao = os.path.splitext(file.filename)
+    nome = sanitize_filename(nome)
+    nome_arquivo = f"{nome}-CODIGO-{uuid.uuid4()}{extensao}"
+
+    if not extensao.lower() in [".jpg", ".png", ".jpeg", ".pdf"]:
+            raise HTTPException(status_code=400, detail="Tipo de imagem não aceita")
+    
+    try:
+        conteudo = await file.read()
+        MAX_MB = 50
+
+        if len(conteudo) > MAX_MB * 1024 * 1024:
+                raise HTTPException(status_code=400, detail="Imagem ultrapassa o tamanho máximo: 50mb")
+        
+        res = supabase.storage.from_("documentos").upload(nome_arquivo, 
+                                                          conteudo,
+                                                          {"content-type": file.content_type})
+        if getattr(res, "error", None):
+                logger.error(f"Erro no Supabase: {res.error}")
+                raise HTTPException(status_code=400, detail="Erro ao enviar documento para o servidor")
+        new = models.DocumentosInfoMensal(info_id=info.id, file_path=nome_arquivo)
+        session.add(new)
+        session.commit()
+        return
+    except Exception as e:
+         logger.error(f"Erro ao adicionar imagem: {e}")
+         session.rollback()
+         raise HTTPException(status_code=500, detail="Erro no servidor ao adicionar imagem")
+    
+@router.delete("/deletar_doc_info/{id_doc}")
+async def deletar_doc_info(id_doc: str, 
+                            session: Session = Depends(get_db)):
+    try:
+        doc_id = UUID(id_doc)
+    except:
+        raise HTTPException(status_code=400, detail="ID inválido")
+    
+    doc = (session.query(models.DocumentosInfoMensal)
+           .join(models.DocumentosInfoMensal.info_mensal)
+           .filter(models.DocumentosInfoMensal.id == doc_id)
+            .first())
+    if not doc:
+        raise HTTPException(status_code=404, detail="Documento não encontrado")
+    
+    try:
+        if deletar_arquivo_supabase(file_path=doc.file_path, bucket="documentos"):
+            session.delete(doc)
+            session.commit()
+        else:
+            raise HTTPException(status_code=500, detail="Erro ao deletar arquivo")
+        
+    except Exception as e:
+        session.rollback()
+        logger.error(f"Erro ao deletar arquivo: {e}")
+        raise HTTPException(status_code=500, detail="Erro ao deletar arquivo")
+    
+
+@router.get("/grupo/grupos")
+async def listar_grupos_imobiliaria(session: Session = Depends(get_db)):
+    grupos = session.query(models.GrupoImobiliaria).all()
+    if not grupos:
+        return {
+            "grupos": []
+        }
+    
+    return {
+        "grupos": [{
+            "id": grupo.id,
+            "nome": grupo.nome
+        }for grupo in grupos]
+    }
+
+@router.get("/grupo/{id_grupo}")
+async def detalhes_grupo(id_grupo: str,
+                         session: Session = Depends(get_db)):
+    try:
+        grupo_id = UUID(id_grupo)
+    except:
+        raise HTTPException(status_code=400, detail="ID inválido")
+    
+    grupo = (session.query(models.GrupoImobiliaria)
+             .options(joinedload(models.GrupoImobiliaria.imobiliarias))
+             .filter(models.GrupoImobiliaria.id == grupo_id)
+             .first())
+    if not grupo:
+        raise HTTPException(status_code=404, detail="Grupo não encontrado")
+    
+    return {
+        "detalhes": {
+            "nome": grupo.nome,
+            "email": grupo.email,
+            "created_at": grupo.created_at,
+            "updated_at": grupo.updated_at
+        },
+        "imobiliarias": [{
+            "id": imobiliaria.id,
+            "nome": imobiliaria.nome,
+            "valor_sem_mobilia": imobiliaria.valor_sem_mobilia,
+            "valor_semi_mobiliado": imobiliaria.valor_semi_mobiliado,
+            "valor_mobiliado": imobiliaria.valor_mobiliado,
+            "created_at": imobiliaria.created_at,
+            "updated_at": imobiliaria.updated_at,
+        }for imobiliaria in grupo.imobiliarias]
+    }
