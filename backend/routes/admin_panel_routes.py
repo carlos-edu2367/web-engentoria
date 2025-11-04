@@ -873,14 +873,14 @@ def _get_relatorio_imobiliaria_data(imobiliaria_id: UUID, mes: int, ano: int, db
         extract('year', models.Agenda.data) == ano,
         extract('month', models.Agenda.data) == mes,
         models.Agenda.tipo.in_(['ENTRADA', 'SAIDA', 'CONFERENCIA', 'AVERIGUACAO', 'COMPLEMENTO_VISITA'])
-    ).all()
+    ).order_by(models.Agenda.data.asc()).all() # ORDENAÇÃO ADICIONADA
     
     improdutivas = db.query(models.VistoriaImprodutiva).options(joinedload(models.VistoriaImprodutiva.imovel)).filter(
         models.VistoriaImprodutiva.imobiliaria_id == imobiliaria_id,
         extract('year', models.VistoriaImprodutiva.data_vistoria_original) == ano,
         extract('month', models.VistoriaImprodutiva.data_vistoria_original) == mes,
         models.VistoriaImprodutiva.is_deleted == False
-    ).all()
+    ).order_by(models.VistoriaImprodutiva.data_vistoria_original.asc()).all() # ORDENAÇÃO ADICIONADA
 
     vistorias_formatadas = [
         schemas.RelatorioVistoriaItem(
@@ -928,7 +928,7 @@ def _get_relatorio_vistoriador_data(vistoriador_id: UUID, mes: int, ano: int, db
         extract('year', models.Agenda.data) == ano,
         extract('month', models.Agenda.data) == mes,
         models.Agenda.tipo.in_(['ENTRADA', 'SAIDA', 'CONFERENCIA', 'AVERIGUACAO', 'COMPLEMENTO_VISITA'])
-    ).options(joinedload(models.Agenda.imovel).joinedload(models.Imovel.imobiliaria)).all()
+    ).options(joinedload(models.Agenda.imovel).joinedload(models.Imovel.imobiliaria)).order_by(models.Agenda.data.asc()).all() # ORDENAÇÃO ADICIONADA
 
     improdutivas = db.query(models.VistoriaImprodutiva).join(
         models.Agenda, models.VistoriaImprodutiva.agenda_id_original == models.Agenda.id
@@ -937,7 +937,7 @@ def _get_relatorio_vistoriador_data(vistoriador_id: UUID, mes: int, ano: int, db
         extract('year', models.VistoriaImprodutiva.data_vistoria_original) == ano,
         extract('month', models.VistoriaImprodutiva.data_vistoria_original) == mes,
         models.VistoriaImprodutiva.is_deleted == False
-    ).all()
+    ).order_by(models.VistoriaImprodutiva.data_vistoria_original.asc()).all() # ORDENAÇÃO ADICIONADA
     
     vistorias_por_imobiliaria = {}
     total_comissao_vistorias = Decimal(0)
@@ -990,10 +990,16 @@ def _get_relatorio_geral_data(mes: int, ano: int, db: Session) -> List[schemas.R
     relatorios_detalhados = []
     for imob in imobiliarias:
         # Reutiliza a função que já busca dados detalhados por imobiliária
+        # Esta função AGORA retorna os dados ordenados internamente.
         report_data = _get_relatorio_imobiliaria_data(imob.id, mes, ano, db)
         relatorios_detalhados.append(report_data)
-        
+    
+    # A lista principal (relatorios_detalhados) está ordenada pelo nome da imobiliária.
+    # Cada item DENTRO dela (report_data.vistorias e report_data.improdutivas)
+    # está ordenado pela data, graças às alterações na função _get_relatorio_imobiliaria_data.
     return relatorios_detalhados
+        
+
 
 # --- Funções Auxiliares para Geração de Arquivos ---
 def _create_excel_report(data_sections: Dict[str, List[Dict]], file_title: str, value_column_name: str):
