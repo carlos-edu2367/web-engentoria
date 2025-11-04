@@ -40,6 +40,75 @@ function clearLoginAttempts() {
 // --- FIM DA LÓGICA DE RATE LIMIT ---
 
 
+// --- ETAPA 1: Novas Funções de API (Vistoriador) ---
+
+/** Busca comentários de uma vistoria */
+async function fetchComentarios(agendaId) {
+    const response = await fetch(`${API_BASE_URL}/agenda/ver_comentarios/${agendaId}`, {
+        headers: { 'Authorization': `Bearer ${getToken()}` }
+    });
+    if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.detail || 'Falha ao buscar comentários.');
+    }
+    return response.json();
+}
+
+/** Posta um novo comentário */
+async function postComentario(agendaId, comentario) {
+    const response = await fetch(`${API_BASE_URL}/agenda/adicionar_comentario/${agendaId}?comentario=${encodeURIComponent(comentario)}`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${getToken()}` }
+    });
+    if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.detail || 'Falha ao enviar comentário.');
+    }
+    // Não retorna JSON, apenas status 200
+}
+
+/** Busca documentos de uma vistoria */
+async function fetchDocumentos(agendaId) {
+    const response = await fetch(`${API_BASE_URL}/agenda/listar_documentos_agenda/${agendaId}`, {
+        headers: { 'Authorization': `Bearer ${getToken()}` }
+    });
+    if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.detail || 'Falha ao buscar documentos.');
+    }
+    return response.json();
+}
+
+/** Faz upload de um documento para a vistoria */
+async function uploadDocumento(agendaId, formData) {
+    formData.append("id_agendamento", agendaId); // O backend espera 'id_agendamento' no form
+    const response = await fetch(`${API_BASE_URL}/agenda/adicionar_documento_agendamento`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${getToken()}` },
+        body: formData
+    });
+    if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.detail || 'Falha ao enviar documento.');
+    }
+    // Não retorna JSON
+}
+
+/** Deleta um documento */
+async function deleteDocumento(documentoId) {
+    const response = await fetch(`${API_BASE_URL}/agenda/deletar_documento/${documentoId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${getToken()}` }
+    });
+    if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.detail || 'Falha ao deletar documento.');
+    }
+    // Não retorna JSON
+}
+// --- FIM ETAPA 1: API ---
+
+
 // Objeto para manter o estado atual dos filtros
 let currentFilters = {
     period: 'hoje',
@@ -291,11 +360,11 @@ function setupLoginAjudaPage() {
             const result = await response.json();
             if (!response.ok) throw new Error(result.detail || 'Ocorreu um erro.');
             formMessageDiv.textContent = result.message;
-            formMessageDiv.className = 'block mt-4 text-center p-3 rounded-lg bg-green-900/30 text-green-300 border-green-700/50';
+            formMessageDiv.className = 'block mt-4 text-center p-3 rounded-lg bg-green-900/30 text-green-300 border border-green-700/50';
             helpForm.reset();
         } catch (error) {
             formMessageDiv.textContent = error.message;
-            formMessageDiv.className = 'block mt-4 text-center p-3 rounded-lg bg-red-900/30 text-red-400 border-red-700/50';
+            formMessageDiv.className = 'block mt-4 text-center p-3 rounded-lg bg-red-900/30 text-red-400 border border-red-700/50';
         }
     });
 }
@@ -477,7 +546,17 @@ async function setupFeedbackFeature() {
 
             feedbackModal.classList.add('hidden');
             feedbackModal.classList.remove('flex');
-            alert('Obrigado pelo seu feedback!');
+            
+            // Usar um toast/alert não-bloqueante
+            const successToast = document.createElement('div');
+            successToast.className = 'fixed bottom-5 left-1/2 -translate-x-1/2 z-50 bg-green-600 text-white px-4 py-2 rounded-lg shadow-lg fade-in';
+            successToast.textContent = 'Obrigado pelo seu feedback!';
+            document.body.appendChild(successToast);
+            setTimeout(() => {
+                successToast.classList.add('opacity-0', 'transition-opacity');
+                setTimeout(() => successToast.remove(), 500);
+            }, 3000);
+
 
         } catch (error) {
             errorDiv.textContent = error.message;
@@ -497,8 +576,8 @@ function renderAgenda(vistorias) {
     }
 
     const vistoriasPorData = vistorias.reduce((acc, vistoria) => {
-        const data = new Date(vistoria.data + 'T00:00:00');
-        const dataFormatada = data.toLocaleDateString('pt-BR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+        const data = new Date(vistoria.data + 'T00:00:00'); // Assegura data local
+        const dataFormatada = data.toLocaleDateString('pt-BR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'America/Sao_Paulo' });
         
         if (!acc[dataFormatada]) {
             acc[dataFormatada] = [];
@@ -522,18 +601,22 @@ function renderAgenda(vistorias) {
         agendaContainer.appendChild(dayCard);
     }
 
-    document.querySelectorAll('.expand-btn').forEach(button => {
-        button.addEventListener('click', () => {
-            const details = button.closest('.vistoria-card').querySelector('.details');
-            const icon = button.querySelector('svg');
-            details.classList.toggle('hidden');
-            icon.classList.toggle('rotate-180');
-        });
+    // ETAPA 1: Modificar listener para o modal
+    agendaContainer.addEventListener('click', (e) => {
+        const detailsButton = e.target.closest('.show-details-btn');
+        if (detailsButton) {
+            const vistoriaId = detailsButton.dataset.vistoriaId;
+            const vistoria = vistorias.find(v => v.id === vistoriaId);
+            if (vistoria) {
+                showVistoriaModalVistoriador(vistoria);
+            }
+        }
     });
 }
 
+// ETAPA 1: Modificar createVistoriaCard
 function createVistoriaCard(vistoria) {
-    const { horario, tipo, imovel, observacao_vistoriador } = vistoria;
+    const { horario, tipo, imovel } = vistoria;
     
     const isBooked = !!imovel;
     const cardBgClass = isBooked ? 'bg-gray-700/40' : 'bg-gray-700/20';
@@ -543,14 +626,37 @@ function createVistoriaCard(vistoria) {
         ? `<p class="text-sm text-gray-300">Cód. Imóvel: ${imovel.cod_imovel}</p>`
         : `<p class="text-sm text-cyan-400">Horário Livre</p>`;
 
-    // INÍCIO DA MODIFICAÇÃO: Adiciona a observação do vistoriador
+    // Detalhes foram removidos daqui e movidos para getVistoriaDetalhesHTML
+    
+    return `
+        <div class="vistoria-card ${cardBgClass} rounded-lg p-4 border ${borderColorClass} transition-all duration-300">
+            <div class="flex justify-between items-center">
+                <div>
+                    <p class="text-xl font-bold">${horario || 'N/D'}</p>
+                    ${subtitleHTML}
+                </div>
+                ${isBooked ? `
+                <button class="show-details-btn p-2 px-4 rounded-lg bg-cyan-600/50 hover:bg-cyan-500/50 text-xs font-bold" data-vistoria-id="${vistoria.id}">
+                    Ver Detalhes
+                </button>
+                ` : ''}
+            </div>
+            <!-- O div.details foi removido daqui -->
+        </div>
+    `;
+}
+
+// ETAPA 1: Nova função para pegar o HTML de detalhes (lógica movida de createVistoriaCard)
+function getVistoriaDetalhesHTML(vistoria) {
+    const { horario, tipo, imovel, observacao_vistoriador } = vistoria;
+    const isBooked = !!imovel; // Necessário para a lógica interna
+
     const observacaoHTML = observacao_vistoriador ? `
         <div class="mt-3 pt-3 border-t border-gray-600/30">
             <h4 class="font-semibold text-amber-300 text-sm">Observações:</h4>
             <p class="text-sm text-gray-300 whitespace-pre-wrap">${observacao_vistoriador}</p>
         </div>
     ` : '';
-    // FIM DA MODIFICAÇÃO
 
     const detalhesImovelHTML = isBooked ? `
         <h4 class="font-semibold text-cyan-300 mt-4 border-t border-gray-600/50 pt-3">Detalhes do Imóvel</h4>
@@ -571,28 +677,221 @@ function createVistoriaCard(vistoria) {
     ` : '';
 
     return `
-        <div class="vistoria-card ${cardBgClass} rounded-lg p-4 border ${borderColorClass} transition-all duration-300">
-            <div class="flex justify-between items-center">
-                <div>
-                    <p class="text-xl font-bold">${horario || 'N/D'}</p>
-                    ${subtitleHTML}
-                </div>
-                ${isBooked ? `
-                <button class="expand-btn p-2 rounded-full hover:bg-gray-600/50 transition">
-                    <svg class="h-6 w-6 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
-                </button>
-                ` : ''}
-            </div>
-            ${isBooked ? `
-            <div class="details hidden mt-4 space-y-1 text-sm text-gray-300">
-                ${observacaoHTML}
-                ${detalhesImovelHTML}
-                ${detalhesClienteHTML}
-            </div>
-            ` : ''}
-        </div>
+        ${observacaoHTML}
+        ${detalhesImovelHTML}
+        ${detalhesClienteHTML}
     `;
 }
+
+// ETAPA 1: Nova função para exibir o Modal de Vistoria (com abas)
+function showVistoriaModalVistoriador(vistoria) {
+    const modal = document.getElementById('generic-modal');
+    const modalContent = document.getElementById('modal-content');
+    if (!modal || !modalContent) return;
+
+    // HTML base do modal com abas
+    modalContent.innerHTML = `
+        <div class="flex justify-between items-start">
+            <h2 class="text-xl sm:text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-cyan-300 to-emerald-300 mb-2">
+                Detalhes Vistoria (${vistoria.horario})
+            </h2>
+            <button id="close-modal-btn" class="p-1 rounded-full hover:bg-gray-700/50 text-gray-400 hover:text-white transition">
+                <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+            </button>
+        </div>
+
+        <!-- Abas (Mobile-first: scroll horizontal) -->
+        <div class="border-b border-gray-700/50 mb-4 overflow-x-auto">
+            <nav class="flex space-x-2 sm:space-x-4" id="modal-tabs">
+                <button data-tab="detalhes" class="tab-btn active">Detalhes</button>
+                <button data-tab="mural" class="tab-btn">Mural</button>
+                <button data-tab="documentos" class="tab-btn">Documentos</button>
+            </nav>
+        </div>
+
+        <!-- Conteúdo das Abas -->
+        <div id="tab-content-detalhes" class="tab-content space-y-2 text-sm text-gray-300">
+            <!-- Conteúdo dos Detalhes -->
+            ${getVistoriaDetalhesHTML(vistoria)} 
+        </div>
+        <div id="tab-content-mural" class="tab-content hidden">
+            <!-- Conteúdo do Mural (será carregado) -->
+            <p class="text-center text-gray-400">Carregando mural...</p>
+        </div>
+        <div id="tab-content-documentos" class="tab-content hidden">
+            <!-- Conteúdo dos Documentos (será carregado) -->
+            <p class="text-center text-gray-400">Carregando...</p>
+        </div>
+    `;
+
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+
+    // Listeners do Modal
+    document.getElementById('close-modal-btn').addEventListener('click', () => {
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+    });
+
+    // Carrega a primeira aba dinâmica (Mural)
+    renderMuralTab(vistoria.id, 'tab-content-mural', 'vistoriador');
+
+    document.getElementById('modal-tabs').addEventListener('click', (e) => {
+        if (e.target.classList.contains('tab-btn')) {
+            const tabId = e.target.dataset.tab;
+            
+            // Atualiza botões
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            e.target.classList.add('active');
+            
+            // Atualiza conteúdo
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.classList.add('hidden');
+            });
+            document.getElementById(`tab-content-${tabId}`).classList.remove('hidden');
+
+            // Carrega conteúdo dinâmico (só carrega se for a primeira vez)
+            const contentDiv = document.getElementById(`tab-content-${tabId}`);
+            if (contentDiv.innerHTML.includes('Carregando...')) { // Evita recarregar
+                if (tabId === 'mural') renderMuralTab(vistoria.id, 'tab-content-mural', 'vistoriador');
+                if (tabId === 'documentos') renderDocumentosTab(vistoria.id, 'tab-content-documentos', 'vistoriador');
+            }
+        }
+    });
+}
+
+// ETAPA 1: Nova função para renderizar a Aba Mural (CORRIGIDA)
+async function renderMuralTab(agendaId, containerId, remetente) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    container.innerHTML = '<p class="text-center text-gray-400">Carregando mural...</p>';
+    
+    try {
+        // CORREÇÃO: Removida a referência à função 'imobFetchComentarios'
+        const data = await fetchComentarios(agendaId);
+        
+        const comentariosHTML = data.comentarios.map(c => `
+            <div class="p-3 rounded-lg ${c.remetente === remetente ? 'bg-cyan-900/50 ml-auto' : 'bg-gray-700/50 mr-auto'}" style="max-width: 80%;">
+                <p class="text-sm text-gray-200 whitespace-pre-wrap">${c.conteudo}</p>
+                <p class="text-xs text-gray-400 text-right mt-1 capitalize">${c.remetente} - ${new Date(c.created_at).toLocaleString('pt-BR')}</p>
+            </div>
+        `).join('');
+
+        container.innerHTML = `
+            <div class="space-y-3 max-h-64 overflow-y-auto mb-4 p-2 bg-gray-900/50 rounded-lg custom-scrollbar">${comentariosHTML || '<p class="text-gray-400 text-center">Nenhum comentário ainda.</p>'}</div>
+            <div class="flex flex-col sm:flex-row gap-2">
+                <textarea id="mural-textarea" rows="2" class="w-full p-2 bg-gray-700/50 border border-gray-600/50 rounded-lg focus:outline-none focus:ring-2 focus:ring-cyan-500/50" placeholder="Escreva seu comentário..."></textarea>
+                <button id="mural-submit-btn" class="py-2 px-4 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white font-bold transition-colors">Enviar</button>
+            </div>
+            <div id="mural-error" class="text-red-400 text-sm mt-2 hidden"></div>
+        `;
+
+        container.querySelector('#mural-submit-btn').addEventListener('click', async (e) => {
+            const btn = e.currentTarget;
+            const textarea = container.querySelector('#mural-textarea');
+            const errorDiv = container.querySelector('#mural-error');
+            const comentario = textarea.value.trim();
+            
+            errorDiv.classList.add('hidden');
+            if (comentario) {
+                btn.disabled = true;
+                btn.textContent = 'Enviando...';
+                try {
+                    // CORREÇÃO: Removida a referência à função 'imobPostComentario'
+                    await postComentario(agendaId, comentario);
+                    renderMuralTab(agendaId, containerId, remetente); // Recarrega o mural
+                } catch (e) { 
+                    errorDiv.textContent = e.message;
+                    errorDiv.classList.remove('hidden');
+                    btn.disabled = false;
+                    btn.textContent = 'Enviar';
+                }
+            }
+        });
+    } catch (e) { container.innerHTML = `<p class="text-red-400">${e.message}</p>`; }
+}
+
+// ETAPA 1: Nova função para renderizar a Aba Documentos (CORRIGIDA)
+async function renderDocumentosTab(agendaId, containerId, remetente) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    container.innerHTML = '<p class="text-center text-gray-400">Carregando documentos...</p>';
+    
+    try {
+        // CORREÇÃO: Removida a referência à função 'imobFetchDocumentos'
+        const data = await fetchDocumentos(agendaId);
+        
+        const documentosHTML = data.documentos.map(d => `
+            <div class="flex justify-between items-center p-3 bg-gray-700/50 rounded-lg">
+                <a href="${d.link}" target="_blank" class="text-cyan-400 hover:underline truncate" title="${d.nome}">
+                    <svg class="h-5 w-5 inline-block mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                    ${d.nome}
+                </a>
+                <button class="delete-doc-btn text-red-500 hover:text-red-400" data-doc-id="${d.id}" aria-label="Deletar ${d.nome}">
+                    <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                </button>
+            </div>
+        `).join('');
+
+        container.innerHTML = `
+            <div class="space-y-3 max-h-64 overflow-y-auto mb-4 p-2 bg-gray-900/50 rounded-lg custom-scrollbar">${documentosHTML || '<p class="text-gray-400 text-center">Nenhum documento anexado.</p>'}</div>
+            <div class="flex flex-col sm:flex-row gap-2">
+                <input type="file" id="doc-input" class="w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-cyan-600/50 file:text-cyan-100 hover:file:bg-cyan-600 transition-colors">
+                <button id="doc-submit-btn" class="py-2 px-4 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white font-bold transition-colors">Anexar</button>
+            </div>
+            <div id="doc-error" class="text-red-400 text-sm mt-2 hidden"></div>
+        `;
+
+        container.querySelector('#doc-submit-btn').addEventListener('click', async (e) => {
+            const btn = e.currentTarget;
+            const input = container.querySelector('#doc-input');
+            const errorDiv = container.querySelector('#doc-error');
+            
+            errorDiv.classList.add('hidden');
+            if (input.files.length > 0) {
+                const formData = new FormData();
+                formData.append("file", input.files[0]);
+                
+                btn.disabled = true;
+                btn.textContent = 'Enviando...';
+                try {
+                    // CORREÇÃO: Removida a referência à função 'imobUploadDocumento'
+                    await uploadDocumento(agendaId, formData);
+                    renderDocumentosTab(agendaId, containerId, remetente); // Recarrega
+                } catch (e) { 
+                    errorDiv.textContent = e.message;
+                    errorDiv.classList.remove('hidden');
+                    btn.disabled = false;
+                    btn.textContent = 'Anexar';
+                }
+            } else {
+                errorDiv.textContent = 'Por favor, selecione um arquivo.';
+                errorDiv.classList.remove('hidden');
+            }
+        });
+
+        container.querySelectorAll('.delete-doc-btn').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                if (confirm('Tem certeza que deseja deletar este documento?')) {
+                    const docId = e.currentTarget.dataset.docId;
+                    try {
+                        // CORREÇÃO: Removida a referência à função 'imobDeleteDocumento'
+                        await deleteDocumento(docId);
+                        renderDocumentosTab(agendaId, containerId, remetente); // Recarrega
+                    } catch (e) { 
+                        const errorDiv = container.querySelector('#doc-error');
+                        errorDiv.textContent = e.message;
+                        errorDiv.classList.remove('hidden');
+                    }
+                }
+            });
+        });
+
+    } catch (e) { container.innerHTML = `<p class="text-red-400">${e.message}</p>`; }
+}
+// --- FIM ETAPA 1 ---
 
 
 function setupAjudaPage() {
@@ -720,7 +1019,7 @@ function renderVistoriadorReport(container, data) {
                         <tbody>
                             ${vistorias.map(v => `
                                 <tr class="border-b border-gray-700/50">
-                                    <td class="p-2 whitespace-nowrap">${new Date(v.data + 'T00:00:00').toLocaleDateString('pt-BR')}</td>
+                                    <td class="p-2 whitespace-nowrap">${new Date(v.data + 'T00:00:00').toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}</td>
                                     <td class="p-2">${v.cod_imovel}</td>
                                     <td class="p-2 truncate max-w-xs" title="${v.endereco}">${v.endereco}</td>
                                     <td class="p-2 whitespace-nowrap">${v.tamanho} m²</td>
@@ -756,7 +1055,7 @@ function renderVistoriadorReport(container, data) {
                     <tbody>
                         ${data.improdutivas.map(i => `
                             <tr class="border-b border-gray-700/50">
-                                <td class="p-2 whitespace-nowrap">${new Date(i.data_vistoria_original + 'T00:00:00').toLocaleDateString('pt-BR')}</td>
+                                <td class="p-2 whitespace-nowrap">${new Date(i.data_vistoria_original + 'T00:00:00').toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}</td>
                                 <td class="p-2">${i.cod_imovel}</td>
                                 <td class="p-2 truncate max-w-sm" title="${i.motivo_improdutividade}">${i.motivo_improdutividade}</td>
                                 <td class="p-2 text-right whitespace-nowrap">${formatCurrency(i.comissao_vistoriador)}</td>
@@ -796,5 +1095,3 @@ function renderVistoriadorReport(container, data) {
         </div>
     `;
 }
-
-

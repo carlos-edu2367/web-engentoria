@@ -133,6 +133,8 @@ class Agenda(Base):
     imovel = relationship("Imovel", back_populates="agendamentos")
     vistoriador = relationship("Usuario", back_populates="vistorias")
     horario_fechado = relationship("HorarioFechado", back_populates="agenda_entry", uselist=False, cascade="all, delete-orphan")
+    documentos = relationship("DocumentoAgenda", back_populates="agenda", cascade="all, delete-orphan")
+    comentarios = relationship("ComentarioVistoria", back_populates="agenda", cascade="all, delete-orphan")
 
 # --- Modelo para a tabela de Horários Fixos ---
 class HorarioFixo(Base):
@@ -235,6 +237,7 @@ class AppVersion(Base):
 class Configuracao(Base):
     __tablename__ = "configuracoes"
     id = Column(Integer, primary_key=True, default=1)
+    max_arquivos = Column(Integer, nullable=False, default=10)
     percentual_comissao_improdutiva = Column(Numeric(10, 2), nullable=False, default=30.0)
     updated_at = Column(TIMESTAMP(timezone=True), default=func.now(), onupdate=func.now())
 
@@ -247,3 +250,84 @@ class PasswordResetToken(Base):
     expires_at = Column(TIMESTAMP(timezone=True), nullable=False)
     used = Column(Boolean, default=False, nullable=False)
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+
+
+class DocumentoAgenda(Base):
+    __tablename__ = "documentos_agenda"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    grupo_id = Column(UUID(as_uuid=True), ForeignKey("grupos_imobiliarias.id"), nullable=True)
+    usuario_id = Column(UUID(as_uuid=True), ForeignKey("usuarios.id"), nullable=True)
+    agenda_id = Column(UUID(as_uuid=True), ForeignKey("agenda.id"), nullable=False)
+    file_path = Column(String, nullable=False)
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+
+    agenda = relationship("Agenda", back_populates="documentos")
+
+    def __init__(self, file_path, agenda_id, grupo_id = None, usuario_id = None):
+        self.file_path = file_path
+        self.agenda_id = agenda_id
+        self.grupo_id = grupo_id
+        self.usuario_id = usuario_id
+
+
+class InfoMensal(Base):
+    __tablename__ = "info_mensal"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    grupo_id = Column(UUID(as_uuid=True), ForeignKey("grupos_imobiliarias.id", ondelete="CASCADE"), nullable=False)
+    total = Column(Numeric, nullable=True)
+    month = Column(Integer, nullable=False)
+    year = Column(Integer, nullable=False)
+    accepted = Column(Boolean, nullable=False, default=False)
+    updated_at = Column(TIMESTAMP(timezone=True), default=func.now(), onupdate=func.now())
+
+    messages = relationship("MensagemInfoMensal", back_populates="info_mensal", cascade="all, delete-orphan")
+    documentos = relationship("DocumentosInfoMensal", back_populates="info_mensal", cascade="all, delete-orphan")
+
+    def __init__(self, grupo_id, month, year):
+        self.grupo_id = grupo_id
+        self.month = month
+        self.year = year
+
+
+class MensagemInfoMensal(Base):
+    __tablename__ = "mensagens_info_mensal"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    info_id = Column(UUID(as_uuid=True), ForeignKey("info_mensal.id", ondelete="CASCADE"), nullable=False)
+    conteudo = Column(String, nullable=False)
+    remetente = Column(String(15), nullable=False) # "imobiliaria, adm"
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+
+    info_mensal = relationship("InfoMensal", back_populates="messages")
+    def __init__(self, info_id, conteudo, remetente):
+        self.info_id = info_id
+        self.conteudo = conteudo
+        self.remetente = remetente
+
+
+class DocumentosInfoMensal(Base):
+    __tablename__ = "documentos_info_mensal"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    info_id = Column(UUID(as_uuid=True), ForeignKey("info_mensal.id", ondelete="CASCADE"), nullable=False)
+    file_path = Column(String, nullable=False)
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+
+    info_mensal = relationship("InfoMensal", back_populates="documentos")
+
+    def __init__(self, info_id, file_path):
+        self.info_id = info_id
+        self.file_path = file_path
+
+class ComentarioVistoria(Base):
+    __tablename__ = "comentarios_vistoria"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    agenda_id = Column(UUID(as_uuid=True), ForeignKey("agenda.id", ondelete="CASCADE"), nullable=False)
+    conteudo = Column(String, nullable=False)
+    remetente = Column(String(15), nullable=False) # "imobiliaria, adm, vistoriador"
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+
+    agenda = relationship("Agenda", back_populates="comentarios")
+
+    def __init__(self, agenda_id, conteudo, remetente):
+        self.agenda_id = agenda_id
+        self.conteudo = conteudo
+        self.remetente = remetente

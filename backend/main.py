@@ -13,14 +13,13 @@ from . import models
 from .config import engine
 
 # Cria as tabelas no banco de dados, se não existirem
-models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
     title="Engentoria - API Vistoriador & Gestão",
     description="API para o portal web do vistoriador, painel da imobiliária e painel de gestão de TI.",
     version="2.0" # Versão atualizada para refletir as novas funcionalidades
 )
-
+models.Base.metadata.create_all(bind=engine)
 # Configuração do CORS para permitir todas as origens
 origins = ["*"] 
 

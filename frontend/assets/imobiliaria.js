@@ -5,6 +5,141 @@ const API_BASE_URL_IMOB = isLocalImob ? 'http://127.0.0.1:8000/api/v1/imobiliari
 
 let calendar; // Variável global para o calendário
 
+// --- ETAPA 2: Novas Funções de API (Imobiliária - Vistoria) ---
+
+/** Busca comentários de uma vistoria (Imobiliária) */
+async function imobFetchComentarios(agendaId) {
+    const response = await fetch(`${API_BASE_URL_IMOB}/ver_comentarios/${agendaId}`, {
+        headers: { 'Authorization': `Bearer ${getToken()}` }
+    });
+    if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.detail || 'Falha ao buscar comentários.');
+    }
+    return response.json();
+}
+
+/** Posta um novo comentário (Imobiliária) */
+async function imobPostComentario(agendaId, comentario) {
+    const response = await fetch(`${API_BASE_URL_IMOB}/adicionar_comentario_mural/${agendaId}?comentario=${encodeURIComponent(comentario)}`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${getToken()}` }
+    });
+    if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.detail || 'Falha ao enviar comentário.');
+    }
+}
+
+/** Busca documentos de uma vistoria (Imobiliária) */
+async function imobFetchDocumentos(agendaId) {
+    const response = await fetch(`${API_BASE_URL_IMOB}/listar_documentos_agenda/${agendaId}`, {
+        headers: { 'Authorization': `Bearer ${getToken()}` }
+    });
+    if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.detail || 'Falha ao buscar documentos.');
+    }
+    return response.json();
+}
+
+/** Faz upload de um documento para a vistoria (Imobiliária) */
+async function imobUploadDocumento(agendaId, formData) {
+    formData.append("id_agendamento", agendaId); // O backend espera 'id_agendamento' no form
+    const response = await fetch(`${API_BASE_URL_IMOB}/adicionar_documento_agendamento`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${getToken()}` },
+        body: formData
+    });
+    if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.detail || 'Falha ao enviar documento.');
+    }
+}
+
+/** Deleta um documento (Imobiliária) */
+async function imobDeleteDocumento(documentoId) {
+    const response = await fetch(`${API_BASE_URL_IMOB}/deletar_documento/${documentoId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${getToken()}` }
+    });
+    if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.detail || 'Falha ao deletar documento.');
+    }
+}
+// --- FIM ETAPA 2: API ---
+
+// --- ETAPA 3: Novas Funções de API (Imobiliária - InfoMensal) ---
+
+/** Busca o status do InfoMensal (chat, documentos, status) */
+async function imobFetchInfoStatus(mes, ano) {
+    const response = await fetch(`${API_BASE_URL_IMOB}/status_info_mensal/${mes}/${ano}`, {
+        headers: { 'Authorization': `Bearer ${getToken()}` }
+    });
+    if (response.status === 401) logout();
+    if (!response.ok) {
+        // Se 404, significa que a info ainda não foi criada, o que é normal.
+        if (response.status === 404) return null; 
+        const err = await response.json();
+        throw new Error(err.detail || 'Falha ao buscar status do relatório.');
+    }
+    return response.json();
+}
+
+/** Posta uma nova mensagem no chat do InfoMensal */
+async function imobPostInfoMensagem(infoId, mensagem) {
+    const response = await fetch(`${API_BASE_URL_IMOB}/enviar_mensagem_info/${infoId}?mensagem=${encodeURIComponent(mensagem)}`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${getToken()}` }
+    });
+    if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.detail || 'Falha ao enviar mensagem.');
+    }
+}
+
+/** Faz upload de um documento para o InfoMensal */
+async function imobUploadInfoDocumento(infoId, formData) {
+    formData.append("id_info", infoId);
+    const response = await fetch(`${API_BASE_URL_IMOB}/adicionar_documento_info`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${getToken()}` },
+        body: formData
+    });
+    if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.detail || 'Falha ao enviar documento.');
+    }
+}
+
+/** Deleta um documento do InfoMensal */
+async function imobDeleteInfoDocumento(docId) {
+    const response = await fetch(`${API_BASE_URL_IMOB}/deletar_imagem_info/${docId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${getToken()}` }
+    });
+    if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.detail || 'Falha ao deletar documento.');
+    }
+}
+
+/** Define o status de aceitação do InfoMensal */
+async function imobSetInfoStatus(infoId, aceito) {
+    const response = await fetch(`${API_BASE_URL_IMOB}/aceitar_recusar_info/${infoId}?aceito=${aceito}`, {
+        method: 'PUT',
+        headers: { 'Authorization': `Bearer ${getToken()}` }
+    });
+    if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.detail || 'Falha ao atualizar status.');
+    }
+    return response.json();
+}
+// --- FIM ETAPA 3: API ---
+
+
 document.addEventListener('DOMContentLoaded', () => {
     protectImobiliariaPage();
 
@@ -119,6 +254,7 @@ async function renderOverview() {
             headers: { 'Authorization': `Bearer ${token}` }
         });
         
+        if (response.status === 401) return logout();
         if (!response.ok) throw new Error('Falha ao buscar estatísticas.');
         const stats = await response.json();
 
@@ -247,6 +383,7 @@ async function renderAgenda() {
                     headers: { 'Authorization': `Bearer ${token}` } 
                 });
                 
+                if (response.status === 401) return logout();
                 if (!response.ok) throw new Error('Falha ao buscar eventos.');
                 const vistorias = await response.json();
                 
@@ -344,12 +481,23 @@ async function renderRelatorios() {
         
         try {
             const token = getToken();
-            const response = await fetch(`${API_BASE_URL_IMOB}/relatorio-mensal?mes=${mes}&ano=${ano}`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            
-            if (!response.ok) throw new Error('Falha ao gerar relatório.');
-            const relatorios = await response.json();
+            // ETAPA 3: Buscar Relatório e Status da Info em paralelo
+            const [data, infoStatus] = await Promise.all([
+                fetch(`${API_BASE_URL_IMOB}/relatorio-mensal?mes=${mes}&ano=${ano}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                }).then(res => {
+                    if (res.status === 401) logout();
+                    if (!res.ok) throw new Error('Falha ao gerar dados do relatório.');
+                    return res.json();
+                }),
+                imobFetchInfoStatus(mes, ano).catch(err => {
+                    console.error("Erro ao buscar info status:", err);
+                    return null; // Continuar mesmo se o info falhar (ex: 404)
+                })
+            ]);
+
+            const relatorios = data.relatorios;
+            const resumo = data.resumo_geral;
             
             if (!document.getElementById('report-content')) {
                 console.log("Página de Relatórios não está mais ativa. Renderização abortada.");
@@ -368,7 +516,79 @@ async function renderRelatorios() {
                 return;
             }
             
-            reportContent.innerHTML = relatorios.map(r => createReportHTML(r)).join('');
+            const formatCurrency = (value) => (value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+            
+            // ETAPA 3: HTML para o card de InfoMensal
+            let infoHTML = '';
+            if (infoStatus) {
+                let statusText, statusColor;
+                if (infoStatus.accepted) {
+                    statusText = "Relatório Aprovado";
+                    statusColor = "text-emerald-400";
+                } else {
+                    // Se não foi aceito, verificamos se há mensagens do admin
+                    const hasAdminMsg = infoStatus.mensagens.some(m => m.remetente === 'adm');
+                    if (hasAdminMsg) {
+                        statusText = "Ajustes Solicitados";
+                        statusColor = "text-yellow-400";
+                    } else {
+                        statusText = "Aguardando Aprovação";
+                        statusColor = "text-gray-400";
+                    }
+                }
+
+                infoHTML = `
+                    <div class="bg-gray-900/50 p-6 rounded-xl border border-purple-500/30 neon-border mb-6">
+                        <div class="flex flex-col sm:flex-row justify-between items-start gap-4">
+                            <div>
+                                <h2 class="text-xl font-bold text-purple-300 mb-2">Acompanhamento do Mês</h2>
+                                <p class="text-lg ${statusColor} font-medium">${statusText}</p>
+                            </div>
+                            <button id="analisar-info-btn" class="py-2 px-6 rounded-lg font-bold text-white bg-purple-600 hover:bg-purple-700 transition-all">
+                                ${infoStatus.accepted ? 'Visualizar' : 'Analisar / Aprovar'}
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }
+
+            const resumoHTML = `
+                <div class="bg-gray-900/50 p-6 rounded-xl border border-cyan-500/30 neon-border mb-6">
+                    <h2 class="text-xl font-bold text-cyan-300 mb-4">Resumo Geral do Grupo</h2>
+                    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 text-center">
+                        <div class="p-3 bg-gray-800/50 rounded-lg">
+                            <p class="text-sm text-gray-400">Total Vistorias</p>
+                            <p class="text-2xl font-bold">${resumo.total_vistorias_grupo}</p>
+                        </div>
+                        <div class="p-3 bg-gray-800/50 rounded-lg">
+                            <p class="text-sm text-gray-400">Total Improdutivas</p>
+                            <p class="text-2xl font-bold">${resumo.total_improdutivas_grupo}</p>
+                        </div>
+                        <div class="p-3 bg-gray-800/50 rounded-lg">
+                            <p class="text-sm text-gray-400">Valor Vistorias</p>
+                            <p class="text-2xl font-bold">${formatCurrency(resumo.valor_vistorias_grupo)}</p>
+                        </div>
+                        <div class="p-3 bg-gray-800/50 rounded-lg">
+                            <p class="text-sm text-gray-400">Valor Improdutivas</p>
+                            <p class="text-2xl font-bold">${formatCurrency(resumo.valor_improdutivas_grupo)}</p>
+                        </div>
+                        <div class="p-3 bg-emerald-900/50 rounded-lg col-span-2 md:col-span-1 lg:col-span-1">
+                            <p class="text-sm text-emerald-300">Valor Total</p>
+                            <p class="text-2xl font-bold text-white">${formatCurrency(resumo.valor_total_grupo)}</p>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            // ETAPA 3: Adiciona o infoHTML ANTES do resumoHTML
+            reportContent.innerHTML = infoHTML + resumoHTML + relatorios.map(r => createReportHTML(r)).join('');
+
+            // ETAPA 3: Adicionar listener para o novo botão
+            if (infoStatus) {
+                document.getElementById('analisar-info-btn').addEventListener('click', () => {
+                    showInfoMensalModal(infoStatus, fetchAndDisplayReport);
+                });
+            }
 
         } catch (error) {
             reportContent.innerHTML = `
@@ -430,88 +650,495 @@ function createComparisonCard(title, value, change) {
     `;
 }
 
-function showVistoriaModal(vistoria) {
+// ETAPA 2: Nova função auxiliar para extrair o HTML de detalhes
+function getImobVistoriaDetalhesHTML(vistoria) {
     const { imovel, cliente, vistoriador } = vistoria;
+    return `
+       <div class="space-y-4">
+           <div class="grid grid-cols-1 md:grid-cols-2 gap-6 text-sm">
+               <!-- Coluna 1: Dados da Vistoria -->
+               <div class="bg-gray-700/30 p-4 rounded-lg neon-border">
+                   <h3 class="font-semibold text-lg border-b border-gray-600/50 pb-2 mb-3 text-cyan-300">
+                       <svg class="h-5 w-5 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
+                       </svg>
+                       Vistoria
+                   </h3>
+                   <div class="space-y-3">
+                       <p><strong class="text-gray-300">Tipo:</strong> <span class="text-gray-200">${vistoria.tipo}</span></p>
+                       <p><strong class="text-gray-300">Data:</strong> <span class="text-gray-200">${new Date(vistoria.data + 'T00:00:00').toLocaleDateString('pt-BR')}</span></p>
+                       <p><strong class="text-gray-300">Horário:</strong> <span class="text-gray-200">${vistoria.horario}</span></p>
+                       <p><strong class="text-gray-300">Vistoriador:</strong> <span class="text-gray-200">${vistoriador.nome}</span></p>
+                   </div>
+               </div>
+               
+               <!-- Coluna 2: Dados do Imóvel -->
+               <div class="bg-gray-700/30 p-4 rounded-lg neon-border">
+                   <h3 class="font-semibold text-lg border-b border-gray-600/50 pb-2 mb-3 text-emerald-300">
+                       <svg class="h-5 w-5 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path>
+                       </svg>
+                       Imóvel
+                   </h3>
+                   <div class="space-y-3">
+                       <p><strong class="text-gray-300">Código:</strong> <span class="text-gray-200">${imovel.cod_imovel}</span></p>
+                       <p><strong class="text-gray-300">Endereço:</strong> <span class="text-gray-200">${imovel.endereco}</span></p>
+                       <p><strong class="text-gray-300">Valor:</strong> <span class="text-gray-200">${imovel.valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span></p>
+                       <p><strong class="text-gray-300">Imobiliária:</strong> <span class="text-gray-200">${imovel.imobiliaria.nome}</span></p>
+                   </div>
+               </div>
+               
+               ${cliente ? `
+               <!-- Seção do Cliente (ocupa duas colunas) -->
+               <div class="bg-gray-700/30 p-4 rounded-lg neon-border md:col-span-2">
+                   <h3 class="font-semibold text-lg border-b border-gray-600/50 pb-2 mb-3 text-purple-300">
+                       <svg class="h-5 w-5 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
+                       </svg>
+                       Cliente
+                   </h3>
+                   <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                       <p><strong class="text-gray-300">Nome:</strong> <span class="text-gray-200">${cliente.nome}</span></p>
+                       <p><strong class="text-gray-300">Email:</strong> <span class="text-gray-200">${cliente.email || 'N/D'}</span></p>
+                       <p><strong class="text-gray-300">Telefone:</strong> <span class="text-gray-200">${cliente.telefone1 || 'N/D'}</span></p>
+                   </div>
+               </div>
+               ` : ''}
+           </div>
+       </div>
+    `;
+}
+
+// ETAPA 2: Modificada a função showVistoriaModal
+function showVistoriaModal(vistoria) {
     const modalContent = document.getElementById('modal-content');
     const modal = document.getElementById('generic-modal');
     
     modalContent.innerHTML = `
-        <div class="space-y-4">
-            <div class="flex justify-between items-start">
-                <h2 class="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-cyan-300 to-emerald-300 mb-2">
-                    Detalhes do Agendamento
-                </h2>
-                <button id="close-modal-btn" class="p-1 rounded-full hover:bg-gray-700/50 text-gray-400 hover:text-white transition">
-                    <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-                    </svg>
-                </button>
-            </div>
-            
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 text-sm">
-                <!-- Coluna 1: Dados da Vistoria -->
-                <div class="bg-gray-700/30 p-4 rounded-lg neon-border">
-                    <h3 class="font-semibold text-lg border-b border-gray-600/50 pb-2 mb-3 text-cyan-300">
-                        <svg class="h-5 w-5 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
-                        </svg>
-                        Vistoria
-                    </h3>
-                    <div class="space-y-3">
-                        <p><strong class="text-gray-300">Tipo:</strong> <span class="text-gray-200">${vistoria.tipo}</span></p>
-                        <p><strong class="text-gray-300">Data:</strong> <span class="text-gray-200">${new Date(vistoria.data + 'T00:00:00').toLocaleDateString('pt-BR')}</span></p>
-                        <p><strong class="text-gray-300">Horário:</strong> <span class="text-gray-200">${vistoria.horario}</span></p>
-                        <p><strong class="text-gray-300">Vistoriador:</strong> <span class="text-gray-200">${vistoriador.nome}</span></p>
-                    </div>
-                </div>
-                
-                <!-- Coluna 2: Dados do Imóvel -->
-                <div class="bg-gray-700/30 p-4 rounded-lg neon-border">
-                    <h3 class="font-semibold text-lg border-b border-gray-600/50 pb-2 mb-3 text-emerald-300">
-                        <svg class="h-5 w-5 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path>
-                        </svg>
-                        Imóvel
-                    </h3>
-                    <div class="space-y-3">
-                        <p><strong class="text-gray-300">Código:</strong> <span class="text-gray-200">${imovel.cod_imovel}</span></p>
-                        <p><strong class="text-gray-300">Endereço:</strong> <span class="text-gray-200">${imovel.endereco}</span></p>
-                        <p><strong class="text-gray-300">Valor:</strong> <span class="text-gray-200">${imovel.valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span></p>
-                        <p><strong class="text-gray-300">Imobiliária:</strong> <span class="text-gray-200">${imovel.imobiliaria.nome}</span></p>
-                    </div>
-                </div>
-                
-                ${cliente ? `
-                <!-- Seção do Cliente (ocupa duas colunas) -->
-                <div class="bg-gray-700/30 p-4 rounded-lg neon-border md:col-span-2">
-                    <h3 class="font-semibold text-lg border-b border-gray-600/50 pb-2 mb-3 text-purple-300">
-                        <svg class="h-5 w-5 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
-                        </svg>
-                        Cliente
-                    </h3>
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <p><strong class="text-gray-300">Nome:</strong> <span class="text-gray-200">${cliente.nome}</span></p>
-                        <p><strong class="text-gray-300">Email:</strong> <span class="text-gray-200">${cliente.email || 'N/D'}</span></p>
-                        <p><strong class="text-gray-300">Telefone:</strong> <span class="text-gray-200">${cliente.telefone1 || 'N/D'}</span></p>
-                    </div>
-                </div>
-                ` : ''}
-            </div>
+        <div class="flex justify-between items-start">
+            <h2 class="text-xl sm:text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-cyan-300 to-emerald-300 mb-2">
+                Detalhes do Agendamento
+            </h2>
+            <button id="close-modal-btn" class="p-1 rounded-full hover:bg-gray-700/50 text-gray-400 hover:text-white transition">
+                <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                </svg>
+            </button>
+        </div>
+        
+        <!-- Abas (Mobile-first: scroll horizontal) -->
+        <div class="border-b border-gray-700/50 mb-4 overflow-x-auto">
+            <nav class="flex space-x-2 sm:space-x-4" id="modal-tabs">
+                <button data-tab="detalhes" class="tab-btn active">Detalhes</button>
+                <button data-tab="mural" class="tab-btn">Mural</button>
+                <button data-tab="documentos" class="tab-btn">Documentos</button>
+            </nav>
+        </div>
+
+        <!-- Conteúdo das Abas -->
+        <div id="tab-content-detalhes" class="tab-content">
+            ${getImobVistoriaDetalhesHTML(vistoria)}
+        </div>
+        <div id="tab-content-mural" class="tab-content hidden">
+            <p class="text-center text-gray-400">Carregando mural...</p>
+        </div>
+        <div id="tab-content-documentos" class="tab-content hidden">
+            <p class="text-center text-gray-400">Carregando...</p>
         </div>
     `;
     
     modal.classList.remove('hidden');
     modal.classList.add('flex');
 
+    // Carrega a primeira aba dinâmica (Mural)
+    renderMuralTab(vistoria.id, 'tab-content-mural', 'imobiliaria');
+
     document.getElementById('close-modal-btn').addEventListener('click', () => {
         modal.classList.add('hidden');
         modal.classList.remove('flex');
     });
+
+    // Listener das Abas
+    document.getElementById('modal-tabs').addEventListener('click', (e) => {
+        if (e.target.classList.contains('tab-btn')) {
+            const tabId = e.target.dataset.tab;
+            
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            e.target.classList.add('active');
+            
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.add('hidden'));
+            const contentDiv = document.getElementById(`tab-content-${tabId}`);
+            contentDiv.classList.remove('hidden');
+
+            // Carrega conteúdo dinâmico (só carrega se for a primeira vez)
+            if (contentDiv.innerHTML.includes('Carregando...')) {
+                if (tabId === 'mural') renderMuralTab(vistoria.id, 'tab-content-mural', 'imobiliaria');
+                if (tabId === 'documentos') renderDocumentosTab(vistoria.id, 'tab-content-documentos', 'imobiliaria');
+            }
+        }
+    });
 }
 
+// ETAPA 2: Novas funções de renderização de Abas (Copiadas e adaptadas de main.js)
+
+/** Renderiza o conteúdo da aba Mural */
+async function renderMuralTab(agendaId, containerId, remetente) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    container.innerHTML = '<p class="text-center text-gray-400">Carregando mural...</p>';
+    
+    try {
+        const data = await imobFetchComentarios(agendaId);
+        
+        const comentariosHTML = data.comentarios.map(c => `
+            <div class="p-3 rounded-lg ${c.remetente === remetente ? 'bg-cyan-900/50 ml-auto' : 'bg-gray-700/50 mr-auto'}" style="max-width: 80%;">
+                <p class="text-sm text-gray-200 whitespace-pre-wrap">${c.conteudo}</p>
+                <p class="text-xs text-gray-400 text-right mt-1 capitalize">${c.remetente} - ${new Date(c.created_at).toLocaleString('pt-BR')}</p>
+            </div>
+        `).join('');
+
+        container.innerHTML = `
+            <div class="space-y-3 max-h-64 overflow-y-auto mb-4 p-2 bg-gray-900/50 rounded-lg custom-scrollbar">${comentariosHTML || '<p class="text-gray-400 text-center">Nenhum comentário ainda.</p>'}</div>
+            <div class="flex flex-col sm:flex-row gap-2">
+                <textarea id="mural-textarea" rows="2" class="w-full p-2 bg-gray-700/50 border border-gray-600/50 rounded-lg focus:outline-none focus:ring-2 focus:ring-cyan-500/50" placeholder="Escreva seu comentário..."></textarea>
+                <button id="mural-submit-btn" class="py-2 px-4 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white font-bold transition-colors">Enviar</button>
+            </div>
+            <div id="mural-error" class="text-red-400 text-sm mt-2 hidden"></div>
+        `;
+
+        container.querySelector('#mural-submit-btn').addEventListener('click', async (e) => {
+            const btn = e.currentTarget;
+            const textarea = container.querySelector('#mural-textarea');
+            const errorDiv = container.querySelector('#mural-error');
+            const comentario = textarea.value.trim();
+            
+            errorDiv.classList.add('hidden');
+            if (comentario) {
+                btn.disabled = true;
+                btn.textContent = 'Enviando...';
+                try {
+                    await imobPostComentario(agendaId, comentario);
+                    renderMuralTab(agendaId, containerId, remetente); // Recarrega o mural
+                } catch (e) { 
+                    errorDiv.textContent = e.message;
+                    errorDiv.classList.remove('hidden');
+                    btn.disabled = false;
+                    btn.textContent = 'Enviar';
+                }
+            }
+        });
+    } catch (e) { container.innerHTML = `<p class="text-red-400">${e.message}</p>`; }
+}
+
+/** Renderiza o conteúdo da aba Documentos */
+async function renderDocumentosTab(agendaId, containerId, remetente) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    container.innerHTML = '<p class="text-center text-gray-400">Carregando...</p>';
+    
+    try {
+        const data = await imobFetchDocumentos(agendaId);
+        
+        const documentosHTML = data.documentos.map(d => `
+            <div class="flex justify-between items-center p-3 bg-gray-700/50 rounded-lg">
+                <a href="${d.link}" target="_blank" class="text-cyan-400 hover:underline truncate" title="${d.nome}">
+                    <svg class="h-5 w-5 inline-block mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                    ${d.nome}
+                </a>
+                <button class="delete-doc-btn text-red-500 hover:text-red-400" data-doc-id="${d.id}" aria-label="Deletar ${d.nome}">
+                    <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                </button>
+            </div>
+        `).join('');
+
+        container.innerHTML = `
+            <div class="space-y-3 max-h-64 overflow-y-auto mb-4 p-2 bg-gray-900/50 rounded-lg custom-scrollbar">${documentosHTML || '<p class="text-gray-400 text-center">Nenhum documento anexado.</p>'}</div>
+            <div class="flex flex-col sm:flex-row gap-2">
+                <input type="file" id="doc-input" class="w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-cyan-600/50 file:text-cyan-100 hover:file:bg-cyan-600 transition-colors">
+                <button id="doc-submit-btn" class="py-2 px-4 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white font-bold transition-colors">Anexar</button>
+            </div>
+            <div id="doc-error" class="text-red-400 text-sm mt-2 hidden"></div>
+        `;
+
+        container.querySelector('#doc-submit-btn').addEventListener('click', async (e) => {
+            const btn = e.currentTarget;
+            const input = container.querySelector('#doc-input');
+            const errorDiv = container.querySelector('#doc-error');
+            
+            errorDiv.classList.add('hidden');
+            if (input.files.length > 0) {
+                const formData = new FormData();
+                formData.append("file", input.files[0]);
+                
+                btn.disabled = true;
+                btn.textContent = 'Enviando...';
+                try {
+                    await imobUploadDocumento(agendaId, formData);
+                    renderDocumentosTab(agendaId, containerId, remetente); // Recarrega
+                } catch (e) { 
+                    errorDiv.textContent = e.message;
+                    errorDiv.classList.remove('hidden');
+                    btn.disabled = false;
+                    btn.textContent = 'Anexar';
+                }
+            } else {
+                errorDiv.textContent = 'Por favor, selecione um arquivo.';
+                errorDiv.classList.remove('hidden');
+            }
+        });
+
+        container.querySelectorAll('.delete-doc-btn').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                const docId = e.currentTarget.dataset.docId;
+                if (confirm('Tem certeza que deseja deletar este documento?')) {
+                    try {
+                        await imobDeleteDocumento(docId);
+                        renderDocumentosTab(agendaId, containerId, remetente); // Recarrega
+                    } catch (e) { 
+                        const errorDiv = container.querySelector('#doc-error');
+                        errorDiv.textContent = e.message;
+                        errorDiv.classList.remove('hidden');
+                    }
+                }
+            });
+        });
+
+    } catch (e) { container.innerHTML = `<p class="text-red-400">${e.message}</p>`; }
+}
+// --- FIM ETAPA 2 ---
+
+// --- INÍCIO ETAPA 3: Funções do Modal InfoMensal ---
+
+/** Renderiza o conteúdo da aba de Chat do InfoMensal */
+async function renderInfoMensalChat(infoStatus, containerId, remetente) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    
+    const data = infoStatus; // O objeto já foi buscado
+    
+    const comentariosHTML = data.mensagens.map(c => `
+        <div class="p-3 rounded-lg ${c.remetente === remetente ? 'bg-purple-900/50 ml-auto' : 'bg-gray-700/50 mr-auto'}" style="max-width: 80%;">
+            <p class="text-sm text-gray-200 whitespace-pre-wrap">${c.conteudo}</p>
+            <p class="text-xs text-gray-400 text-right mt-1 capitalize">${c.remetente} - ${new Date(c.created_at).toLocaleString('pt-BR')}</p>
+        </div>
+    `).join('');
+
+    container.innerHTML = `
+        <div class="space-y-3 max-h-64 overflow-y-auto mb-4 p-2 bg-gray-900/50 rounded-lg custom-scrollbar">${comentariosHTML || '<p class="text-gray-400 text-center">Nenhuma mensagem ainda.</p>'}</div>
+        <div class="flex flex-col sm:flex-row gap-2">
+            <textarea id="info-mural-textarea" rows="2" class="w-full p-2 bg-gray-700/50 border border-gray-600/50 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500/50" placeholder="Escreva sua mensagem..."></textarea>
+            <button id="info-mural-submit-btn" class="py-2 px-4 rounded-lg bg-purple-600 hover:bg-purple-700 text-white font-bold transition-colors">Enviar</button>
+        </div>
+        <div id="info-mural-error" class="text-red-400 text-sm mt-2 hidden"></div>
+    `;
+
+    container.querySelector('#info-mural-submit-btn').addEventListener('click', async (e) => {
+        const btn = e.currentTarget;
+        const textarea = container.querySelector('#info-mural-textarea');
+        const errorDiv = container.querySelector('#info-mural-error');
+        const comentario = textarea.value.trim();
+        
+        errorDiv.classList.add('hidden');
+        if (comentario) {
+            btn.disabled = true;
+            btn.textContent = 'Enviando...';
+            try {
+                await imobPostInfoMensagem(data.id, comentario);
+                // Precisamos atualizar o objeto infoStatus e re-renderizar
+                const novoInfoStatus = await imobFetchInfoStatus(data.month, data.year);
+                renderInfoMensalChat(novoInfoStatus, containerId, remetente);
+            } catch (e) { 
+                errorDiv.textContent = e.message;
+                errorDiv.classList.remove('hidden');
+                btn.disabled = false;
+                btn.textContent = 'Enviar';
+            }
+        }
+    });
+}
+
+/** Renderiza o conteúdo da aba Documentos do InfoMensal */
+async function renderInfoMensalDocumentos(infoStatus, containerId) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    const data = infoStatus; // O objeto já foi buscado
+
+    const documentosHTML = data.documentos.map(d => `
+        <div class="flex justify-between items-center p-3 bg-gray-700/50 rounded-lg">
+            <a href="${d.link}" target="_blank" class="text-cyan-400 hover:underline truncate" title="${d.file_path}">
+                <svg class="h-5 w-5 inline-block mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                ${d.file_path}
+            </a>
+            <button class="info-delete-doc-btn text-red-500 hover:text-red-400" data-doc-id="${d.id}" aria-label="Deletar ${d.file_path}">
+                <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+            </button>
+        </div>
+    `).join('');
+
+    container.innerHTML = `
+        <div class="space-y-3 max-h-64 overflow-y-auto mb-4 p-2 bg-gray-900/50 rounded-lg custom-scrollbar">${documentosHTML || '<p class="text-gray-400 text-center">Nenhum documento anexado.</p>'}</div>
+        <div class="flex flex-col sm:flex-row gap-2">
+            <input type="file" id="info-doc-input" class="w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-purple-600/50 file:text-purple-100 hover:file:bg-purple-600 transition-colors">
+            <button id="info-doc-submit-btn" class="py-2 px-4 rounded-lg bg-purple-600 hover:bg-purple-700 text-white font-bold transition-colors">Anexar</button>
+        </div>
+        <div id="info-doc-error" class="text-red-400 text-sm mt-2 hidden"></div>
+    `;
+
+    container.querySelector('#info-doc-submit-btn').addEventListener('click', async (e) => {
+        const btn = e.currentTarget;
+        const input = container.querySelector('#info-doc-input');
+        const errorDiv = container.querySelector('#info-doc-error');
+        
+        errorDiv.classList.add('hidden');
+        if (input.files.length > 0) {
+            const formData = new FormData();
+            formData.append("file", input.files[0]);
+            
+            btn.disabled = true;
+            btn.textContent = 'Enviando...';
+            try {
+                await imobUploadInfoDocumento(data.id, formData);
+                const novoInfoStatus = await imobFetchInfoStatus(data.month, data.year);
+                renderInfoMensalDocumentos(novoInfoStatus, containerId); // Recarrega
+            } catch (e) { 
+                errorDiv.textContent = e.message;
+                errorDiv.classList.remove('hidden');
+                btn.disabled = false;
+                btn.textContent = 'Anexar';
+            }
+        } else {
+            errorDiv.textContent = 'Por favor, selecione um arquivo.';
+            errorDiv.classList.remove('hidden');
+        }
+    });
+
+    container.querySelectorAll('.info-delete-doc-btn').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+            if (confirm('Tem certeza que deseja deletar este documento?')) {
+                const docId = e.currentTarget.dataset.docId;
+                try {
+                    await imobDeleteInfoDocumento(docId);
+                    const novoInfoStatus = await imobFetchInfoStatus(data.month, data.year);
+                    renderInfoMensalDocumentos(novoInfoStatus, containerId); // Recarrega
+                } catch (e) { 
+                    const errorDiv = container.querySelector('#info-doc-error');
+                    errorDiv.textContent = e.message;
+                    errorDiv.classList.remove('hidden');
+                }
+            }
+        });
+    });
+}
+
+/** Exibe o modal de análise do InfoMensal */
+function showInfoMensalModal(infoStatus, onActionCallback) {
+    const modalContent = document.getElementById('modal-content');
+    const modal = document.getElementById('generic-modal');
+    
+    // Define os botões de ação
+    const isDisabled = infoStatus.accepted;
+    const actionsHTML = `
+        <div class="flex flex-col sm:flex-row justify-end gap-4 pt-4 mt-6 border-t border-gray-700/50">
+            <button id="info-recusar-btn" class="py-2 px-6 rounded-lg font-bold text-white bg-red-600 hover:bg-red-700 transition-colors ${isDisabled ? 'opacity-50 cursor-not-allowed' : ''}" ${isDisabled ? 'disabled' : ''}>
+                Recusar
+            </button>
+            <button id="info-aceitar-btn" class="py-2 px-6 rounded-lg font-bold text-gray-900 bg-emerald-500 hover:bg-emerald-600 transition-colors ${isDisabled ? 'opacity-50 cursor-not-allowed' : ''}" ${isDisabled ? 'disabled' : ''}>
+                Aprovar Relatório
+            </button>
+        </div>
+    `;
+
+    modalContent.innerHTML = `
+        <div class="flex justify-between items-start">
+            <h2 class="text-xl sm:text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-purple-300 to-cyan-300 mb-2">
+                Análise do Relatório (${infoStatus.month}/${infoStatus.year})
+            </h2>
+            <button id="close-modal-btn" class="p-1 rounded-full hover:bg-gray-700/50 text-gray-400 hover:text-white transition">
+                <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+            </button>
+        </div>
+        
+        <div id="info-status-message" class="p-3 rounded-lg mb-4 ${infoStatus.accepted ? 'bg-emerald-900/50 text-emerald-300' : 'bg-yellow-900/50 text-yellow-300'}">
+            Status atual: ${infoStatus.accepted ? 'Aprovado' : 'Aguardando Aprovação/Ajustes'}
+        </div>
+
+        <!-- Abas -->
+        <div class="border-b border-gray-700/50 mb-4 overflow-x-auto">
+            <nav class="flex space-x-2 sm:space-x-4" id="modal-tabs">
+                <button data-tab="chat" class="tab-btn active">Chat</button>
+                <button data-tab="documentos" class="tab-btn">Documentos</button>
+            </nav>
+        </div>
+
+        <!-- Conteúdo das Abas -->
+        <div id="tab-content-chat" class="tab-content">
+            <p class="text-center text-gray-400">Carregando chat...</p>
+        </div>
+        <div id="tab-content-documentos" class="tab-content hidden">
+            <p class="text-center text-gray-400">Carregando...</p>
+        </div>
+        
+        ${!isDisabled ? actionsHTML : ''}
+    `;
+    
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+
+    // Carrega a primeira aba
+    renderInfoMensalChat(infoStatus, 'tab-content-chat', 'imobiliaria');
+
+    document.getElementById('close-modal-btn').addEventListener('click', () => {
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+    });
+
+    // Listener das Abas
+    document.getElementById('modal-tabs').addEventListener('click', (e) => {
+        if (e.target.classList.contains('tab-btn')) {
+            const tabId = e.target.dataset.tab;
+            
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            e.target.classList.add('active');
+            
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.add('hidden'));
+            const contentDiv = document.getElementById(`tab-content-${tabId}`);
+            contentDiv.classList.remove('hidden');
+
+            if (contentDiv.innerHTML.includes('Carregando...')) {
+                if (tabId === 'chat') renderInfoMensalChat(infoStatus, 'tab-content-chat', 'imobiliaria');
+                if (tabId === 'documentos') renderInfoMensalDocumentos(infoStatus, 'tab-content-documentos');
+            }
+        }
+    });
+
+    // Listeners dos botões de Ação
+    const handleAction = async (aceito) => {
+        const msg = aceito ? 'Aprovar este relatório?' : 'Recusar este relatório? (Isso o manterá como "pendente" para ajustes)';
+        if (!confirm(msg)) return;
+
+        try {
+            await imobSetInfoStatus(infoStatus.id, aceito);
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+            onActionCallback(); // Recarrega a página de relatórios
+        } catch (e) {
+            alert(`Erro: ${e.message}`);
+        }
+    };
+
+    const aceitarBtn = document.getElementById('info-aceitar-btn');
+    const recusarBtn = document.getElementById('info-recusar-btn');
+    
+    if (aceitarBtn) aceitarBtn.addEventListener('click', () => handleAction(true));
+    if (recusarBtn) recusarBtn.addEventListener('click', () => handleAction(false));
+}
+
+// --- FIM ETAPA 3 ---
+
+
 function createReportHTML(report) {
-    const formatCurrency = (value) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+    const formatCurrency = (value) => (value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
     
     return `
         <div class="bg-gray-800/50 rounded-xl border border-gray-700/50 neon-border mb-6 overflow-hidden">
@@ -662,10 +1289,13 @@ async function downloadReport(format) {
     const token = getToken();
     const url = `${API_BASE_URL_IMOB}/relatorio-download?mes=${mes}&ano=${ano}&formato=${format}`;
     
+    let button;
+    let originalText;
+
     try {
         const btnId = `download-${format}-btn`;
-        const button = document.getElementById(btnId);
-        const originalText = button.innerHTML;
+        button = document.getElementById(btnId);
+        originalText = button.innerHTML;
         button.innerHTML = `
             <svg class="animate-spin h-5 w-5 mr-2 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
@@ -727,11 +1357,10 @@ async function downloadReport(format) {
         }, 5000);
         
     } finally {
-        const btnId = `download-${format}-btn`;
-        const button = document.getElementById(btnId);
         if (button) {
             button.innerHTML = originalText;
             button.disabled = false;
         }
     }
 }
+
