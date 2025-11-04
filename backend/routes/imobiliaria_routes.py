@@ -538,7 +538,8 @@ async def status_info_mensal(mes: int, ano: int,
                             current_user: models.GrupoImobiliaria = Depends(auth.get_current_active_imobiliaria_group)):
     
     info = (session.query(models.InfoMensal)
-            .options(joinedload(models.InfoMensal.messages, models.InfoMensal.documentos))
+            .options(joinedload(models.InfoMensal.messages),
+                     joinedload(models.InfoMensal.documentos))
             .filter(models.InfoMensal.grupo_id == current_user.id, 
                     models.InfoMensal.month == mes, 
                     models.InfoMensal.year == ano).first())

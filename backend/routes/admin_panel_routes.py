@@ -1413,11 +1413,11 @@ async def add_comentario(id_agendamento: str,
     except:
         raise HTTPException(status_code=400, detail="ID inválido")
     
-    agenda = session.query(models.Agenda.id).filter(models.Agenda.id == agendamento_id).first()
+    agenda = session.query(models.Agenda).filter(models.Agenda.id == agendamento_id).first()
     if not agenda:
         raise HTTPException(status_code=404, detail="Agendamento não encontrado")
     
-    new = models.ComentarioVistoria(agenda_id=agenda, conteudo=comentario, remetente="admin")
+    new = models.ComentarioVistoria(agenda_id=agenda.id, conteudo=comentario, remetente="admin")
     try:
         session.add(new)
         session.commit()
@@ -1537,7 +1537,8 @@ async def mensal_info(mes: int, ano: int, grupo_id: str,
         raise HTTPException(status_code=404, detail="Grupo de imobiliária não encontrado")
     
     info = (session.query(models.InfoMensal)
-            .options(joinedload(models.InfoMensal.messages, models.InfoMensal.documentos))
+            .options(joinedload(models.InfoMensal.messages),
+                     joinedload(models.InfoMensal.documentos))
             .filter(models.InfoMensal.grupo_id == id_grupo, 
                     models.InfoMensal.month == mes, 
                     models.InfoMensal.year == ano).first())
