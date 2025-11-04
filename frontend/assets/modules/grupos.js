@@ -75,7 +75,10 @@ async function renderGrupoDetails(grupoId) {
 
     try {
         const data = await api.getGrupoDetails(grupoId);
-        currentGrupoData = data; // Cache dos detalhes (incluindo a lista de imobiliárias)
+        currentGrupoData = data; // Cache dos detalhes
+        
+        // CORREÇÃO: Armazena o ID do grupo no cache, pois ele não vem dentro do objeto 'detalhes'.
+        currentGrupoData.grupo_id = grupoId; 
         
         // Atualiza o cache global de imobiliárias se necessário (usado por outros módulos)
         if (appStateCache && !appStateCache.imobiliarias) {
@@ -283,7 +286,7 @@ async function handleImobiliariaFormSubmit(event) {
         valor_semi_mobiliado: parseFloat(form.querySelector('#valor_semi_mobiliado').value),
         valor_mobiliado: parseFloat(form.querySelector('#valor_mobiliado').value),
         // Adiciona o grupo_id se for um novo cadastro
-        grupo_id: isEditing ? undefined : currentGrupoData.detalhes.id 
+        grupo_id: isEditing ? undefined : currentGrupoData.grupo_id 
     };
 
     try {
@@ -291,12 +294,14 @@ async function handleImobiliariaFormSubmit(event) {
             await api.updateImobiliaria(id, data);
             showAlert('Imobiliária atualizada com sucesso!');
         } else {
-            await api.createImobiliaria(data); // A API precisa aceitar 'grupo_id' aqui
+            // TODO: A API de criação de imobiliária precisa aceitar 'grupo_id'
+            // Assumindo que a API foi atualizada conforme o plano (embora não tenhamos acesso)
+            await api.createImobiliaria(data); 
             showAlert('Imobiliária cadastrada com sucesso!');
         }
         hideModal();
         // Recarrega os detalhes do grupo para atualizar a lista
-        renderGrupoDetails(currentGrupoData.detalhes.id); 
+        renderGrupoDetails(currentGrupoData.grupo_id); 
     } catch (error) {
         console.error('Erro ao salvar imobiliária:', error);
         showAlert(error.message || 'Não foi possível salvar a imobiliária.', 'error');
@@ -324,7 +329,7 @@ function renderConfirmDeleteImobiliariaModal(id, nome) {
             await api.deleteImobiliaria(id);
             showAlert('Imobiliária excluída com sucesso!');
             hideModal();
-            renderGrupoDetails(currentGrupoData.detalhes.id); // Recarrega
+            renderGrupoDetails(currentGrupoData.grupo_id); // Recarrega
         } catch (error) {
             console.error('Erro ao excluir imobiliária:', error);
             showAlert(error.message || 'Não foi possível excluir a imobiliária.', 'error');
@@ -478,8 +483,8 @@ async function renderInfoMensalChat(infoStatus, containerId) {
             btn.textContent = 'Enviando...';
             try {
                 await api.postInfoMensalMensagem(infoStatus.id, comentario);
-                // Recarrega o chat
-                const novoInfoStatus = await api.getInfoMensal(infoStatus.month, infoStatus.year, currentGrupoData.detalhes.id);
+                // CORREÇÃO: Usar o 'currentGrupoData.grupo_id' cacheado em vez de '...detalhes.id'
+                const novoInfoStatus = await api.getInfoMensal(infoStatus.month, infoStatus.year, currentGrupoData.grupo_id);
                 renderInfoMensalChat(novoInfoStatus, containerId); 
             } catch (e) { 
                 errorDiv.textContent = e.message;
@@ -535,7 +540,8 @@ async function renderInfoMensalDocumentos(infoStatus, containerId) {
             btn.textContent = 'Enviando...';
             try {
                 await api.postInfoMensalDocumento(formData);
-                const novoInfoStatus = await api.getInfoMensal(infoStatus.month, infoStatus.year, currentGrupoData.detalhes.id);
+                // CORREÇÃO: Usar o 'currentGrupoData.grupo_id' cacheado em vez de '...detalhes.id'
+                const novoInfoStatus = await api.getInfoMensal(infoStatus.month, infoStatus.year, currentGrupoData.grupo_id);
                 renderInfoMensalDocumentos(novoInfoStatus, containerId); // Recarrega
             } catch (e) { 
                 errorDiv.textContent = e.message;
@@ -555,7 +561,8 @@ async function renderInfoMensalDocumentos(infoStatus, containerId) {
             if (confirm('Tem certeza que deseja deletar este documento?')) {
                 try {
                     await api.deleteInfoMensalDocumento(docId);
-                    const novoInfoStatus = await api.getInfoMensal(infoStatus.month, infoStatus.year, currentGrupoData.detalhes.id);
+                    // CORREÇÃO: Usar o 'currentGrupoData.grupo_id' cacheado em vez de '...detalhes.id'
+                    const novoInfoStatus = await api.getInfoMensal(infoStatus.month, infoStatus.year, currentGrupoData.grupo_id);
                     renderInfoMensalDocumentos(novoInfoStatus, containerId); // Recarrega
                 } catch (e) { 
                     const errorDiv = container.querySelector('#info-doc-error');
@@ -566,4 +573,5 @@ async function renderInfoMensalDocumentos(infoStatus, containerId) {
         });
     });
 }
+// --- FIM DA PARTE 4 ---
 

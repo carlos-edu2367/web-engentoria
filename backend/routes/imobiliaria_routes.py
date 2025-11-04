@@ -585,7 +585,7 @@ async def add_doc_info(id_info: str = Form(...),
     
     config = session.query(models.Configuracao).first()
     docs = session.query(models.DocumentosInfoMensal).filter(models.DocumentosInfoMensal.info_id == info.id).count()
-    if docs <= config.max_arquivos:
+    if docs >= config.max_arquivos:
         raise HTTPException(status_code=400, detail="Limite de documentos excedido")
     
     nome, extensao = os.path.splitext(file.filename)
