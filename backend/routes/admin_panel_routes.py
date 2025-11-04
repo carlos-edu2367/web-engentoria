@@ -1,6 +1,6 @@
 # backend/routes/admin_panel_routes.py
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, status, Query, BackgroundTasks, UploadFile, File
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import and_, extract, func, or_
@@ -11,7 +11,9 @@ from decimal import Decimal
 from dateutil.relativedelta import relativedelta
 from typing import Optional
 import io
-import logging
+import logging, os, uuid, unicodedata, re
+
+from ..supabase_client import deletar_arquivo_supabase, supabase, gerar_url_assinada
 
 
 from .. import models, schemas, auth
@@ -47,6 +49,20 @@ router = APIRouter(
 # Configura o logger
 logger = logging.getLogger(__name__)
 
+def sanitize_filename(filename):
+    # remove acentos
+    filename = ''.join(
+        c for c in unicodedata.normalize('NFD', filename)
+        if unicodedata.category(c) != 'Mn'
+    )
+    
+    # substitui espaços por _
+    filename = filename.replace(" ", "_")
+    
+    # remove caracteres não permitidos
+    filename = re.sub(r"[^a-zA-Z0-9._-]", "", filename)
+
+    return filename
 # =================================================================
 # --- Funções Auxiliares de Lógica de Negócio ---
 # =================================================================
@@ -1362,3 +1378,214 @@ def get_valores_totais_email(
     
     return {"message": f"O relatório de {nome_mes}/{ano} está sendo processado e será enviado em breve para o e-mail configurado."}
 
+
+@router.get("/agenda/{id_agendamento}/comentarios")
+async def ver_comentarios(id_agendamento: str,
+                          session: Session = Depends(get_db)):
+    try:
+        agendamento_id = UUID(id_agendamento)
+    except:
+        raise HTTPException(status_code=400, detail="ID inválido")
+    
+    agenda = (session.query(models.Agenda)
+              .options(joinedload(models.Agenda.comentarios))
+              .filter(models.Agenda.id == agendamento_id).first())
+    if not agenda:
+        raise HTTPException(status_code=404, detail="Agendamento não encontrado")
+    
+    comentarios = sorted(agenda.comentarios, key=lambda d: d.created_at, reverse=False)
+
+    return {
+        "comentarios":[{
+            "id": c.id,
+            "conteudo": c.conteudo,
+            "remetente": c.remetente,
+            "created_at": c.created_at,
+        } for c in comentarios]
+    }
+
+@router.post("/agenda/{id_agendamento}/comentario")
+async def add_comentario(id_agendamento: str,
+                         comentario: str,
+                         session: Session = Depends(get_db)):
+    try:
+        agendamento_id = UUID(id_agendamento)
+    except:
+        raise HTTPException(status_code=400, detail="ID inválido")
+    
+    agenda = session.query(models.Agenda.id).filter(models.Agenda.id == agendamento_id).first()
+    if not agenda:
+        raise HTTPException(status_code=404, detail="Agendamento não encontrado")
+    
+    new = models.ComentarioVistoria(agenda_id=agenda, conteudo=comentario, remetente="admin")
+    try:
+        session.add(new)
+        session.commit()
+        return
+    except Exception as e:
+        session.rollback()
+        logger.error(f"Erro ao adicionar comentario: {e}")
+        raise HTTPException(status_code=500, detail="Erro ao adicionar comentário")
+    
+@router.get("/agenda/{agendamento_id}/documentos")
+async def ver_documentos_agendamento(agendamento_id: str,
+                                     session: Session = Depends(get_db)):
+    try:
+        agenda_id = UUID(agendamento_id)
+    except:
+        raise HTTPException(status_code=400, detail="ID inválido")
+    
+    agenda = (session.query(models.Agenda)
+              .options(joinedload(models.Agenda.documentos))
+              .filter(models.Agenda.id == agenda_id).first())
+    if not agenda:
+        raise HTTPException(status_code=404, detail="Agendamento não encontrado.")
+    
+    docs = sorted(agenda.documentos, key=lambda d: d.created_at, reverse=True)
+
+    return {
+        "documentos":[{
+            "id": d.id,
+            "file_path": d.file_path,
+            "link": gerar_url_assinada(bucket="documentos", file_path=d.file_path)
+        }for d in docs]
+    }
+
+@router.post("/agenda/{agendamento_id}/documento")
+async def add_documento(agendamento_id: str,
+                        file: UploadFile = File(...),
+                        session: Session = Depends(get_db)):
+    try:
+        agenda_id = UUID(agendamento_id)
+    except:
+        raise HTTPException(status_code=400, detail="ID inválido")
+    
+    agenda = session.query(models.Agenda).filter(models.Agenda.id == agenda_id).first()
+    if not agenda:
+        raise HTTPException(status_code=404, detail="Agendamento não encontrado")
+    
+    qtd = session.query(models.DocumentoAgenda.id).filter(models.DocumentoAgenda.agenda_id == agenda.id).count()
+    config = session.query(models.Configuracao).first()
+
+    if qtd >= config.max_arquivos:
+        raise HTTPException(status_code=400, detail=f"Limite de {config.max_arquivos} arquivos atingido.")
+    
+    nome, extensao = os.path.splitext(file.filename)
+    nome = sanitize_filename(nome)
+    nome_arquivo = f"{nome}-CODIGO-{uuid.uuid4()}{extensao}"
+
+    if not extensao.lower() in [".jpg", ".png", ".jpeg", ".pdf"]:
+            raise HTTPException(status_code=400, detail="Tipo de imagem não aceita")
+    
+    try:
+        conteudo = await file.read()
+        MAX_MB = 50
+
+        if len(conteudo) > MAX_MB * 1024 * 1024:
+                raise HTTPException(status_code=400, detail="Imagem ultrapassa o tamanho máximo: 50mb")
+        
+        res = supabase.storage.from_("documentos").upload(nome_arquivo, 
+                                                          conteudo,
+                                                          {"content-type": file.content_type})
+        if getattr(res, "error", None):
+                logger.error(f"Erro no Supabase: {res.error}")
+                raise HTTPException(status_code=400, detail="Erro ao enviar documento para o servidor")
+        new = models.DocumentoAgenda(file_path=nome_arquivo, 
+                                     agenda_id=agenda.id)
+        session.add(new)
+        session.commit()
+        return
+    except Exception as e:
+         logger.error(f"Erro ao adicionar doc: {e}")
+         session.rollback()
+         raise HTTPException(status_code=500, detail="Erro no servidor ao adicionar documento")
+    
+@router.delete("/agenda/{doc_id}/documento")
+async def deletar_doc(doc_id: str,
+                      session: Session = Depends(get_db)):
+    try:
+        id_doc = UUID(doc_id)
+    except:
+        raise HTTPException(status_code=400, detail="ID inválido")
+    
+    documento = session.query(models.DocumentoAgenda).filter(models.DocumentoAgenda.id == id_doc).first()
+    if not documento:
+        raise HTTPException(status_code=404, detail="Documento não encontrado")
+
+    try:
+        if deletar_arquivo_supabase(file_path=documento.file_path, bucket="documentos"):
+            session.delete(documento)
+            session.commit()
+        else:
+            raise HTTPException(status_code=500, detail="Erro ao deletar arquivo")
+        
+    except Exception as e:
+        session.rollback()
+        logger.error(f"Erro ao deletar arquivo: {e}")
+        raise HTTPException(status_code=500, detail="Erro ao deletar arquivo")
+    
+@router.get("/mensal/{mes}/{ano}/{grupo_id}")
+async def mensal_info(mes: int, ano: int, grupo_id: str,
+                      session: Session = Depends(get_db)):
+    try:
+        id_grupo = UUID(grupo_id)
+    except:
+       raise HTTPException(status_code=400, detail="ID inválido")
+
+    grupo = session.query(models.GrupoImobiliaria).filter(models.GrupoImobiliaria.id == id_grupo).first()
+    if not grupo:
+        raise HTTPException(status_code=404, detail="Grupo de imobiliária não encontrado")
+    
+    info = (session.query(models.InfoMensal)
+            .options(joinedload(models.InfoMensal.messages, models.InfoMensal.documentos))
+            .filter(models.InfoMensal.grupo_id == id_grupo, 
+                    models.InfoMensal.month == mes, 
+                    models.InfoMensal.year == ano).first())
+    if not info:
+        raise HTTPException(status_code=404, detail="Info não encontrada")
+    
+    mensagens = sorted(info.messages, key=lambda d: d.created_at, reverse=False)
+    docs = sorted(info.documentos, key=lambda d: d.created_at, reverse=True)
+
+    return {
+        "id": info.id,
+        "month": info.month,
+        "year": info.year,
+        "accepted": info.accepted,
+        "updated_at": info.updated_at,
+        "mensagens":[{
+            "id": mensagem.id,
+            "conteudo": mensagem.conteudo,
+            "remetente": mensagem.remetente,
+            "created_at": mensagem.created_at
+        }for mensagem in mensagens],
+        "documentos":[{
+            "id": doc.id,
+            "file_path": doc.file_path,
+            "link": gerar_url_assinada(bucket="documentos", file_path=doc.file_path)
+        }for doc in docs]
+    }
+
+
+@router.post("/mensal/{info_id}/mensagem")
+async def enviar_msg_mensal(info_id: str,
+                            mensagem: str,
+                      session: Session = Depends(get_db)):
+    try:
+        id_info = UUID(info_id)
+    except:
+       raise HTTPException(status_code=400, detail="ID inválido")
+
+    info = session.query(models.InfoMensal.id).filter(models.InfoMensal.id == id_info).first()
+    if not info:
+        raise HTTPException(status_code=404, detail="Info não encontrada")
+    
+    new = models.MensagemInfoMensal(info_id=info.id, conteudo=mensagem, remetente="admin")
+    try:
+        session.add(new)
+        session.commit()
+        return
+    except Exception as e:
+        session.rollback()
+        logger.error(f"Erro ao enviar mensagem: {e}")
+        raise HTTPException(status_code=500, detail="Erro ao enviar mensagem")
