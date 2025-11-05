@@ -538,7 +538,8 @@ async def status_info_mensal(mes: int, ano: int,
                             current_user: models.GrupoImobiliaria = Depends(auth.get_current_active_imobiliaria_group)):
     
     info = (session.query(models.InfoMensal)
-            .options(joinedload(models.InfoMensal.messages, models.InfoMensal.documentos))
+            .options(joinedload(models.InfoMensal.messages),
+                     joinedload(models.InfoMensal.documentos))
             .filter(models.InfoMensal.grupo_id == current_user.id, 
                     models.InfoMensal.month == mes, 
                     models.InfoMensal.year == ano).first())
@@ -578,13 +579,13 @@ async def add_doc_info(id_info: str = Form(...),
     except:
         raise HTTPException(status_code=400, detail="ID inválido")
     
-    info = session.query(models.InfoMensal).filter(models.InfoMensal.grupo_id == current_user.id).first()
+    info = session.query(models.InfoMensal).filter(models.InfoMensal.grupo_id == current_user.id, models.InfoMensal.id == info_id).first()
     if not info:
         raise HTTPException(status_code=404, detail="Info não encontrada")
     
     config = session.query(models.Configuracao).first()
     docs = session.query(models.DocumentosInfoMensal).filter(models.DocumentosInfoMensal.info_id == info.id).count()
-    if docs <= config.max_arquivos:
+    if docs >= config.max_arquivos:
         raise HTTPException(status_code=400, detail="Limite de documentos excedido")
     
     nome, extensao = os.path.splitext(file.filename)
@@ -689,9 +690,12 @@ async def aceitar_recusar_info(
     if not info:
         raise HTTPException(status_code=404, detail="Info não encontrada")
     
+    if info.accepted == True:
+        raise HTTPException(status_code=400, detail="Info já foi aceita")
+    
     if aceito:
         dados = get_report_data(mes=info.month, ano=info.year, db=session, current_user=current_user)
-        total = dados.get("valor_total_grupo") or 0
+        total = dados["resumo_geral"].get("valor_total_grupo", 0)
         info.accepted = True
         info.total = total
     else:

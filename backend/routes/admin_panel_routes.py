@@ -1,9 +1,9 @@
 # backend/routes/admin_panel_routes.py
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query, BackgroundTasks, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, status, Query, BackgroundTasks, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import and_, extract, func, or_
+from sqlalchemy import and_, extract, func, or_, case
 from typing import List, Dict, Union
 from uuid import UUID
 from datetime import date, timedelta, datetime
@@ -48,6 +48,101 @@ router = APIRouter(
 
 # Configura o logger
 logger = logging.getLogger(__name__)
+
+def get_report_data(mes: int, ano: int, db: Session, id_grupo: UUID):
+    """
+    Busca e formata os dados para o relatório mensal de uma ou mais imobiliárias de um grupo,
+    e retorna também o resumo total do grupo.
+    """
+    current_user = db.query(models.GrupoImobiliaria).filter(models.GrupoImobiliaria.id == id_grupo).first()
+
+    imobiliarias_do_grupo = db.query(models.Imobiliaria).filter(
+        models.Imobiliaria.grupo_id == current_user.id,
+        models.Imobiliaria.is_deleted == False
+    ).all()
+
+    relatorios = []
+    
+    # ✅ acumuladores gerais do grupo
+    total_vistorias_grupo = 0
+    total_improdutivas_grupo = 0
+    soma_valor_vistorias_grupo = 0.0
+    soma_valor_improdutivas_grupo = 0.0
+
+    for imob in imobiliarias_do_grupo:
+        vistorias_normais = db.query(models.Agenda).join(models.Imovel).filter(
+            models.Imovel.imobiliaria_id == imob.id,
+            extract('year', models.Agenda.data) == ano,
+            extract('month', models.Agenda.data) == mes,
+            models.Agenda.tipo.in_(['ENTRADA', 'SAIDA', 'CONFERENCIA', 'AVERIGUACAO', 'COMPLEMENTO_VISITA'])
+        ).options(joinedload(models.Agenda.imovel)).order_by(
+            case((models.Agenda.tipo == 'ENTRADA', 1), else_=2),
+            models.Agenda.data.asc()
+        ).all()
+
+        vistorias_improdutivas = db.query(models.VistoriaImprodutiva).options(
+            joinedload(models.VistoriaImprodutiva.imovel)
+        ).filter(
+            models.VistoriaImprodutiva.imobiliaria_id == imob.id,
+            extract('year', models.VistoriaImprodutiva.data_vistoria_original) == ano,
+            extract('month', models.VistoriaImprodutiva.data_vistoria_original) == mes,
+            models.VistoriaImprodutiva.is_deleted == False
+        ).order_by(models.VistoriaImprodutiva.data_vistoria_original.asc()).all()
+
+        valor_vistorias = sum(float(v.valor_final_vistoria or 0) for v in vistorias_normais)
+        valor_improdutivas = sum(float(vi.valor_cobranca or 0) for vi in vistorias_improdutivas)
+
+        total_vistorias_grupo += len(vistorias_normais)
+        total_improdutivas_grupo += len(vistorias_improdutivas)
+        soma_valor_vistorias_grupo += valor_vistorias
+        soma_valor_improdutivas_grupo += valor_improdutivas
+
+        vistorias_agendadas_schema = [
+            schemas.VistoriaAgendadaRelatorio.model_validate({
+                "id": v.id, "data": v.data, "horario": v.horario, "tipo": v.tipo,
+                "cod_imovel": v.imovel.cod_imovel, "endereco": v.imovel.endereco,
+                "tamanho": float(v.imovel.tamanho), "mobiliado": v.imovel.mobiliado,
+                "valor": float(v.valor_final_vistoria or 0)
+            })
+            for v in vistorias_normais if v.imovel
+        ]
+
+        vistorias_improdutivas_schema = [
+            schemas.VistoriaImprodutivaRelatorio.model_validate({
+                "id": vi.id,
+                "data_vistoria_original": vi.data_vistoria_original,
+                "cod_imovel": vi.imovel.cod_imovel if vi.imovel else "N/A",
+                "motivo_improdutividade": vi.motivo_improdutividade or "Motivo não especificado",
+                "valor_cobranca": float(vi.valor_cobranca or 0)
+            })
+            for vi in vistorias_improdutivas
+        ]
+
+        relatorios.append(schemas.RelatorioMensal(
+            mes_ano=f"{datetime(ano, mes, 1).strftime('%B').capitalize()}/{ano}",
+            imobiliaria_nome=imob.nome,
+            total_vistorias=len(vistorias_normais),
+            total_improdutivas=len(vistorias_improdutivas),
+            valor_vistorias=valor_vistorias,
+            valor_improdutivas=valor_improdutivas,
+            valor_total=valor_vistorias + valor_improdutivas,
+            vistorias_agendadas=vistorias_agendadas_schema,
+            vistorias_improdutivas=vistorias_improdutivas_schema
+        ))
+
+    # ✅ resumo geral do grupo
+    resumo_geral = {
+        "total_vistorias_grupo": total_vistorias_grupo,
+        "total_improdutivas_grupo": total_improdutivas_grupo,
+        "valor_vistorias_grupo": soma_valor_vistorias_grupo,
+        "valor_improdutivas_grupo": soma_valor_improdutivas_grupo,
+        "valor_total_grupo": soma_valor_vistorias_grupo + soma_valor_improdutivas_grupo
+    }
+
+    return {
+        "relatorios": relatorios,
+        "resumo_geral": resumo_geral
+    }
 
 def sanitize_filename(filename):
     # remove acentos
@@ -1443,11 +1538,11 @@ async def add_comentario(id_agendamento: str,
     except:
         raise HTTPException(status_code=400, detail="ID inválido")
     
-    agenda = session.query(models.Agenda.id).filter(models.Agenda.id == agendamento_id).first()
+    agenda = session.query(models.Agenda).filter(models.Agenda.id == agendamento_id).first()
     if not agenda:
         raise HTTPException(status_code=404, detail="Agendamento não encontrado")
     
-    new = models.ComentarioVistoria(agenda_id=agenda, conteudo=comentario, remetente="admin")
+    new = models.ComentarioVistoria(agenda_id=agenda.id, conteudo=comentario, remetente="admin")
     try:
         session.add(new)
         session.commit()
@@ -1481,8 +1576,8 @@ async def ver_documentos_agendamento(agendamento_id: str,
         }for d in docs]
     }
 
-@router.post("/agenda/{agendamento_id}/documento")
-async def add_documento(agendamento_id: str,
+@router.post("/agenda/documento")
+async def add_documento(agendamento_id: str = Form(...),
                         file: UploadFile = File(...),
                         session: Session = Depends(get_db)):
     try:
@@ -1567,7 +1662,8 @@ async def mensal_info(mes: int, ano: int, grupo_id: str,
         raise HTTPException(status_code=404, detail="Grupo de imobiliária não encontrado")
     
     info = (session.query(models.InfoMensal)
-            .options(joinedload(models.InfoMensal.messages, models.InfoMensal.documentos))
+            .options(joinedload(models.InfoMensal.messages),
+                     joinedload(models.InfoMensal.documentos))
             .filter(models.InfoMensal.grupo_id == id_grupo, 
                     models.InfoMensal.month == mes, 
                     models.InfoMensal.year == ano).first())
@@ -1577,11 +1673,16 @@ async def mensal_info(mes: int, ano: int, grupo_id: str,
     mensagens = sorted(info.messages, key=lambda d: d.created_at, reverse=False)
     docs = sorted(info.documentos, key=lambda d: d.created_at, reverse=True)
 
+    dados = get_report_data(mes=info.month, ano=info.year, db=session, id_grupo=grupo.id)
+    total = dados["resumo_geral"].get("valor_total_grupo", 0)
+
+
     return {
         "id": info.id,
         "month": info.month,
         "year": info.year,
         "accepted": info.accepted,
+        "total": total,
         "updated_at": info.updated_at,
         "mensagens":[{
             "id": mensagem.id,
@@ -1619,3 +1720,126 @@ async def enviar_msg_mensal(info_id: str,
         session.rollback()
         logger.error(f"Erro ao enviar mensagem: {e}")
         raise HTTPException(status_code=500, detail="Erro ao enviar mensagem")
+
+@router.post("/mensal/documento")
+async def enviar_documento_mensal(id_info: str = Form(...),
+                                  file: UploadFile = File(...),
+                                  session: Session = Depends(get_db)):
+    try:
+        info_id = UUID(id_info)
+    except:
+        raise HTTPException(status_code=400, detail="ID inválido")
+    
+    info = session.query(models.InfoMensal).filter(models.InfoMensal.id == info_id).first()
+    if not info:
+        raise HTTPException(status_code=404, detail="Info não encontrada")
+    
+    config = session.query(models.Configuracao).first()
+    docs = session.query(models.DocumentosInfoMensal).filter(models.DocumentosInfoMensal.info_id == info.id).count()
+    if docs >= config.max_arquivos:
+        raise HTTPException(status_code=400, detail="Limite de documentos excedido")
+    
+    nome, extensao = os.path.splitext(file.filename)
+    nome = sanitize_filename(nome)
+    nome_arquivo = f"{nome}-CODIGO-{uuid.uuid4()}{extensao}"
+
+    if not extensao.lower() in [".jpg", ".png", ".jpeg", ".pdf"]:
+            raise HTTPException(status_code=400, detail="Tipo de imagem não aceita")
+    
+    try:
+        conteudo = await file.read()
+        MAX_MB = 50
+
+        if len(conteudo) > MAX_MB * 1024 * 1024:
+                raise HTTPException(status_code=400, detail="Imagem ultrapassa o tamanho máximo: 50mb")
+        
+        res = supabase.storage.from_("documentos").upload(nome_arquivo, 
+                                                          conteudo,
+                                                          {"content-type": file.content_type})
+        if getattr(res, "error", None):
+                logger.error(f"Erro no Supabase: {res.error}")
+                raise HTTPException(status_code=400, detail="Erro ao enviar documento para o servidor")
+        new = models.DocumentosInfoMensal(info_id=info.id, file_path=nome_arquivo)
+        session.add(new)
+        session.commit()
+        return
+    except Exception as e:
+         logger.error(f"Erro ao adicionar imagem: {e}")
+         session.rollback()
+         raise HTTPException(status_code=500, detail="Erro no servidor ao adicionar imagem")
+    
+@router.delete("/deletar_doc_info/{id_doc}")
+async def deletar_doc_info(id_doc: str, 
+                            session: Session = Depends(get_db)):
+    try:
+        doc_id = UUID(id_doc)
+    except:
+        raise HTTPException(status_code=400, detail="ID inválido")
+    
+    doc = (session.query(models.DocumentosInfoMensal)
+           .join(models.DocumentosInfoMensal.info_mensal)
+           .filter(models.DocumentosInfoMensal.id == doc_id)
+            .first())
+    if not doc:
+        raise HTTPException(status_code=404, detail="Documento não encontrado")
+    
+    try:
+        if deletar_arquivo_supabase(file_path=doc.file_path, bucket="documentos"):
+            session.delete(doc)
+            session.commit()
+        else:
+            raise HTTPException(status_code=500, detail="Erro ao deletar arquivo")
+        
+    except Exception as e:
+        session.rollback()
+        logger.error(f"Erro ao deletar arquivo: {e}")
+        raise HTTPException(status_code=500, detail="Erro ao deletar arquivo")
+    
+
+@router.get("/grupo/grupos")
+async def listar_grupos_imobiliaria(session: Session = Depends(get_db)):
+    grupos = session.query(models.GrupoImobiliaria).all()
+    if not grupos:
+        return {
+            "grupos": []
+        }
+    
+    return {
+        "grupos": [{
+            "id": grupo.id,
+            "nome": grupo.nome
+        }for grupo in grupos]
+    }
+
+@router.get("/grupo/{id_grupo}")
+async def detalhes_grupo(id_grupo: str,
+                         session: Session = Depends(get_db)):
+    try:
+        grupo_id = UUID(id_grupo)
+    except:
+        raise HTTPException(status_code=400, detail="ID inválido")
+    
+    grupo = (session.query(models.GrupoImobiliaria)
+             .options(joinedload(models.GrupoImobiliaria.imobiliarias))
+             .filter(models.GrupoImobiliaria.id == grupo_id)
+             .first())
+    if not grupo:
+        raise HTTPException(status_code=404, detail="Grupo não encontrado")
+    
+    return {
+        "detalhes": {
+            "nome": grupo.nome,
+            "email": grupo.email,
+            "created_at": grupo.created_at,
+            "updated_at": grupo.updated_at
+        },
+        "imobiliarias": [{
+            "id": imobiliaria.id,
+            "nome": imobiliaria.nome,
+            "valor_sem_mobilia": imobiliaria.valor_sem_mobilia,
+            "valor_semi_mobiliado": imobiliaria.valor_semi_mobiliado,
+            "valor_mobiliado": imobiliaria.valor_mobiliado,
+            "created_at": imobiliaria.created_at,
+            "updated_at": imobiliaria.updated_at,
+        }for imobiliaria in grupo.imobiliarias]
+    }

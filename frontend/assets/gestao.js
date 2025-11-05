@@ -3,7 +3,9 @@
 // REMOVIDA A LINHA DE IMPORTAÇÃO DO AUTH.JS, POIS SUAS FUNÇÕES SÃO GLOBAIS
 import { showLoader, renderPageContent } from './ui.js';
 import { initDashboard } from './modules/dashboard.js';
-import { initImobiliarias } from './modules/imobiliarias.js';
+// INÍCIO DA PARTE 3: Alteração da importação
+import { initGrupos } from './modules/grupos.js';
+// FIM DA PARTE 3
 import { initVistoriadores } from './modules/vistoriadores.js';
 import { initClientes } from './modules/clientes.js';
 import { initImoveis } from './modules/imoveis.js';
@@ -13,7 +15,7 @@ import { initConfiguracoes } from './modules/configuracoes.js';
 
 // Estado global simples da aplicação (para caching)
 const AppState = {
-    imobiliarias: null,
+    imobiliarias: null, // Este cache será usado pelo novo módulo de grupos
     vistoriadores: null,
     clientes: null,
 };
@@ -24,7 +26,9 @@ const pageContent = document.getElementById('page-content');
 // Definição das rotas da aplicação
 const routes = {
     '#dashboard': initDashboard,
-    '#imobiliarias': initImobiliarias,
+    // INÍCIO DA PARTE 3: Alteração da rota
+    '#grupos': initGrupos,
+    // FIM DA PARTE 3
     '#vistoriadores': initVistoriadores,
     '#clientes': initClientes,
     '#imoveis': initImoveis,

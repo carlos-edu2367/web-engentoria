@@ -96,10 +96,12 @@
                 <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
                 <span class="ml-4">Dashboard</span>
             </a>
-            <a href="#imobiliarias" class="nav-link flex items-center p-3 rounded-lg hover:bg-gray-700/50 transition">
+            <!-- INÍCIO DA PARTE 3: Alteração do link de Imobiliárias para Grupos -->
+            <a href="#grupos" class="nav-link flex items-center p-3 rounded-lg hover:bg-gray-700/50 transition">
                 <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path></svg>
-                <span class="ml-4">Imobiliárias</span>
+                <span class="ml-4">Grupos de Imobiliárias</span>
             </a>
+            <!-- FIM DA PARTE 3 -->
             <a href="#vistoriadores" class="nav-link flex items-center p-3 rounded-lg hover:bg-gray-700/50 transition">
                 <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.653-.125-1.283-.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
                 <span class="ml-4">Vistoriadores</span>
@@ -137,7 +139,7 @@
         </div>
     </aside>
 
-    <main class="ml-64 p-8">
+    <main class="ml-64 p-4 sm:p-8"> <!-- Ajuste de padding para mobile -->
         <div id="page-content">
             <!-- O conteúdo da página será carregado aqui dinamicamente -->
         </div>
@@ -145,7 +147,7 @@
     
     <!-- Modal Genérico -->
     <div id="generic-modal" class="fixed inset-0 bg-black/70 z-50 hidden items-center justify-center p-4 backdrop-blur-sm">
-        <div id="modal-content" class="bg-gray-800/90 backdrop-blur-sm rounded-xl shadow-xl p-6 w-full max-w-2xl border border-gray-700/50 max-h-[90vh] overflow-y-auto neon-border">
+        <div id="modal-content" class="bg-gray-800/90 backdrop-blur-sm rounded-xl shadow-xl p-4 sm:p-6 w-full max-w-2xl border border-gray-700/50 max-h-[90vh] overflow-y-auto neon-border">
             <!-- O conteúdo do modal será inserido aqui dinamicamente -->
         </div>
     </div>

@@ -7,6 +7,155 @@ import { startAgendamentoWizard } from './agendamento-wizard.js';
 let calendar; // Manter a referência do calendário
 let reagendamentoState = { active: false, event: null }; // Controla o modo de reagendamento
 
+// --- INÍCIO DA PARTE 2: Helpers de Abas (Mural e Documentos) ---
+
+/**
+ * Renderiza o conteúdo da aba Mural para o Admin.
+ * @param {string} agendaId - ID do agendamento.
+ * @param {string} containerId - ID do elemento container.
+ */
+async function renderAdminMuralTab(agendaId, containerId) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    container.innerHTML = '<p class="text-center text-gray-400">Carregando...</p>';
+    
+    try {
+        // Usa a nova API do admin
+        const data = await api.getComentariosVistoria(agendaId);
+        const remetente = "admin"; // Admin sempre envia como "admin"
+        
+        const comentariosHTML = data.comentarios.map(c => `
+            <div class="p-3 rounded-lg ${c.remetente === remetente ? 'bg-cyan-900/50 ml-auto' : 'bg-gray-700/50 mr-auto'}" style="max-width: 80%;">
+                <p class="text-sm text-gray-200 whitespace-pre-wrap">${sanitizeHTML(c.conteudo)}</p>
+                <p class="text-xs text-gray-400 text-right mt-1 capitalize">${sanitizeHTML(c.remetente)} - ${new Date(c.created_at).toLocaleString('pt-BR')}</p>
+            </div>
+        `).join('');
+
+        container.innerHTML = `
+            <div class="space-y-3 max-h-64 overflow-y-auto mb-4 p-2 bg-gray-900/50 rounded-lg custom-scrollbar">${comentariosHTML || '<p class="text-gray-400 text-center">Nenhum comentário ainda.</p>'}</div>
+            <div class="flex flex-col sm:flex-row gap-2">
+                <textarea id="mural-textarea" rows="2" class="w-full p-2 bg-gray-700/50 border border-gray-600/50 rounded-lg focus:outline-none focus:ring-2 focus:ring-cyan-500/50" placeholder="Escreva seu comentário..."></textarea>
+                <button id="mural-submit-btn" class="py-2 px-4 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white font-bold transition-colors">Enviar</button>
+            </div>
+            <div id="mural-error" class="text-red-400 text-sm mt-2 hidden"></div>
+        `;
+
+        container.querySelector('#mural-submit-btn').addEventListener('click', async (e) => {
+            const btn = e.currentTarget;
+            const textarea = container.querySelector('#mural-textarea');
+            const errorDiv = container.querySelector('#mural-error');
+            const comentario = textarea.value.trim();
+            
+            errorDiv.classList.add('hidden');
+            if (comentario) {
+                btn.disabled = true;
+                btn.textContent = 'Enviando...';
+                try {
+                    // Usa a nova API do admin
+                    await api.postComentarioVistoria(agendaId, comentario);
+                    renderAdminMuralTab(agendaId, containerId); // Recarrega o mural
+                } catch (e) { 
+                    errorDiv.textContent = e.message;
+                    errorDiv.classList.remove('hidden');
+                    btn.disabled = false;
+                    btn.textContent = 'Enviar';
+                }
+            }
+        });
+    } catch (e) { 
+        container.innerHTML = `<p class="text-red-400 text-center">${e.message}</p>`; 
+    }
+}
+
+/**
+ * Renderiza o conteúdo da aba Documentos para o Admin.
+ * @param {string} agendaId - ID do agendamento.
+ * @param {string} containerId - ID do elemento container.
+ */
+async function renderAdminDocumentosTab(agendaId, containerId) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    container.innerHTML = '<p class="text-center text-gray-400">Carregando...</p>';
+    
+    try {
+        // Usa a nova API do admin
+        const data = await api.getDocumentosVistoria(agendaId);
+        
+        const documentosHTML = data.documentos.map(d => `
+            <div class="flex justify-between items-center p-3 bg-gray-700/50 rounded-lg">
+                <a href="${d.link}" target="_blank" class="text-cyan-400 hover:underline truncate" title="${sanitizeHTML(d.file_path || d.nome)}">
+                    <svg class="h-5 w-5 inline-block mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                    ${sanitizeHTML(d.file_path || d.nome)}
+                </a>
+                <button class="delete-doc-btn text-red-500 hover:text-red-400" data-doc-id="${d.id}" aria-label="Deletar ${sanitizeHTML(d.file_path || d.nome)}">
+                    <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                </button>
+            </div>
+        `).join('');
+
+        container.innerHTML = `
+            <div class="space-y-3 max-h-64 overflow-y-auto mb-4 p-2 bg-gray-900/50 rounded-lg custom-scrollbar">${documentosHTML || '<p class="text-gray-400 text-center">Nenhum documento anexado.</p>'}</div>
+            <form id="doc-upload-form" class="flex flex-col sm:flex-row gap-2">
+                <input type="file" name="file" required class="w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-cyan-600/50 file:text-cyan-100 hover:file:bg-cyan-600 transition-colors">
+                <input type="hidden" name="agendamento_id" value="${agendaId}">
+                <button type="submit" class="py-2 px-4 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white font-bold transition-colors">Anexar</button>
+            </form>
+            <div id="doc-error" class="text-red-400 text-sm mt-2 hidden"></div>
+        `;
+
+        container.querySelector('#doc-upload-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const form = e.currentTarget;
+            const btn = form.querySelector('button[type="submit"]');
+            const input = form.querySelector('input[type="file"]');
+            const errorDiv = container.querySelector('#doc-error');
+            
+            errorDiv.classList.add('hidden');
+            if (input.files.length > 0) {
+                const formData = new FormData(form);
+                
+                btn.disabled = true;
+                btn.textContent = 'Enviando...';
+                try {
+                    // Usa a nova API do admin com FormData
+                    await api.postDocumentoVistoria(formData);
+                    renderAdminDocumentosTab(agendaId, containerId); // Recarrega
+                } catch (e) { 
+                    errorDiv.textContent = e.message;
+                    errorDiv.classList.remove('hidden');
+                    btn.disabled = false;
+                    btn.textContent = 'Anexar';
+                }
+            } else {
+                errorDiv.textContent = 'Por favor, selecione um arquivo.';
+                errorDiv.classList.remove('hidden');
+            }
+        });
+
+        container.querySelectorAll('.delete-doc-btn').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                const docId = e.currentTarget.dataset.docId;
+                if (confirm('Tem certeza que deseja deletar este documento?')) {
+                    try {
+                        // Usa a nova API do admin
+                        await api.deleteDocumentoVistoria(docId);
+                        renderAdminDocumentosTab(agendaId, containerId); // Recarrega
+                    } catch (e) { 
+                        const errorDiv = container.querySelector('#doc-error');
+                        errorDiv.textContent = e.message;
+                        errorDiv.classList.remove('hidden');
+                    }
+                }
+            });
+        });
+
+    } catch (e) { 
+        container.innerHTML = `<p class="text-red-400 text-center">${e.message}</p>`; 
+    }
+}
+// --- FIM DA PARTE 2: Helpers de Abas ---
+
+
 /**
  * Renderiza o conteúdo customizado de um evento no calendário.
  * @param {object} eventInfo - Informações do evento do FullCalendar.
@@ -32,7 +181,6 @@ function renderEventContent(eventInfo) {
         textColorClass = 'text-cyan-400';
         iconHtml = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"></path></svg>`;
         title = isListView ? `CT ${props.imovel?.cod_imovel || 'Vistoria'}` : eventInfo.timeText;
-        // REVERTIDO: O subtítulo agora mostra apenas o código do imóvel, como solicitado.
         subtitle = props.imovel ? `CT ${props.imovel?.cod_imovel}` : 'Ocupado';
     }
 
@@ -70,9 +218,9 @@ function handleEventClick(clickInfo) {
                 Vistoriador: ${sanitizeHTML(props.vistoriador?.nome || 'N/A')}<br>
                 Data: ${event.start.toLocaleDateString('pt-BR')} às ${event.start.toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'})}
             </p>
-            <div class="flex justify-center gap-4">
-                <button id="btn-iniciar-agendamento" class="px-6 py-3 bg-cyan-500 hover:bg-cyan-400 text-black font-bold rounded-lg transition">Iniciar Agendamento</button>
-                <button id="btn-fechar-horario" class="px-6 py-3 bg-yellow-500 hover:bg-yellow-400 text-black font-bold rounded-lg transition">Fechar Horário</button>
+            <div class="flex flex-col sm:flex-row justify-center gap-4">
+                <button id="btn-iniciar-agendamento" class="w-full sm:w-auto px-6 py-3 bg-cyan-500 hover:bg-cyan-400 text-black font-bold rounded-lg transition">Iniciar Agendamento</button>
+                <button id="btn-fechar-horario" class="w-full sm:w-auto px-6 py-3 bg-yellow-500 hover:bg-yellow-400 text-black font-bold rounded-lg transition">Fechar Horário</button>
             </div>
         `;
         showModal(modalHTML, 'max-w-lg');
@@ -80,17 +228,16 @@ function handleEventClick(clickInfo) {
         document.getElementById('btn-iniciar-agendamento').onclick = () => startAgendamentoWizard(event, calendar);
         document.getElementById('btn-fechar-horario').onclick = () => handleFecharHorario(event.id);
 
+    // ================= INÍCIO DA RESOLUÇÃO DO CONFLITO =================
+    // Mantém a sua lógica para 'FECHADO'
     } else if (props.tipo === 'FECHADO') {
-        // <<< INÍCIO DA MODIFICAÇÃO
-        // Se o tipo for FECHADO, oferece a opção de reabrir
         renderConfirmReabrirModal(event.id, event);
-        // FIM DA MODIFICAÇÃO >>>
+    
+    // Adiciona a lógica do GitHub para todos os outros tipos
     } else {
-        // <<< MODIFICAÇÃO
-        // Anteriormente: else if (props.tipo !== 'FECHADO')
-        // Agora: else (cobre todos os outros tipos, como AGENDADO, IMPRODUTIVA, etc.)
-        renderVistoriaDetailsModal(event);
+        showAdminVistoriaModal(event); // Nova chamada para o modal com abas
     }
+    // ================= FIM DA RESOLUÇÃO DO CONFLITO =================
 }
 
 /**
@@ -114,15 +261,11 @@ function handleFecharHorario(agendaId) {
     document.getElementById('form-fechar-horario').onsubmit = async (e) => {
         e.preventDefault();
         const motivo = document.getElementById('motivo-fechamento').value;
-        // <<< INÍCIO DA MODIFICAÇÃO
         // Cria o payload esperado pelo backend
         const payload = { fechar: true, motivo: motivo };
-        // FIM DA MODIFICAÇÃO >>>
         try {
-            // <<< INÍCIO DA MODIFICAÇÃO
             // Envia o payload como segundo argumento
             await api.fecharHorario(agendaId, payload);
-            // FIM DA MODIFICAÇÃO >>>
             showAlert('Horário fechado com sucesso!');
             hideModal();
             calendar.refetchEvents();
@@ -132,7 +275,6 @@ function handleFecharHorario(agendaId) {
     };
 }
 
-// <<< INÍCIO DA ADIÇÃO
 /**
  * NOVO: Renderiza o modal de confirmação para reabrir um horário.
  * @param {string} agendaId - O ID do horário da agenda.
@@ -170,58 +312,89 @@ function renderConfirmReabrirModal(agendaId, event) {
         }
     };
 }
-// FIM DA ADIÇÃO >>>
 
 /**
- * Renderiza o modal com detalhes de uma vistoria já agendada e adiciona os listeners de eventos.
+ * INÍCIO DA PARTE 2: Nova função para Modal com Abas
+ * Renderiza o modal com abas (Detalhes, Mural, Documentos) para uma vistoria.
+ * Substitui a antiga 'renderVistoriaDetailsModal'.
  * @param {object} event - O evento do FullCalendar.
  */
-function renderVistoriaDetailsModal(event) {
+function showAdminVistoriaModal(event) {
     const props = event.extendedProps;
     const imovel = props.imovel || {};
     const cliente = imovel.cliente || {};
     const imobiliaria = imovel.imobiliaria || {};
 
-    const detailsHTML = `
-        <div class="p-2">
-            <h3 class="text-2xl font-bold text-cyan-300 mb-4">Detalhes da Vistoria</h3>
-            <div class="space-y-3 text-gray-300 mb-4">
-                <p><strong>Cód. Imóvel:</strong> ${sanitizeHTML(imovel.cod_imovel || 'N/A')}</p>
-                <p><strong>Vistoriador:</strong> ${sanitizeHTML(props.vistoriador?.nome || 'N/A')}</p>
-                <p><strong>Cliente:</strong> ${sanitizeHTML(cliente.nome || 'N/A')}</p>
-                <p><strong>Imobiliária:</strong> ${sanitizeHTML(imobiliaria.nome || 'N/A')}</p>
-                <p><strong>Endereço:</strong> ${sanitizeHTML(imovel.endereco || 'N/A')}</p>
-                <p><strong>Valor Vistoria:</strong> R$ ${props.valor_final_vistoria?.toFixed(2) || '0.00'}</p>
-                <p><strong>Valor Vistoriador:</strong> R$ ${props.valor_vistoriador?.toFixed(2) || '0.00'}</p>
-            </div>
+    // 1. Gera o HTML da aba "Detalhes"
+    const detailsTabHTML = `
+        <div class="space-y-3 text-gray-300 mb-4 text-sm sm:text-base">
+            <p><strong>Cód. Imóvel:</strong> ${sanitizeHTML(imovel.cod_imovel || 'N/A')}</p>
+            <p><strong>Vistoriador:</strong> ${sanitizeHTML(props.vistoriador?.nome || 'N/A')}</p>
+            <p><strong>Cliente:</strong> ${sanitizeHTML(cliente.nome || 'N/A')}</p>
+            <p><strong>Imobiliária:</strong> ${sanitizeHTML(imobiliaria.nome || 'N/A')}</p>
+            <p><strong>Endereço:</strong> ${sanitizeHTML(imovel.endereco || 'N/A')}</p>
+            <p><strong>Valor Vistoria:</strong> R$ ${props.valor_final_vistoria?.toFixed(2) || '0.00'}</p>
+            <p><strong>Valor Vistoriador:</strong> R$ ${props.valor_vistoriador?.toFixed(2) || '0.00'}</p>
+        </div>
 
-            <!-- INÍCIO DA MODIFICAÇÃO: Seção de Observações -->
-            <div class="border-t border-gray-700 mt-4 pt-4 space-y-3">
-                 <div>
-                    <h4 class="font-semibold text-amber-300 text-sm">Observação para Vistoriador:</h4>
-                    <p class="text-gray-300 whitespace-pre-wrap pl-2 border-l-2 border-amber-300/50 mt-1">${sanitizeHTML(props.observacao_vistoriador || 'Nenhuma')}</p>
-                </div>
-                 <div>
-                    <h4 class="font-semibold text-gray-400 text-sm">Observação Privada (Admin):</h4>
-                    <p class="text-gray-300 whitespace-pre-wrap pl-2 border-l-2 border-gray-400/50 mt-1">${sanitizeHTML(props.observacao_privada || 'Nenhuma')}</p>
-                </div>
+        <div class="border-t border-gray-700 mt-4 pt-4 space-y-3">
+            <div>
+                <h4 class="font-semibold text-amber-300 text-sm">Observação para Vistoriador:</h4>
+                <p class="text-gray-300 whitespace-pre-wrap pl-2 border-l-2 border-amber-300/50 mt-1 text-sm sm:text-base">${sanitizeHTML(props.observacao_vistoriador || 'Nenhuma')}</p>
             </div>
-            <!-- FIM DA MODIFICAÇÃO -->
-
-            <div id="vistoria-actions" class="border-t border-gray-700 mt-6 pt-6 flex flex-wrap justify-center gap-3">
-                <button data-action="edit" class="action-btn bg-blue-600 hover:bg-blue-500">Editar</button>
-                <button data-action="reschedule" class="action-btn bg-purple-600 hover:bg-purple-500">Reagendar</button>
-                <button data-action="unproductive" class="action-btn bg-yellow-500 hover:bg-yellow-400 text-black">Marcar Improdutiva</button>
-                <button data-action="cancel" class="action-btn bg-red-600 hover:bg-red-500">Cancelar Agendamento</button>
+            <div>
+                <h4 class="font-semibold text-gray-400 text-sm">Observação Privada (Admin):</h4>
+                <p class="text-gray-300 whitespace-pre-wrap pl-2 border-l-2 border-gray-400/50 mt-1 text-sm sm:text-base">${sanitizeHTML(props.observacao_privada || 'Nenhuma')}</p>
             </div>
         </div>
-    `;
-    showModal(detailsHTML, 'max-w-2xl');
 
+        <div id="vistoria-actions" class="border-t border-gray-700 mt-6 pt-6 flex flex-wrap justify-center gap-3">
+            <button data-action="edit" class="action-btn bg-blue-600 hover:bg-blue-500">Editar</button>
+            <button data-action="reschedule" class="action-btn bg-purple-600 hover:bg-purple-500">Reagendar</button>
+            <button data-action="unproductive" class="action-btn bg-yellow-500 hover:bg-yellow-400 text-black">Marcar Improdutiva</button>
+            <button data-action="cancel" class="action-btn bg-red-600 hover:bg-red-500">Cancelar Agendamento</button>
+        </div>
+    `;
+
+    // 2. Gera a estrutura do Modal com Abas
+    const modalHTML = `
+        <div class="flex justify-between items-start mb-4">
+            <h2 class="text-xl sm:text-2xl font-bold text-cyan-300">
+                Detalhes: CT ${sanitizeHTML(imovel.cod_imovel || 'Vistoria')}
+            </h2>
+            <button id="close-modal-btn" class="p-1 rounded-full hover:bg-gray-700/50 text-gray-400 hover:text-white transition">
+                <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+            </button>
+        </div>
+
+        <!-- Abas -->
+        <div class="border-b border-gray-700/50 mb-4 overflow-x-auto">
+            <nav class="flex space-x-2 sm:space-x-4 -mb-px" id="modal-tabs" role="tablist">
+                <button data-tab="detalhes" class="tab-btn active" role="tab" aria-selected="true">Detalhes</button>
+                <button data-tab="mural" class="tab-btn" role="tab" aria-selected="false">Mural</button>
+                <button data-tab="documentos" class="tab-btn" role="tab" aria-selected="false">Documentos</button>
+            </nav>
+        </div>
+
+        <!-- Conteúdo das Abas -->
+        <div id="tab-content-detalhes" class="tab-content" role="tabpanel">
+            ${detailsTabHTML}
+        </div>
+        <div id="tab-content-mural" class="tab-content hidden" role="tabpanel">
+            <p class="text-center text-gray-400">Carregando...</p>
+        </div>
+        <div id="tab-content-documentos" class="tab-content hidden" role="tabpanel">
+            <p class="text-center text-gray-400">Carregando...</p>
+        </div>
+    `;
+
+    // 3. Exibe o modal
+    showModal(modalHTML, 'max-w-3xl'); // Um pouco maior para as abas
+
+    // 4. Adiciona Listeners para as ações (copiado do modal antigo)
     document.getElementById('vistoria-actions').addEventListener('click', (e) => {
         const action = e.target.dataset.action;
         if (!action) return;
-
         switch (action) {
             case 'edit': handleEditarVistoria(event); break;
             case 'reschedule': enterReagendamentoMode(event); break;
@@ -229,7 +402,38 @@ function renderVistoriaDetailsModal(event) {
             case 'cancel': handleCancelarAgendamento(event); break;
         }
     });
+
+    // 5. Adiciona Listener para fechar o modal
+    document.getElementById('close-modal-btn').addEventListener('click', hideModal);
+
+    // 6. Adiciona Listeners para as Abas
+    document.getElementById('modal-tabs').addEventListener('click', (e) => {
+        const target = e.target.closest('.tab-btn');
+        if (!target) return;
+
+        const tabId = target.dataset.tab;
+        
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.classList.remove('active');
+            btn.setAttribute('aria-selected', 'false');
+        });
+        target.classList.add('active');
+        target.setAttribute('aria-selected', 'true');
+        
+        document.querySelectorAll('.tab-content').forEach(content => {
+            content.classList.add('hidden');
+        });
+        const contentDiv = document.getElementById(`tab-content-${tabId}`);
+        contentDiv.classList.remove('hidden');
+
+        // Carrega conteúdo dinâmico (só carrega se for a primeira vez)
+        if (contentDiv.innerHTML.includes('Carregando...')) {
+            if (tabId === 'mural') renderAdminMuralTab(event.id, 'tab-content-mural');
+            if (tabId === 'documentos') renderAdminDocumentosTab(event.id, 'tab-content-documentos');
+        }
+    });
 }
+// --- FIM DA PARTE 2: Nova função de Modal ---
 
 
 function handleCancelarAgendamento(event) {
@@ -445,7 +649,8 @@ function enterReagendamentoMode(event) {
     
     const banner = document.createElement('div');
     banner.id = 'reagendamento-banner';
-    banner.className = 'bg-purple-600 text-white text-center p-2 font-bold sticky top-0 z-30';
+    // Aplicando estilos mobile-first (sticky, z-index) e responsivos (text-center, p-2)
+    banner.className = 'bg-purple-600 text-white text-center p-2 font-bold sticky top-0 z-30 text-sm sm:text-base';
     banner.innerHTML = `
         Reagendando vistoria de ${sanitizeHTML(event.extendedProps.imovel?.cod_imovel || 'Vistoria')}. 
         Selecione um novo horário ou <button id="cancel-reagendamento" class="underline hover:text-purple-200">cancele</button>.
@@ -494,14 +699,14 @@ function handleReagendamentoSelect(targetEvent) {
 
 export async function initAgenda() {
     const pageHTML = `
-        <div class="flex justify-between items-center mb-8 flex-wrap gap-4">
+        <div class="flex flex-col sm:flex-row justify-between items-center mb-8 flex-wrap gap-4">
             <h1 class="text-3xl font-bold text-cyan-300">Agenda de Vistorias</h1>
-            <button id="btn-gerar-agenda" class="bg-green-600 hover:bg-green-500 text-white font-bold py-2 px-4 rounded-lg transition flex items-center gap-2">
+            <button id="btn-gerar-agenda" class="w-full sm:w-auto bg-green-600 hover:bg-green-500 text-white font-bold py-2 px-4 rounded-lg transition flex items-center justify-center gap-2">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
                 Gerar Agenda (4 Semanas)
             </button>
         </div>
-        <div id="calendar-container" class="bg-gray-800/50 rounded-xl neon-border p-4 relative">
+        <div id="calendar-container" class="bg-gray-800/50 rounded-xl neon-border p-2 sm:p-4 relative">
             <div id="calendar"></div>
         </div>
     `;
@@ -549,7 +754,6 @@ export async function initAgenda() {
             day: 'Dia',
             list: 'Lista'
         },
-        // MODIFICAÇÃO: Adiciona formato customizado para o cabeçalho da lista
         listDayFormat: (info) => {
             const date = info.date.marker;
             const weekday = new Intl.DateTimeFormat('pt-BR', { weekday: 'long' }).format(date);
@@ -654,6 +858,36 @@ export async function initAgenda() {
         .fc .fc-list-table {
             border-bottom: none;
         }
+
+        /* --- INÍCIO DA PARTE 2: Estilos para Abas e Scroll --- */
+        .tab-btn {
+            padding: 0.5rem 1rem; /* p-2 px-4 */
+            color: #9ca3af; /* text-gray-400 */
+            border-bottom: 2px solid transparent;
+            font-weight: 500; /* medium */
+            white-space: nowrap;
+            transition: color 0.2s, border-color 0.2s;
+        }
+        .tab-btn.active {
+            color: #06b6d4; /* text-cyan-500 */
+            border-bottom-color: #06b6d4; /* border-cyan-500 */
+            font-weight: 600; /* semibold */
+        }
+        .tab-btn:hover {
+            color: #d1d5db; /* text-gray-300 */
+        }
+        .tab-content {
+            animation: fadeIn 0.3s ease-in-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(5px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        /* Scrollbar customizado para chat/docs */
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #1f2937; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #06b6d4; border-radius: 3px; }
+        /* --- FIM DA PARTE 2: Estilos --- */
     `;
     document.head.appendChild(style);
 

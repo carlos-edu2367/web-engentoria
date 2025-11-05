@@ -10,9 +10,9 @@ const API_BASE_URL_ADMIN = window.APP_CONFIG.API_BASE_URL_ADMIN;
  * @returns {Promise<any>} A resposta da API em JSON.
  */
 async function apiFetch(endpoint, method = 'GET', body = null) {
-    const token = getToken();
+    const token = getToken(); // Função global de auth.js
     if (!token) {
-        logout();
+        logout(); // Função global de auth.js
         throw new Error("Token de autenticação não encontrado.");
     }
 
@@ -28,7 +28,7 @@ async function apiFetch(endpoint, method = 'GET', body = null) {
         const response = await fetch(`${API_BASE_URL_ADMIN}${endpoint}`, config);
 
         if (response.status === 401 || response.status === 403) {
-            logout();
+            logout(); // Função global de auth.js
             throw new Error("Acesso não autorizado.");
         }
 
@@ -55,14 +55,64 @@ async function apiFetch(endpoint, method = 'GET', body = null) {
 }
 
 /**
+ * INÍCIO DA PARTE 1
+ * Nova função helper para lidar com uploads de FormData (arquivos).
+ * @param {string} endpoint O endpoint da API.
+ * @param {string} method O método HTTP (geralmente 'POST' ou 'PUT').
+ * @param {FormData} formData O objeto FormData para enviar.
+ * @returns {Promise<any>} A resposta da API em JSON.
+ */
+async function apiFetchFormData(endpoint, method = 'POST', formData) {
+    const token = getToken(); // Função global de auth.js
+    if (!token) {
+        logout(); // Função global de auth.js
+        throw new Error("Token de autenticação não encontrado.");
+    }
+
+    const headers = new Headers({ 'Authorization': `Bearer ${token}` });
+    // Não definimos 'Content-Type': o browser faz isso automaticamente com o 'boundary'
+    const config = { method, headers, body: formData };
+
+    try {
+        const response = await fetch(`${API_BASE_URL_ADMIN}${endpoint}`, config);
+
+        if (response.status === 401 || response.status === 403) {
+            logout();
+            throw new Error("Acesso não autorizado.");
+        }
+
+        const responseBody = await response.text();
+
+        if (!response.ok) {
+            try {
+                const errorData = JSON.parse(responseBody);
+                throw new Error(errorData.detail || `Erro HTTP: ${response.status}`);
+            } catch (e) {
+                throw new Error(responseBody || `Erro HTTP: ${response.status}`);
+            }
+        }
+        
+        if (response.status === 204 || !responseBody) {
+            return { success: true };
+        }
+
+        return JSON.parse(responseBody);
+    } catch (error) {
+        console.error(`Erro na chamada FormData da API para ${endpoint}:`, error);
+        throw error;
+    }
+}
+// FIM DA PARTE 1 (Helper)
+
+/**
  * Função especializada para fazer download de arquivos da API.
  * @param {URLSearchParams} params - Os parâmetros de query para a URL.
  * @returns {Promise<void>}
  */
 async function downloadApiFile(endpoint, params) {
-    const token = getToken();
+    const token = getToken(); // Função global de auth.js
     if (!token) {
-        logout();
+        logout(); // Função global de auth.js
         throw new Error("Token de autenticação não encontrado.");
     }
     const url = `${API_BASE_URL_ADMIN}${endpoint}?${params.toString()}`;
@@ -164,4 +214,23 @@ export const api = {
     // Configurações
     getConfig: () => apiFetch('/configuracoes/'),
     updateConfig: (data) => apiFetch('/configuracoes/', 'PUT', data),
+
+    // --- INÍCIO DA PARTE 1 (Endpoints) ---
+    // NOVAS: Interação com Vistorias (Mural)
+    getComentariosVistoria: (id) => apiFetch(`/agenda/${id}/comentarios`),
+    postComentarioVistoria: (id, comentario) => apiFetch(`/agenda/${id}/comentario?comentario=${encodeURIComponent(comentario)}`, 'POST'),
+    getDocumentosVistoria: (id) => apiFetch(`/agenda/${id}/documentos`),
+    postDocumentoVistoria: (formData) => apiFetchFormData(`/agenda/documento`, 'POST', formData),
+    deleteDocumentoVistoria: (docId) => apiFetch(`/agenda/${docId}/documento`, 'DELETE'),
+
+    // NOVAS: Grupos de Imobiliárias
+    getGrupos: () => apiFetch('/grupo/grupos'),
+    getGrupoDetails: (id) => apiFetch(`/grupo/${id}`),
+
+    // NOVAS: Resumo Mensal (InfoMensal)
+    getInfoMensal: (mes, ano, grupoId) => apiFetch(`/mensal/${mes}/${ano}/${grupoId}`),
+    postInfoMensalMensagem: (infoId, mensagem) => apiFetch(`/mensal/${infoId}/mensagem?mensagem=${encodeURIComponent(mensagem)}`, 'POST'),
+    postInfoMensalDocumento: (formData) => apiFetchFormData(`/mensal/documento`, 'POST', formData),
+    deleteInfoMensalDocumento: (docId) => apiFetch(`/deletar_doc_info/${docId}`, 'DELETE')
+    // --- FIM DA PARTE 1 (Endpoints) ---
 };
