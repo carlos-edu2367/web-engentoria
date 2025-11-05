@@ -53,6 +53,7 @@ class Usuario(Base):
     chamados = relationship("Chamado", back_populates="usuario")
     feedbacks = relationship("Feedback", back_populates="usuario")
     horarios_fixos = relationship("HorarioFixo", back_populates="vistoriador", cascade="all, delete-orphan")
+    laudos = relationship("Laudo", back_populates="vistoriador", cascade="all, delete-orphan")
 
 # --- Modelo para a tabela de Clientes ---
 class Cliente(Base):
@@ -87,6 +88,7 @@ class Imobiliaria(Base):
     # Relacionamentos
     imoveis = relationship("Imovel", back_populates="imobiliaria")
     grupo = relationship("GrupoImobiliaria", back_populates="imobiliarias")
+    laudos = relationship("Laudo", back_populates="imobiliaria", cascade="all, delete-orphan")
 
 # --- Modelo para a tabela de Imóveis ---
 class Imovel(Base):
@@ -109,6 +111,7 @@ class Imovel(Base):
     cliente = relationship("Cliente", back_populates="imoveis")
     imobiliaria = relationship("Imobiliaria", back_populates="imoveis")
     agendamentos = relationship("Agenda", back_populates="imovel")
+    laudos = relationship("Laudo", back_populates="imovel", cascade="all, delete-orphan")
 
 # --- Modelo para a tabela da Agenda ---
 class Agenda(Base):
@@ -135,6 +138,7 @@ class Agenda(Base):
     horario_fechado = relationship("HorarioFechado", back_populates="agenda_entry", uselist=False, cascade="all, delete-orphan")
     documentos = relationship("DocumentoAgenda", back_populates="agenda", cascade="all, delete-orphan")
     comentarios = relationship("ComentarioVistoria", back_populates="agenda", cascade="all, delete-orphan")
+    laudos = relationship("Laudo", back_populates="agenda", cascade="all, delete-orphan")
 
 # --- Modelo para a tabela de Horários Fixos ---
 class HorarioFixo(Base):
@@ -331,3 +335,66 @@ class ComentarioVistoria(Base):
         self.agenda_id = agenda_id
         self.conteudo = conteudo
         self.remetente = remetente
+
+
+class Laudo(Base):
+    __tablename__ = "laudos"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    agenda_id= Column(UUID(as_uuid=True), ForeignKey("agenda.id", ondelete="CASCADE"), nullable=False)
+    imovel_id= Column(UUID(as_uuid=True), ForeignKey("imoveis.id", ondelete="CASCADE"), nullable=False)
+    imobiliaria_id = Column(UUID(as_uuid=True), ForeignKey("imobiliarias.id", ondelete="CASCADE"), nullable=False)
+    vistoriador_id = Column(UUID(as_uuid=True), ForeignKey("usuarios.id", ondelete="CASCADE"), nullable=False)
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+
+    agenda = relationship("Agenda", back_populates="laudos")
+    imovel = relationship("Imovel", back_populates="laudos")
+    imobiliaria = relationship("Imobiliaria", back_populates="laudos")
+    categorias = relationship("CategoriaLaudo", back_populates="laudo", cascade="all, delete-orphan")
+    vistoriador = relationship("Usuario", back_populates="laudos")
+
+    def __init__(self, agenda_id, imovel_id, imobiliaria_id, user_id):
+        self.agenda_id = agenda_id
+        self.imovel_id = imovel_id
+        self.imobiliaria_id = imobiliaria_id
+        self.vistoriador_id = user_id
+
+class CategoriaLaudo(Base):
+    __tablename__ = "categorias_laudo"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    laudo_id = Column(UUID(as_uuid=True), ForeignKey("laudos.id", ondelete="CASCADE"), nullable=False)
+    titulo = Column(String, nullable=False)
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+
+    laudo = relationship("Laudo", back_populates="categorias")
+    itens = relationship("ItemCategoria", back_populates="categoria", cascade="all, delete-orphan")
+    imagens = relationship("ImagemCategoria", back_populates="categoria", cascade="all, delete-orphan")
+
+    def __init__(self, laudo_id, titulo):
+        self.laudo_id = laudo_id
+        self.titulo = titulo
+
+class ItemCategoria(Base):
+    __tablename__ = "itens_categoria"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    categoria_id = Column(UUID(as_uuid=True), ForeignKey("categorias_laudo.id", ondelete="CASCADE"), nullable=False)
+    descricao = Column(String, nullable=False)
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+
+    categoria = relationship("CategoriaLaudo", back_populates="itens")
+
+    def __init__(self, categoria_id, descricao):
+        self.categoria_id = categoria_id
+        self.descricao = descricao
+
+class ImagemCategoria(Base):
+    __tablename__ = "imagens_categoria"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    categoria_id = Column(UUID(as_uuid=True), ForeignKey("categorias_laudo.id", ondelete="CASCADE"), nullable=False)
+    file_path = Column(String, nullable=False)
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+
+    categoria = relationship("CategoriaLaudo", back_populates="imagens")
+
+    def __init__(self, categoria_id, file_path):
+        self.categoria_id = categoria_id
+        self.file_path = file_path

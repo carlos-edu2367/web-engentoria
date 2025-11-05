@@ -343,3 +343,99 @@ async def adc_comentario_mural( id_agenda: str, comentario: str,
         return
     except Exception as e:
         raise HTTPException(status_code=500, detail="Erro ao adicionar comentário")
+    
+
+@router.post("/laudos/laudo")
+async def criar_laudo(id_agendamento: str,
+                      session: Session = Depends(get_db),
+                      current_user: models.Usuario = Depends(auth.get_current_active_vistoriador)):
+    try:
+        agenda_id = UUID(id_agendamento)
+    except:
+        raise HTTPException(status_code=400, detail="ID inválido")
+    
+    agenda = session.query(models.Agenda).filter(models.Agenda.id == agenda_id, models.Agenda.vistoriador_id == current_user.id).first()
+    if not agenda:
+        raise HTTPException(status_code=404, detail="Agendamento não encontrado para o usuário")
+    
+    existe = session.query(models.Laudo).filter(models.Laudo.agenda_id == agenda.id).first()
+    if existe:
+        raise HTTPException(status_code=409, detail="Já Existe um laudo para esse agendamento")
+    
+    new = models.Laudo(agenda_id=agenda.id, 
+                       imovel_id=agenda.imovel_id, 
+                       imobiliaria_id=agenda.imovel.imobiliaria_id,
+                       user_id=current_user.id)
+    try:
+        session.add(new)
+        session.commit()
+        return {
+            "status": "ok",
+            "mensagem": "Laudo criado com sucesso",
+            "id": new.id
+        }
+    except Exception as e:
+        session.rollback()
+        logger.error(f"Erro ao criar laudo: {e}")
+        raise HTTPException(status_code=500, detail="Erro ao criar laudo")
+    
+@router.post("/laudos/{laudo_id}/categoria")
+async def criar_categoria(laudo_id: str,
+                          titulo: str,
+                          session: Session = Depends(get_db),
+                          current_user: models.Usuario = Depends(auth.get_current_active_vistoriador)):
+    try:
+        id_laudo = UUID(laudo_id)
+    except:
+        raise HTTPException(status_code=400, detail="ID inválido")
+    
+    laudo = (session.query(models.Laudo)
+             .filter(models.Laudo.id == id_laudo, 
+                     models.Laudo.vistoriador_id == current_user.id)
+             .first())
+    if not laudo:
+        raise HTTPException(status_code=404, detail="Laudo não encontrado para o usuário")
+    
+    new = models.CategoriaLaudo(laudo_id=laudo.id, titulo=titulo)
+    try:
+        session.add(new)
+        session.commit()
+        return {
+            "id": new.id,
+            "titulo": new.titulo
+        }
+    except Exception as e:
+        session.rollback()
+        logger.error(f"Erro ao criar categoria: {e}")
+        raise HTTPException(status_code=500, detail="Erro ao criar categoria")
+    
+@router.post("/laudos/categoria/{id_categoria}/item")
+async def criar_item(id_categoria: str,
+                     descricao: str,
+                     session: Session = Depends(get_db),
+                     current_user: models.Usuario = Depends(auth.get_current_active_vistoriador)):
+    try:
+        categoria_id = UUID(id_categoria)
+    except:
+        raise HTTPException(status_code=400, detail="ID inválido")
+    
+    categoria = (session.query(models.CategoriaLaudo)
+                 .join(models.CategoriaLaudo.laudo)
+                 .filter(models.CategoriaLaudo.id == categoria_id,
+                         models.Laudo.vistoriador_id == current_user.id)
+                 .first())
+    if not categoria:
+        raise HTTPException(status_code=404, detail="Categoria não encontrada")
+    
+    new = models.ItemCategoria(categoria_id=categoria.id, descricao=descricao.id)
+    try:
+        session.add(new)
+        session.commit()
+        return {
+            "id": new.id,
+            "descricao": new.descricao
+        }
+    except Exception as e:
+        session.rollback()
+        logger.error(f"Erro ao adicionar item: {e}")
+        raise HTTPException(status_code=500, detail="Erro ao adicionar item")
