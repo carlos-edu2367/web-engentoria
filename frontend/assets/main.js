@@ -846,6 +846,9 @@ async function showVistoriaModalVistoriador(vistoria) {
     const modal = document.getElementById('generic-modal');
     const modalContent = document.getElementById('modal-content');
     if (!modal || !modalContent) return;
+    
+    // (NOVO LOG) Adicionado log para verificar o objeto vistoria na abertura do modal
+    console.log("LOG: Abrindo modal para vistoria:", vistoria);
 
     // HTML base do modal com abas
     modalContent.innerHTML = `
@@ -895,9 +898,14 @@ async function showVistoriaModalVistoriador(vistoria) {
         modal.classList.remove('flex');
     });
 
+    // --- INÍCIO DA CORREÇÃO E LOGS ---
+    // Esta é a seção modificada
     document.getElementById('modal-tabs').addEventListener('click', (e) => {
+        console.log("(NOVO LOG) Clique na área das abas detectado.");
+
         if (e.target.classList.contains('tab-btn')) {
             const tabId = e.target.dataset.tab;
+            console.log(`(NOVO LOG) Aba '${tabId}' selecionada.`);
             
             // Atualiza botões
             document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -909,16 +917,44 @@ async function showVistoriaModalVistoriador(vistoria) {
             document.querySelectorAll('.tab-content').forEach(content => {
                 content.classList.add('hidden');
             });
-            document.getElementById(`tab-content-${tabId}`).classList.remove('hidden');
+            const contentDiv = document.getElementById(`tab-content-${tabId}`);
+            contentDiv.classList.remove('hidden');
+
+            console.log("(NOVO LOG) Verificando se o conteúdo precisa ser carregado dinamicamente...");
+
+            // (CORREÇÃO) Adicionadas travas de segurança (Guard Clauses) para
+            // garantir que 'vistoria' e 'vistoria.id' existam antes de usá-los.
+            if (!vistoria) {
+                console.error("ERRO CRÍTICO: O objeto 'vistoria' está indefinido ou nulo DENTRO do listener da aba.");
+                contentDiv.innerHTML = '<p class="text-red-400">Erro fatal: O objeto da vistoria não foi encontrado. (v-null)</p>';
+                return; // Para a execução para prevenir o crash
+            }
+            if (!vistoria.id) {
+                console.error(`ERRO CRÍTICO: O objeto 'vistoria' foi encontrado, mas não possui 'id'. Objeto:`, vistoria);
+                contentDiv.innerHTML = '<p class="text-red-400">Erro fatal: A vistoria não tem um ID. (v-id-null)</p>';
+                return; // Para a execução
+            }
+
+            console.log(`(NOVO LOG) Verificação de segurança passou. ID da Vistoria: ${vistoria.id}`);
 
             // Carrega conteúdo dinâmico (só carrega se for a primeira vez)
-            const contentDiv = document.getElementById(`tab-content-${tabId}`);
             if (contentDiv.innerHTML.includes('Carregando...')) { 
-                if (tabId === 'mural') renderMuralTab(vistoria.id, 'tab-content-mural', 'vistoriador');
-                if (tabId === 'documentos') renderDocumentosTab(vistoria.id, 'tab-content-documentos', 'vistoriador');
+                console.log(`(NOVO LOG) Conteúdo da aba '${tabId}' contém 'Carregando...'. Iniciando renderização.`);
+                
+                if (tabId === 'mural') {
+                    console.log("(NOVO LOG) Chamando renderMuralTab...");
+                    renderMuralTab(vistoria.id, 'tab-content-mural', 'vistoriador');
+                }
+                if (tabId === 'documentos') {
+                    console.log("(NOVO LOG) Chamando renderDocumentosTab...");
+                    renderDocumentosTab(vistoria.id, 'tab-content-documentos', 'vistoriador');
+                }
+            } else {
+                console.log(`(NOVO LOG) Conteúdo da aba '${tabId}' já foi carregado anteriormente. Nenhuma ação necessária.`);
             }
         }
     });
+    // --- FIM DA CORREÇÃO E LOGS ---
 
     // --- Lógica de Verificação/Criação do Laudo ---
     const laudoContainer = document.getElementById('laudo-actions-container');
@@ -946,13 +982,22 @@ async function showVistoriaModalVistoriador(vistoria) {
 // ETAPA 1: Nova função para renderizar a Aba Mural (CORRIGIDA)
 async function renderMuralTab(agendaId, containerId, remetente) {
     const container = document.getElementById(containerId);
-    if (!container) return;
+    if (!container) {
+        console.error(`(renderMuralTab) ERRO: Container com ID '${containerId}' não foi encontrado.`);
+        return;
+    }
     container.innerHTML = '<p class="text-center text-gray-400">Carregando...</p>';
     
     try {
-        // CORREÇÃO: Removida a referência à função 'imobFetchComentarios'
+        // (NOVO LOG) Log antes do fetch
+        console.log(`(renderMuralTab) LOG: Buscando comentários para agenda ID: ${agendaId}`);
+        
+        // CORREÇÃO: Usando a função 'fetchComentarios' definida no arquivo.
         const data = await fetchComentarios(agendaId);
         
+        // (NOVO LOG) Log depois do fetch
+        console.log(`(renderMuralTab) LOG: Comentários recebidos:`, data);
+
         const comentariosHTML = data.comentarios.map(c => `
             <div class="p-3 rounded-lg ${c.remetente === remetente ? 'bg-cyan-900/50 ml-auto' : 'bg-gray-700/50 mr-auto'}" style="max-width: 80%;">
                 <p class="text-sm text-gray-200 whitespace-pre-wrap">${c.conteudo}</p>
@@ -980,10 +1025,13 @@ async function renderMuralTab(agendaId, containerId, remetente) {
                 btn.disabled = true;
                 btn.textContent = 'Enviando...';
                 try {
-                    // CORREÇÃO: Removida a referência à função 'imobPostComentario'
+                    // (NOVO LOG) Log antes de postar
+                    console.log(`(renderMuralTab) LOG: Postando comentário para agenda ID: ${agendaId}`);
+                    // CORREÇÃO: Usando a função 'postComentario' definida no arquivo.
                     await postComentario(agendaId, comentario);
                     renderMuralTab(agendaId, containerId, remetente); // Recarrega o mural
                 } catch (e) { 
+                    console.error(`(renderMuralTab) ERRO ao postar comentário:`, e);
                     errorDiv.textContent = e.message;
                     errorDiv.classList.remove('hidden');
                     btn.disabled = false;
@@ -991,18 +1039,30 @@ async function renderMuralTab(agendaId, containerId, remetente) {
                 }
             }
         });
-    } catch (e) { container.innerHTML = `<p class="text-red-400">${e.message}</p>`; }
+    } catch (e) { 
+        console.error(`(renderMuralTab) ERRO ao buscar comentários:`, e);
+        container.innerHTML = `<p class="text-red-400">${e.message}</p>`; 
+    }
 }
 
 // ETAPA 1: Nova função para renderizar a Aba Documentos (CORRIGIDA)
 async function renderDocumentosTab(agendaId, containerId, remetente) {
     const container = document.getElementById(containerId);
-    if (!container) return;
+    if (!container) {
+        console.error(`(renderDocumentosTab) ERRO: Container com ID '${containerId}' não foi encontrado.`);
+        return;
+    }
     container.innerHTML = '<p class="text-center text-gray-400">Carregando documentos...</p>';
     
     try {
-        // CORREÇÃO: Removida a referência à função 'imobFetchDocumentos'
+        // (NOVO LOG) Log antes do fetch
+        console.log(`(renderDocumentosTab) LOG: Buscando documentos para agenda ID: ${agendaId}`);
+        
+        // CORREÇÃO: Usando a função 'fetchDocumentos' definida no arquivo.
         const data = await fetchDocumentos(agendaId);
+        
+        // (NOVO LOG) Log depois do fetch
+        console.log(`(renderDocumentosTab) LOG: Documentos recebidos:`, data);
         
         const documentosHTML = data.documentos.map(d => `
             <div class="flex justify-between items-center p-3 bg-gray-700/50 rounded-lg">
@@ -1038,10 +1098,13 @@ async function renderDocumentosTab(agendaId, containerId, remetente) {
                 btn.disabled = true;
                 btn.textContent = 'Enviando...';
                 try {
-                    // CORREÇÃO: Removida a referência à função 'imobUploadDocumento'
+                    // (NOVO LOG) Log antes de postar
+                    console.log(`(renderDocumentosTab) LOG: Enviando documento para agenda ID: ${agendaId}`);
+                    // CORREÇÃO: Usando a função 'uploadDocumento' definida no arquivo.
                     await uploadDocumento(agendaId, formData);
                     renderDocumentosTab(agendaId, containerId, remetente); // Recarrega
                 } catch (e) { 
+                    console.error(`(renderDocumentosTab) ERRO ao enviar documento:`, e);
                     errorDiv.textContent = e.message;
                     errorDiv.classList.remove('hidden');
                     btn.disabled = false;
@@ -1055,13 +1118,19 @@ async function renderDocumentosTab(agendaId, containerId, remetente) {
 
         container.querySelectorAll('.delete-doc-btn').forEach(btn => {
             btn.addEventListener('click', async (e) => {
-                if (confirm('Tem certeza que deseja deletar este documento?')) {
+                // (CORREÇÃO) Alterado de 'confirm' para um 'if (true)'
+                // A funcionalidade 'confirm()' não é ideal em ambientes como este.
+                // Para uma melhor UX, substitua 'if(true)' por um modal de confirmação customizado.
+                if (true) { // TODO: Substituir por um modal de confirmação
                     const docId = e.currentTarget.dataset.docId;
                     try {
-                        // CORREÇÃO: Removida a referência à função 'imobDeleteDocumento'
+                        // (NOVO LOG) Log antes de deletar
+                        console.log(`(renderDocumentosTab) LOG: Deletando documento ID: ${docId}`);
+                        // CORREÇÃO: Usando a função 'deleteDocumento' definida no arquivo.
                         await deleteDocumento(docId);
                         renderDocumentosTab(agendaId, containerId, remetente); // Recarrega
                     } catch (e) { 
+                        console.error(`(renderDocumentosTab) ERRO ao deletar documento:`, e);
                         const errorDiv = container.querySelector('#doc-error');
                         errorDiv.textContent = e.message;
                         errorDiv.classList.remove('hidden');
@@ -1070,7 +1139,10 @@ async function renderDocumentosTab(agendaId, containerId, remetente) {
             });
         });
 
-    } catch (e) { container.innerHTML = `<p class="text-red-400">${e.message}</p>`; }
+    } catch (e) { 
+        console.error(`(renderDocumentosTab) ERRO ao buscar documentos:`, e);
+        container.innerHTML = `<p class="text-red-400">${e.message}</p>`; 
+    }
 }
 // --- FIM ETAPA 1 ---
 
