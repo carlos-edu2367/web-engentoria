@@ -878,7 +878,7 @@ async function showVistoriaModalVistoriador(vistoria) {
         </div>
         <div id="tab-content-mural" class="tab-content hidden">
             <!-- Conteúdo do Mural (será carregado) -->
-            <p class="text-center text-gray-400">Carregando mural...</p>
+            <p class="text-center text-gray-400">Carregando...</p>
         </div>
         <div id="tab-content-documentos" class="tab-content hidden">
             <!-- Conteúdo dos Documentos (será carregado) -->
@@ -947,7 +947,7 @@ async function showVistoriaModalVistoriador(vistoria) {
 async function renderMuralTab(agendaId, containerId, remetente) {
     const container = document.getElementById(containerId);
     if (!container) return;
-    container.innerHTML = '<p class="text-center text-gray-400">Carregando mural...</p>';
+    container.innerHTML = '<p class="text-center text-gray-400">Carregando...</p>';
     
     try {
         // CORREÇÃO: Removida a referência à função 'imobFetchComentarios'
