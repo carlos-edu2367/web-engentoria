@@ -344,6 +344,9 @@ class Laudo(Base):
     imovel_id= Column(UUID(as_uuid=True), ForeignKey("imoveis.id", ondelete="CASCADE"), nullable=False)
     imobiliaria_id = Column(UUID(as_uuid=True), ForeignKey("imobiliarias.id", ondelete="CASCADE"), nullable=False)
     vistoriador_id = Column(UUID(as_uuid=True), ForeignKey("usuarios.id", ondelete="CASCADE"), nullable=False)
+    finalizado = Column(Boolean, nullable=False, default=False)
+    aprovado = Column(Boolean, nullable=False, default=False)
+    obs_adm = Column(Text, nullable=True)
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
 
     agenda = relationship("Agenda", back_populates="laudos")

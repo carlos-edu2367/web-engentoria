@@ -76,12 +76,38 @@
         .custom-scrollbar::-webkit-scrollbar-track { background: #1f2937; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #00ffb3; border-radius: 3px; }
 
+        /* (NOVO) Estilo para o Banner de Notificação de Pendência */
+        #pendencia-notification-banner {
+            background-image: linear-gradient(to right, #fbbf24, #f59e0b); /* amber-400 to amber-500 */
+            color: #451a03; /* amber-950 */
+            cursor: pointer;
+            transition: all 0.3s ease-out;
+            transform: translateY(-100%);
+            opacity: 0;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 1000;
+        }
+        #pendencia-notification-banner.visible {
+            transform: translateY(0);
+            opacity: 1;
+        }
+
     </style>
 </head>
 <body class="text-gray-200">
     <!-- Efeitos Visuais -->
     <div class="scanline"></div>
     <div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-cyan-400 to-transparent opacity-80 z-50"></div>
+
+    <!-- (NOVO) Banner de Notificação de Pendência -->
+    <div id="pendencia-notification-banner" class="p-3 text-center font-bold shadow-lg hidden">
+        <svg class="h-5 w-5 inline-block mr-1 -mt-1" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.332-.21 3.03-1.742 3.03H4.42c-1.532 0-2.493-1.698-1.742-3.03l5.58-9.92zM9 11a1 1 0 112 0v1a1 1 0 11-2 0v-1zm1-4a1 1 0 00-1 1v3a1 1 0 002 0V8a1 1 0 00-1-1z" clip-rule="evenodd"></path></svg>
+        <span id="pendencia-notification-text">Você tem pendências!</span>
+        <span class="underline ml-1">Clique aqui para ver</span>
+    </div>
 
     <!-- Overlay e Sidebar -->
     <div id="sidebar-overlay" class="fixed inset-0 bg-black/60 z-30 hidden md:hidden"></div>
@@ -94,7 +120,15 @@
                 <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
                 <span class="ml-4">Minha Agenda</span>
             </a>
-            <!-- NOVO LINK ADICIONADO -->
+            
+            <!-- (NOVO) Link para Pendências -->
+            <a href="pendencias.html" class="nav-link flex items-center p-3 rounded-lg hover:bg-gray-700/50 transition-colors relative">
+                <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                <span class="ml-4">Pendências</span>
+                <!-- (NOVO) Badge de Notificação -->
+                <span id="pendencia-sidebar-badge" class="hidden absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 bg-red-500 rounded-full text-white text-xs flex items-center justify-center font-bold"></span>
+            </a>
+
             <a href="relatorios-vistoriador.html" class="nav-link flex items-center p-3 rounded-lg hover:bg-gray-700/50 transition-colors">
                 <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
                 <span class="ml-4">Meus Relatórios</span>
@@ -191,10 +225,7 @@
     <script src="./assets/auth.js"></script>
     <script src="./assets/main.js"></script>
 
-    <!-- 
-      ETAPA 1: Adicionar Modal Genérico 
-      Copiado de 'imobiliaria-dashboard.html' conforme o plano.
-    -->
+    <!-- Modal Genérico -->
     <div id="generic-modal" class="fixed inset-0 bg-black/70 z-50 hidden items-center justify-center p-4 backdrop-blur-sm">
         <div id="modal-content" class="bg-gray-800/90 backdrop-blur-sm rounded-xl shadow-xl p-4 sm:p-6 w-full max-w-2xl border border-gray-700/50 max-h-[90vh] overflow-y-auto neon-border">
             <!-- Conteúdo será injetado via JS -->

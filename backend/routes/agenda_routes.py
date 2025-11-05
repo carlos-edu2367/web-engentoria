@@ -8,6 +8,8 @@ from datetime import date, timedelta
 from decimal import Decimal
 from calendar import monthrange
 from uuid import UUID
+from PIL import Image
+import io
 import uuid, os, logging, unicodedata, re
 from ..supabase_client import supabase, gerar_url_assinada, deletar_arquivo_supabase
 
@@ -22,6 +24,37 @@ router = APIRouter(
     # Adiciono a dependência de autenticação para todas as rotas neste arquivo.
     dependencies=[Depends(auth.get_current_active_vistoriador)]
 )
+
+def compress_image(content: bytes, max_mb: int = 1) -> bytes:
+    max_size = max_mb * 1024 * 1024
+
+    # Se a imagem já está no tamanho certo, retorna como está
+    if len(content) <= max_size:
+        return content
+
+    image = Image.open(io.BytesIO(content))
+
+    # Converte para RGB se necessário (evita erro em PNG com alpha)
+    if image.mode in ("RGBA", "P"):
+        image = image.convert("RGB")
+
+    quality = 85
+    width, height = image.size
+
+    compressed = content
+
+    while len(compressed) > max_size and quality > 30:
+        width = int(width * 0.8)
+        height = int(height * 0.8)
+        resized_img = image.resize((width, height), Image.LANCZOS)
+
+        buffer = io.BytesIO()
+        resized_img.save(buffer, format="JPEG", quality=quality)
+        compressed = buffer.getvalue()
+
+        quality -= 5
+
+    return compressed
 
 def sanitize_filename(filename):
     # remove acentos
@@ -396,6 +429,9 @@ async def criar_categoria(laudo_id: str,
     if not laudo:
         raise HTTPException(status_code=404, detail="Laudo não encontrado para o usuário")
     
+    if laudo.finalizado:
+        raise HTTPException(status_code=400, detail="Não é possivel editar um laudo finalizado")
+
     new = models.CategoriaLaudo(laudo_id=laudo.id, titulo=titulo)
     try:
         session.add(new)
@@ -427,7 +463,10 @@ async def criar_item(id_categoria: str,
     if not categoria:
         raise HTTPException(status_code=404, detail="Categoria não encontrada")
     
-    new = models.ItemCategoria(categoria_id=categoria.id, descricao=descricao.id)
+    if categoria.laudo.finalizado:
+        raise HTTPException(status_code=400, detail="Não é possivel editar um laudo finalizado")
+    
+    new = models.ItemCategoria(categoria_id=categoria.id, descricao=descricao)
     try:
         session.add(new)
         session.commit()
@@ -439,3 +478,273 @@ async def criar_item(id_categoria: str,
         session.rollback()
         logger.error(f"Erro ao adicionar item: {e}")
         raise HTTPException(status_code=500, detail="Erro ao adicionar item")
+    
+@router.post("/laudos/categoria/imagem")
+async def add_imagem_categoria(id_categoria: str = Form(...),
+                               imagem: UploadFile = File(...),
+                               session: Session = Depends(get_db),
+                               current_user: models.Usuario = Depends(auth.get_current_active_vistoriador)):
+    try:
+        categoria_id = UUID(id_categoria)
+    except:
+        raise HTTPException(status_code=400, detail="ID inválido")
+    
+    categoria = (session.query(models.CategoriaLaudo)
+                 .join(models.CategoriaLaudo.laudo)
+                 .filter(models.CategoriaLaudo.id == categoria_id,
+                         models.Laudo.vistoriador_id == current_user.id)
+                 .first())
+    if not categoria:
+        raise HTTPException(status_code=404, detail="Categoria não encontrada para o usuário")
+    
+    if categoria.laudo.finalizado:
+        raise HTTPException(status_code=400, detail="Não é possivel editar um laudo finalizado")
+
+    nome, extensao = os.path.splitext(imagem.filename)
+    nome = sanitize_filename(nome)
+    nome_arquivo = f"{nome}_Img_{uuid.uuid4()}{extensao}"
+
+    if not extensao.lower() in [".jpg", ".jpeg", ".png", ".webp"]:
+        raise HTTPException(status_code=400, detail="Tipo de arquivo inválido, somente imagens")
+    
+    try:
+        conteudo = await imagem.read()
+        MAX_MB = 1
+
+        if len(conteudo) > MAX_MB * 1024 * 1024:
+            conteudo = compress_image(content=conteudo)
+
+        res = supabase.storage.from_("imagens").upload(nome_arquivo, 
+                                                          conteudo,
+                                                          {"content-type": imagem.content_type})
+        if getattr(res, "error", None):
+                logger.error(f"Erro no Supabase: {res.error}")
+                raise HTTPException(status_code=400, detail="Erro ao enviar documento para o servidor")
+        
+        new = models.ImagemCategoria(categoria_id=categoria.id, file_path=nome_arquivo)
+        session.add(new)
+        session.commit()
+        return
+    except Exception as e:
+        session.rollback()
+        logger.error(f"Erro ao add imagem: {e}")
+        raise HTTPException(status_code=500, detail="Erro ao adicionar imagem")
+    
+@router.get("/laudos/laudo/{id_agendamento}")
+async def ver_laudo_agendamento(id_agendamento: str,
+                                session: Session = Depends(get_db),
+                                current_user: models.Usuario = Depends(auth.get_current_active_vistoriador)):
+    try:
+        agenda_id = UUID(id_agendamento)
+    except:
+        raise HTTPException(status_code=400, detail="ID inválido")
+    
+    laudo = (session.query(models.Laudo)
+             .options(joinedload(models.Laudo.categorias))
+             .filter(models.Laudo.agenda_id == agenda_id,
+                     models.Laudo.vistoriador_id == current_user.id)
+             .first())
+    if not laudo:
+        raise HTTPException(status_code=404, detail="Nenhum laudo encontrado")
+    
+    categorias = sorted(laudo.categorias, key=lambda d: d.created_at, reverse=True)
+    
+    return {
+        "id": laudo.id,
+        "created_at": laudo.created_at,
+        "nome_vistoriador": laudo.vistoriador.nome,
+        "nome_imobiliaria": laudo.imobiliaria.nome,
+        "codigo_imovel": laudo.imovel.cod_imovel,
+        "finalizado": laudo.finalizado,
+        "aprovado": laudo.aprovado,
+        "obs": laudo.obs_adm,
+        "categorias": [{
+            "id": c.id,
+            "titulo": c.titulo,
+            "created_at": c.created_at
+        }for c in categorias]
+    }
+
+@router.get("/laudos/categoria/{id_categoria}")
+async def ver_categoria(id_categoria: str,
+                        session: Session = Depends(get_db),
+                        current_user: models.Usuario = Depends(auth.get_current_active_vistoriador)):
+    try:
+        categoria_id = UUID(id_categoria)
+    except:
+        raise HTTPException(status_code=400, detail="ID inválido")
+    
+    categoria = (session.query(models.CategoriaLaudo)
+                 .options(joinedload(models.CategoriaLaudo.laudo),
+                          joinedload(models.CategoriaLaudo.imagens),
+                          joinedload(models.CategoriaLaudo.itens))
+                 .filter(models.CategoriaLaudo.id == categoria_id).first())
+    if not categoria:
+        raise HTTPException(status_code=404, detail="Categoria não encontrada")
+    
+    if categoria.laudo.vistoriador_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Usuário não autorizado")
+
+    itens = sorted(categoria.itens, key=lambda d: d.created_at, reverse=True)
+    imagens = categoria.imagens
+
+    return {
+        "id": categoria.id,
+        "titulo": categoria.titulo,
+        "created_at": categoria.created_at,
+        "itens": [{
+            "id": i.id,
+            "descricao": i.descricao,
+            "created_at": i.created_at
+        }for i in itens],
+        "imagens": [{
+            "id": i.id,
+            "file_path": i.file_path,
+            "link": gerar_url_assinada(bucket="imagens", file_path=i.file_path)
+        }for i in imagens]
+    }
+
+@router.put("/laudos/laudo/status")
+async def atualizar_status_laudo(id_laudo: str,
+                                 finalizado: bool,
+                                 session: Session = Depends(get_db),
+                                 current_user: models.Usuario = Depends(auth.get_current_active_vistoriador)):
+    try:
+        laudo_id = UUID(id_laudo)
+    except:
+        raise HTTPException(status_code=400, detail="ID inválido")
+    
+    laudo = session.query(models.Laudo).filter(models.Laudo.id == laudo_id).first()
+    if not laudo:
+        raise HTTPException(status_code=404, detail="Laudo não encontrado")
+    
+    laudo.finalizado = finalizado
+    laudo.aprovado = False
+    try:
+        session.commit()
+        return
+    except Exception as e:
+        logger.error(f"Erro ao atualizar status do laudo: {e}")
+        session.rollback()
+        raise HTTPException(status_code=500, detail="Erro ao atualizar laudo")
+    
+@router.delete("/laudos/categoria/{id_categoria}")
+async def deletar_categoria(id_categoria: str,
+                            session: Session = Depends(get_db),
+                            current_user: models.Usuario = Depends(auth.get_current_active_vistoriador)):
+    try:
+        categoria_id = UUID(id_categoria)
+    except:
+        raise HTTPException(status_code=400, detail="ID inválido")
+    
+    categoria = (session.query(models.CategoriaLaudo)
+                 .join(models.CategoriaLaudo.laudo)
+                 .filter(models.CategoriaLaudo.id == categoria_id, 
+                         models.Laudo.vistoriador_id == current_user.id)
+                 .first())
+    if not categoria:
+        raise HTTPException(status_code=404, detail="Categoria não encontrada")
+    
+    if categoria.laudo.finalizado:
+        raise HTTPException(status_code=400, detail="Não é possivel editar um laudo finalizado")
+    
+
+    try:
+        session.delete(categoria)
+        session.commit()
+        return
+    except Exception as e:
+        session.rollback()
+        logger.error(f"Erro ao deletar categoria: {e}")
+        raise HTTPException(status_code=500, detail="Erro ao deletar categoria")
+    
+@router.delete("/laudos/item/{id_item}")
+async def deletar_item(id_item: str,
+                       session: Session = Depends(get_db),
+                       current_user: models.Usuario = Depends(auth.get_current_active_vistoriador)):
+    try:
+        item_id = UUID(id_item)
+    except:
+        raise HTTPException(status_code=400, detail="ID inválido")
+    
+    item = session.query(models.ItemCategoria).filter(models.ItemCategoria.id == item_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Item não encontrado")
+    
+    if item.categoria.laudo.finalizado:
+        raise HTTPException(status_code=400, detail="Não é possivel editar um laudo finalizado")
+
+    if item.categoria.laudo.vistoriador_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Usuário não autorizado")
+
+    try:
+        session.delete(item)
+        session.commit()
+        return
+    except Exception as e:
+        logger.info(f"Erro ao deletar item: {e}")
+        session.rollback()
+        raise HTTPException(status_code=500, detail="Erro ao deletar item")
+    
+@router.delete("/laudos/imagem/{id_imagem}")
+async def deletar_imagem_laudo(id_imagem: str,
+                               session: Session = Depends(get_db),
+                               current_user: models.Usuario = Depends(auth.get_current_active_vistoriador)):
+    try:
+        imagem_id = UUID(id_imagem)
+    except:
+        raise HTTPException(status_code=400, detail="ID inválido")
+    
+    imagem = session.query(models.ImagemCategoria).filter(models.ImagemCategoria.id == imagem_id).first()
+    if not imagem:
+        raise HTTPException(status_code=404, detail="Imagem não encontrada")
+    
+    if imagem.categoria.laudo.vistoriador_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Usuário não autorizado")
+    
+    try:
+        deletar_arquivo_supabase(file_path=imagem.file_path, bucket="imagens")
+        session.delete(imagem)
+        session.commit()
+        return
+    except Exception as e:
+        session.rollback()
+        logger.error(f"Erro ao deletar arquivo: {e}")
+        raise HTTPException(status_code=500, detail="Erro ao deletar imagem")
+    
+@router.get("/laudos/pendencias")
+async def listar_pendencias(session: Session = Depends(get_db),
+                            current_user: models.Usuario = Depends(auth.get_current_active_vistoriador)):
+    
+    laudos_pendentes = (session.query(models.Laudo)
+                        .options(joinedload(models.Laudo.imovel),
+                                 joinedload(models.Laudo.imobiliaria))
+                        .filter(models.Laudo.finalizado == False,
+                                models.Laudo.vistoriador_id == current_user.id)
+                        .order_by(models.Laudo.created_at.asc()).all())
+    if not laudos_pendentes:
+        return {
+            "pendentes": []
+        }
+    
+    return {
+        "pendentes": [{
+            "id": laudo.id,
+            "agenda_id": laudo.agenda_id,
+            "cod_imovel": laudo.imovel.cod_imovel,
+            "imobiliaria": laudo.imobiliaria.nome,
+            "created_at": laudo.created_at
+        }for laudo in laudos_pendentes]
+    }
+
+@router.get("/laudos/qtd_pendente")
+async def qtd_pendencias(session: Session = Depends(get_db),
+                            current_user: models.Usuario = Depends(auth.get_current_active_vistoriador)):
+    
+    laudos_pendentes = (session.query(models.Laudo)
+                        .filter(models.Laudo.finalizado == False,
+                                models.Laudo.vistoriador_id == current_user.id)
+                        .count())
+    return {
+        "qtd": laudos_pendentes
+    }

@@ -503,3 +503,11 @@ class ConfiguracaoDisplay(BaseModel):
     class Config:
         from_attributes = True
 
+
+class LaudoStatus(BaseModel):
+    laudo_id: str
+    aprovado: bool
+    obs: Optional[str] = None
+
+    class Config:
+        from_attributes = True

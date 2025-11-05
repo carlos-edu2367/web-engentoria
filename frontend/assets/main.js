@@ -106,7 +106,108 @@ async function deleteDocumento(documentoId) {
     }
     // Não retorna JSON
 }
+
+// (NOVO) Busca laudos pendentes do vistoriador
+/**
+ * Busca laudos pendentes (não finalizados) para o vistoriador logado.
+ * @returns {Promise<object>} Um objeto contendo a lista de pendências.
+ */
+async function fetchPendencias() {
+    // Rota baseada na sua definição de API (listar_pendencias)
+    const response = await fetch(`${API_BASE_URL}/agenda/laudos/pendencias`, {
+        headers: { 'Authorization': `Bearer ${getToken()}` }
+    });
+    if (response.status === 401) {
+        logout();
+        return;
+    }
+    if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.detail || 'Falha ao buscar pendências.');
+    }
+    return response.json();
+}
+
 // --- FIM ETAPA 1: API ---
+
+// --- INÍCIO REQUISITO LAUDO: Funções de API (Laudo) ---
+
+/**
+ * Tenta buscar um laudo pelo ID do agendamento.
+ * @param {string} agendamentoId ID do agendamento
+ * @returns {Promise<object|null>} Objeto do laudo ou null se não encontrado (404)
+ */
+async function fetchLaudoByAgendamento(agendamentoId) {
+    const response = await fetch(`${API_BASE_URL}/agenda/laudos/laudo/${agendamentoId}`, {
+        headers: { 'Authorization': `Bearer ${getToken()}` }
+    });
+    if (response.ok) {
+        return response.json();
+    }
+    if (response.status === 404) {
+        return null;
+    }
+    // Outros erros
+    const err = await response.json();
+    throw new Error(err.detail || 'Falha ao buscar laudo.');
+}
+
+/**
+ * Cria um novo laudo para um agendamento.
+ * @param {string} agendamentoId ID do agendamento
+ * @returns {Promise<object>} Objeto com o ID do novo laudo
+ */
+async function createLaudo(agendamentoId) {
+    // CORREÇÃO: Alinhado com a assinatura do backend (id_agendamento: str),
+    // que espera o ID como um query parameter, não como form-data.
+    const response = await fetch(`${API_BASE_URL}/agenda/laudos/laudo?id_agendamento=${encodeURIComponent(agendamentoId)}`, {
+        method: 'POST',
+        headers: { 
+            'Authorization': `Bearer ${getToken()}`
+            // Não é necessário Content-Type ou body, pois o parâmetro está na URL
+        }
+    });
+
+    if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.detail || 'Falha ao criar laudo.');
+    }
+    return response.json();
+}
+
+/**
+ * Garante que um laudo exista, criando um se necessário.
+ * @param {string} agendamentoId ID do agendamento
+ * @returns {Promise<object>} O objeto do laudo (existente ou recém-criado)
+ */
+async function getOrCreateLaudo(agendamentoId) {
+    try {
+        // 1. Tenta buscar o laudo
+        let laudo = await fetchLaudoByAgendamento(agendamentoId);
+        
+        if (laudo) {
+            return laudo; // Laudo encontrado
+        }
+
+        // 2. Se 404 (null), cria o laudo
+        const novoLaudoInfo = await createLaudo(agendamentoId);
+        
+        // 3. Busca o laudo recém-criado para obter todos os detalhes
+        laudo = await fetchLaudoByAgendamento(agendamentoId);
+        
+        if (!laudo) {
+            // Isso não deve acontecer se a criação foi bem-sucedida
+            throw new Error("Falha ao buscar o laudo recém-criado.");
+        }
+        
+        return laudo;
+
+    } catch (error) {
+        console.error("Erro no processo getOrCreateLaudo:", error);
+        throw error; // Propaga o erro para o chamador
+    }
+}
+// --- FIM REQUISITO LAUDO: Funções de API (Laudo) ---
 
 
 // Objeto para manter o estado atual dos filtros
@@ -117,6 +218,7 @@ let currentFilters = {
 let currentAppVersion = null; // Variável global para a versão do app
 
 document.addEventListener('DOMContentLoaded', () => {
+    // Adiciona a nova página de laudo à lógica de proteção
     const currentPage = window.location.pathname.split('/').pop();
 
     // Executa a lógica específica para cada página
@@ -130,10 +232,15 @@ document.addEventListener('DOMContentLoaded', () => {
         setupLoginAjudaPage();
     } else if (currentPage === 'relatorios-vistoriador.html') {
         setupRelatoriosVistoriadorPage();
+    } else if (currentPage === 'pendencias.html') { // (NOVO)
+        setupPendenciasPage();
     } else if (currentPage === 'recuperar-senha.html') {
         setupRecoveryPage();
     } else if (currentPage === 'redefinir-senha.html') {
         setupResetPasswordPage();
+    } else if (currentPage === 'laudo.html') {
+        // A página de laudo é protegida, mas sua lógica está em laudo.js
+        // auth.js já chama protectPage() globalmente, então está coberto.
     }
 
 
@@ -145,6 +252,11 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Configura a funcionalidade da sidebar em todas as páginas que a possuem
     setupSidebar();
+
+    // (NOVO) Verifica se há pendências em todas as páginas do dashboard
+    if (currentPage !== 'login.html' && !currentPage.includes('login-') && currentPage !== 'recuperar-senha.html' && currentPage !== 'redefinir-senha.html') {
+        checkPendenciasNotification();
+    }
 });
 
 function setupSidebar() {
@@ -167,6 +279,47 @@ function setupSidebar() {
         overlay.addEventListener('click', closeSidebar);
     }
 }
+
+// (NOVO) Verifica e exibe a notificação de pendências
+async function checkPendenciasNotification() {
+    const banner = document.getElementById('pendencia-notification-banner');
+    const bannerText = document.getElementById('pendencia-notification-text');
+    const sidebarBadge = document.getElementById('pendencia-sidebar-badge');
+
+    if (!banner || !bannerText || !sidebarBadge) {
+        console.warn('Elementos de notificação de pendência não encontrados.');
+        return;
+    }
+
+    try {
+        const data = await fetchPendencias();
+        const count = data.pendentes ? data.pendentes.length : 0;
+
+        if (count > 0) {
+            // Atualiza o banner
+            bannerText.textContent = `Você tem ${count} laudo(s) pendente(s).`;
+            banner.classList.remove('hidden');
+            setTimeout(() => banner.classList.add('visible'), 50); // Adiciona delay para animar
+            
+            banner.onclick = () => {
+                window.location.href = 'pendencias.html';
+            };
+
+            // Atualiza o badge da sidebar
+            sidebarBadge.textContent = count;
+            sidebarBadge.classList.remove('hidden');
+
+        } else {
+            banner.classList.add('hidden');
+            banner.classList.remove('visible');
+            sidebarBadge.classList.add('hidden');
+        }
+    } catch (error) {
+        console.error('Erro ao verificar pendências:', error.message);
+        // Não mostra um erro para o usuário, apenas falha silenciosamente
+    }
+}
+
 
 function setupLoginPage() {
     const loginForm = document.getElementById('login-form');
@@ -616,7 +769,7 @@ function renderAgenda(vistorias) {
 
 // ETAPA 1: Modificar createVistoriaCard
 function createVistoriaCard(vistoria) {
-    const { horario, tipo, imovel } = vistoria;
+    const { horario, imovel } = vistoria;
     
     const isBooked = !!imovel;
     const cardBgClass = isBooked ? 'bg-gray-700/40' : 'bg-gray-700/20';
@@ -648,7 +801,7 @@ function createVistoriaCard(vistoria) {
 
 // ETAPA 1: Nova função para pegar o HTML de detalhes (lógica movida de createVistoriaCard)
 function getVistoriaDetalhesHTML(vistoria) {
-    const { horario, tipo, imovel, observacao_vistoriador } = vistoria;
+    const { tipo, imovel, observacao_vistoriador } = vistoria;
     const isBooked = !!imovel; // Necessário para a lógica interna
 
     const observacaoHTML = observacao_vistoriador ? `
@@ -683,8 +836,13 @@ function getVistoriaDetalhesHTML(vistoria) {
     `;
 }
 
-// ETAPA 1: Nova função para exibir o Modal de Vistoria (com abas)
-function showVistoriaModalVistoriador(vistoria) {
+// --- INÍCIO REQUISITO LAUDO: Modificação do Modal do Vistoriador ---
+
+/**
+ * Mostra o modal de detalhes da vistoria para o vistoriador, agora com abas e lógica de laudo.
+ * @param {object} vistoria - O objeto da vistoria.
+ */
+async function showVistoriaModalVistoriador(vistoria) {
     const modal = document.getElementById('generic-modal');
     const modalContent = document.getElementById('modal-content');
     if (!modal || !modalContent) return;
@@ -711,6 +869,10 @@ function showVistoriaModalVistoriador(vistoria) {
 
         <!-- Conteúdo das Abas -->
         <div id="tab-content-detalhes" class="tab-content space-y-2 text-sm text-gray-300">
+            <!-- Placeholder para Ações do Laudo -->
+            <div id="laudo-actions-container" class="mb-4 p-4 bg-gray-900/50 rounded-lg text-center">
+                <p class="text-gray-400">Verificando laudo...</p>
+            </div>
             <!-- Conteúdo dos Detalhes -->
             ${getVistoriaDetalhesHTML(vistoria)} 
         </div>
@@ -733,9 +895,6 @@ function showVistoriaModalVistoriador(vistoria) {
         modal.classList.remove('flex');
     });
 
-    // Carrega a primeira aba dinâmica (Mural)
-    renderMuralTab(vistoria.id, 'tab-content-mural', 'vistoriador');
-
     document.getElementById('modal-tabs').addEventListener('click', (e) => {
         if (e.target.classList.contains('tab-btn')) {
             const tabId = e.target.dataset.tab;
@@ -754,13 +913,35 @@ function showVistoriaModalVistoriador(vistoria) {
 
             // Carrega conteúdo dinâmico (só carrega se for a primeira vez)
             const contentDiv = document.getElementById(`tab-content-${tabId}`);
-            if (contentDiv.innerHTML.includes('Carregando...')) { // Evita recarregar
+            if (contentDiv.innerHTML.includes('Carregando...')) { 
                 if (tabId === 'mural') renderMuralTab(vistoria.id, 'tab-content-mural', 'vistoriador');
                 if (tabId === 'documentos') renderDocumentosTab(vistoria.id, 'tab-content-documentos', 'vistoriador');
             }
         }
     });
+
+    // --- Lógica de Verificação/Criação do Laudo ---
+    const laudoContainer = document.getElementById('laudo-actions-container');
+    try {
+        const laudo = await getOrCreateLaudo(vistoria.id);
+        
+        if (laudo && laudo.id) {
+            laudoContainer.innerHTML = `
+                <a href="laudo.html?laudo_id=${laudo.id}&agendamento_id=${vistoria.id}" 
+                   class="inline-block w-full py-3 px-6 bg-gradient-to-r from-emerald-500 to-green-500 hover:from-emerald-600 hover:to-green-600 text-white font-bold rounded-lg transition-all transform hover:scale-105 shadow-lg">
+                   <svg class="h-5 w-5 inline-block mr-2 -mt-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                   ${laudo.finalizado ? 'Ver Laudo Finalizado' : 'Abrir/Editar Laudo'}
+                </a>
+            `;
+        } else {
+            throw new Error("ID do laudo não foi retornado.");
+        }
+    } catch (error) {
+        laudoContainer.innerHTML = `<p class="text-red-400">Erro ao verificar laudo: ${error.message}</p>`;
+    }
 }
+// --- FIM REQUISITO LAUDO: Modificação do Modal ---
+
 
 // ETAPA 1: Nova função para renderizar a Aba Mural (CORRIGIDA)
 async function renderMuralTab(agendaId, containerId, remetente) {
@@ -937,6 +1118,71 @@ function setupAjudaPage() {
             formMessageDiv.className = 'block mt-4 text-center p-3 rounded-lg bg-red-900/30 text-red-400 border border-red-700/50';
         }
     });
+}
+
+// (NOVO) Função para a página de Pendências
+async function setupPendenciasPage() {
+    const container = document.getElementById('pendencias-container');
+    const loader = document.getElementById('pendencias-loader');
+    
+    if (!container || !loader) return;
+
+    try {
+        const data = await fetchPendencias();
+        renderPendencias(container, data.pendentes);
+    } catch (error) {
+        container.innerHTML = `<div class="text-center text-red-400 bg-red-900/50 p-6 rounded-md"><strong>Erro:</strong> ${error.message}</div>`;
+    } finally {
+        loader.classList.add('hidden');
+    }
+}
+
+// (NOVO) Função para renderizar a lista de pendências
+function renderPendencias(container, pendentes) {
+    container.innerHTML = ''; // Limpa o container
+
+    if (pendentes.length === 0) {
+        container.innerHTML = `<div class="text-center text-gray-400 bg-gray-800/80 p-6 rounded-xl neon-border">Nenhuma pendência encontrada.</div>`;
+        return;
+    }
+
+    // Ordena por data de criação, do mais antigo para o mais novo
+    pendentes.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+
+    const pendenciasHTML = pendentes.map(p => {
+        // *** ATUALIZADO ***
+        // Agora usando 'p.agenda_id' que é retornado pela API.
+        if (!p.agenda_id) {
+            console.warn('Pendência recebida sem "agenda_id". O link para o laudo pode falhar.', p);
+        }
+
+        const dataCriacao = new Date(p.created_at).toLocaleDateString('pt-BR', {
+            day: '2-digit', month: '2-digit', year: 'numeric'
+        });
+
+        return `
+            <a href="laudo.html?laudo_id=${p.id}&agendamento_id=${p.agenda_id || ''}" 
+               class="block bg-gray-800/80 backdrop-blur-sm rounded-xl shadow-lg neon-border fade-in p-4
+                      hover:bg-gray-700/80 transition-all duration-300 group">
+                
+                <div class="flex flex-col sm:flex-row justify-between sm:items-center">
+                    <div>
+                        <p class="text-lg font-bold text-cyan-300 group-hover:text-cyan-200">Cód. Imóvel: ${p.cod_imovel || 'N/A'}</p>
+                        <p class="text-sm text-gray-300">${p.imobiliaria || 'Imobiliária N/A'}</p>
+                        <p class="text-xs text-gray-400 mt-1">Iniciado em: ${dataCriacao}</p>
+                    </div>
+                    <div class="mt-3 sm:mt-0 text-right">
+                        <span class="py-2 px-4 rounded-lg bg-yellow-600/50 text-yellow-100 text-sm font-bold group-hover:bg-yellow-600 transition-colors">
+                            Abrir Laudo
+                            <svg class="h-4 w-4 inline-block ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg>
+                        </span>
+                    </div>
+                </div>
+            </a>
+        `;
+    }).join('');
+    
+    container.innerHTML = pendenciasHTML;
 }
 
 // NOVA FUNÇÃO PARA A PÁGINA DE RELATÓRIOS DO VISTORIADOR

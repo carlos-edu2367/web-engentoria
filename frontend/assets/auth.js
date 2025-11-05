@@ -108,6 +108,14 @@ function protectImobiliariaPage() {
     }
 }
 
+function protectVistoriadorPage() {
+    const userInfo = getUserInfo();
+    if (!userInfo || userInfo.dashboard_type !== 'vistoriador') {
+        alert('Acesso negado. Requer perfil de vistoriador.');
+        logout();
+    }
+}
+
 // Executa a proteção em todas as páginas
 protectPage();
 

@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <!-- Viewport otimizado para mobile, impedindo zoom acidental -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Laudo de Vistoria - Engentoria</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' font-size='90' font-family='Inter, sans-serif' font-weight='700' fill='%2300ffb3'>e</text></svg>">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --cor-primaria: #00ffb3; /* Cyan Neon */
+            --cor-bg: #0a0a0a;
+            --cor-card: rgba(31, 41, 55, 0.7); /* gray-800 com opacidade */
+            --cor-card-hover: rgba(31, 41, 55, 0.9);
+            --cor-borda: rgba(0, 255, 179, 0.2);
+            --cor-borda-forte: rgba(0, 255, 179, 0.5);
+            --cor-texto: #e5e7eb;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--cor-bg);
+            color: var(--cor-texto);
+            /* Fundo de grade sutil */
+            background-image: linear-gradient(rgba(0, 255, 179, 0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(0, 255, 179, 0.05) 1px, transparent 1px);
+            background-size: 40px 40px;
+        }
+        
+        /* Oculta a scrollbar principal e permite o scroll do container */
+        html, body {
+            overflow: hidden;
+            height: 100%;
+        }
+
+        /* Container principal com padding para header/footer e scroll suave */
+        #main-container {
+            height: 100vh;
+            padding-top: 60px; /* Altura do header */
+            padding-bottom: 76px; /* Altura do footer */
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch; /* Scroll suave no iOS */
+            scroll-behavior: smooth;
+        }
+        
+        /* Header e Footer com efeito "Glassmorphism" */
+        .laudo-header, .laudo-footer {
+            background-color: rgba(17, 24, 39, 0.85); /* gray-900 com mais opacidade */
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-color: var(--cor-borda);
+            z-index: 50;
+        }
+
+        /* Estilo para Categoria (Accordion) */
+        details > summary {
+            list-style: none;
+            padding: 1rem;
+            cursor: pointer;
+            background-color: var(--cor-card);
+            border: 1px solid var(--cor-borda);
+            border-radius: 0.5rem; /* rounded-lg */
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: background-color 0.2s, border-radius 0.2s;
+            -webkit-tap-highlight-color: transparent; /* Remove flash azul no toque (mobile) */
+        }
+         details > summary:hover {
+            background-color: var(--cor-card-hover);
+        }
+        details > summary::-webkit-details-marker {
+            display: none;
+        }
+        /* Quando o accordion está aberto */
+        details[open] > summary {
+            border-bottom-left-radius: 0;
+            border-bottom-right-radius: 0;
+            border-bottom-color: rgba(0, 255, 179, 0.1);
+        }
+        .categoria-content {
+            background-color: rgba(31, 41, 55, 0.4);
+            border: 1px solid var(--cor-borda);
+            border-top: none;
+            border-bottom-left-radius: 0.5rem;
+            border-bottom-right-radius: 0.5rem;
+            animation: slideDown 0.3s ease-out; /* Animação de abertura */
+        }
+        
+        /* Animação de Abertura do Accordion */
+        @keyframes slideDown {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* Animação de Rotação do Chevron */
+        .chevron {
+            transition: transform 0.2s ease-in-out;
+        }
+        details[open] .chevron {
+            transform: rotate(180deg);
+        }
+
+        /* Custom Scrollbar (WebKit) */
+        #main-container::-webkit-scrollbar { width: 6px; }
+        #main-container::-webkit-scrollbar-track { background: #1f2937; }
+        #main-container::-webkit-scrollbar-thumb { background: var(--cor-primaria); border-radius: 3px; }
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #111827; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: var(--cor-primaria); border-radius: 2px; }
+
+        /* Estilo para item de laudo */
+        .laudo-item {
+            background-color: rgba(55, 65, 81, 0.5); /* gray-700/50 */
+            border-left: 3px solid var(--cor-borda-forte);
+            transition: background-color 0.2s;
+        }
+        .laudo-item:hover {
+            background-color: rgba(55, 65, 81, 0.7);
+        }
+        
+        /* Estilo para grid de imagens */
+        .image-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+            gap: 0.5rem;
+        }
+        .image-thumbnail {
+            position: relative;
+            width: 100%;
+            padding-bottom: 100%; /* Aspect ratio 1:1 */
+            background-size: cover;
+            background-position: center;
+            background-color: #374151; /* gray-700 */
+            border-radius: 0.375rem; /* rounded-md */
+            cursor: zoom-in;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+        .image-thumbnail:hover {
+            transform: scale(1.05);
+            box-shadow: 0 0 15px rgba(0, 255, 179, 0.3);
+        }
+        .delete-img-btn {
+            position: absolute;
+            top: -8px;
+            right: -8px;
+            background-color: rgba(239, 68, 68, 0.9); /* red-500/90 */
+            border-radius: 9999px; /* rounded-full */
+            width: 24px;
+            height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 2px solid white;
+            transition: transform 0.2s;
+        }
+        .delete-img-btn:hover {
+            transform: scale(1.1);
+        }
+        
+        /* Botão de Gravação */
+        .record-btn.recording, .modal-record-btn.recording {
+            animation: pulse-red 1.5s infinite;
+            box-shadow: 0 0 10px #ef4444;
+        }
+        @keyframes pulse-red {
+            0%, 100% { background-color: #ef4444; } /* red-500 */
+            50% { background-color: #dc2626; } /* red-600 */
+        }
+
+        /* Input de Upload de Imagem Customizado */
+        .upload-btn {
+            background-color: rgba(55, 65, 81, 0.5); /* gray-700/50 */
+            border: 2px dashed var(--cor-borda);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .upload-btn:hover {
+            background-color: rgba(55, 65, 81, 0.8); /* gray-700/80 */
+            border-color: var(--cor-borda-forte);
+        }
+        
+        /* Efeito de "Pulsar" no Loader */
+        #laudo-loader svg {
+            animation: spin 1s linear infinite, pulse-loader 2s ease-in-out infinite;
+        }
+        @keyframes pulse-loader {
+            0%, 100% { opacity: 0.7; }
+            50% { opacity: 1; }
+        }
+
+        /* Animações de Botões Padrão */
+        .btn {
+            transition: all 0.2s ease;
+            -webkit-tap-highlight-color: transparent; /* Remove flash azul no toque (mobile) */
+        }
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+        }
+        .btn:active {
+            transform: translateY(0px) scale(0.98);
+            box-shadow: none;
+        }
+        
+        /* Inputs Customizados */
+        .form-input {
+             background-color: rgba(17, 24, 39, 0.7);
+             border: 1px solid var(--cor-borda);
+             border-radius: 0.5rem;
+             padding: 0.75rem 1rem;
+             color: white;
+             transition: all 0.2s;
+        }
+        .form-input:focus {
+            outline: none;
+            border-color: var(--cor-primaria);
+            box-shadow: 0 0 10px rgba(0, 255, 179, 0.3);
+        }
+
+        /* Animações do Modal */
+        #generic-modal, #image-modal {
+            transition: opacity 0.3s ease;
+        }
+        #generic-modal > div, #image-modal > div {
+            transition: all 0.3s ease;
+            transform: scale(0.95);
+            opacity: 0;
+        }
+        
+        /* Classes de animação para JS */
+        .modal-visible {
+            opacity: 1 !important;
+        }
+        .modal-content-visible {
+            transform: scale(1) !important;
+            opacity: 1 !important;
+        }
+
+        /* Animações do Toast */
+        .toast-enter {
+            opacity: 0;
+            transform: translateY(-100%) translateX(-50%);
+        }
+        .toast-visible {
+            opacity: 1;
+            transform: translateY(1.25rem) translateX(-50%); /* 1.25rem = top-5 */
+        }
+        .toast-exit {
+            opacity: 0;
+            transform: translateY(-100%) translateX(-50%);
+        }
+        
+    </style>
+</head>
+<body class="overscroll-none">
+
+    <!-- Header Fixo -->
+    <header class="laudo-header fixed top-0 left-0 right-0 h-[60px] flex items-center justify-between px-4 border-b">
+        <a href="agenda.html" class="p-2 text-cyan-300 rounded-full hover:bg-cyan-500/20 btn">
+            <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+        </a>
+        <div class="text-center">
+            <h1 id="header-cod-imovel" class="text-lg font-bold text-white transition-all duration-300">Carregando...</h1>
+            <p id="header-imobiliaria" class="text-xs text-gray-400 transition-all duration-300"></p>
+        </div>
+        <div id="header-status" class="text-xs font-bold px-2 py-1 rounded transition-all duration-300"></div>
+    </header>
+
+    <!-- Container Principal com Scroll -->
+    <main id="main-container" class="overscroll-contain">
+        <div class="p-4 max-w-2xl mx-auto">
+            
+            <!-- Aviso de Observação do ADM (com ícone e cor melhorados) -->
+            <div id="obs-adm-container" class="hidden p-4 mb-4 bg-yellow-900/50 border border-yellow-500/50 rounded-lg shadow-lg">
+                <h3 class="font-bold text-yellow-300 text-lg flex items-center">
+                    <svg class="h-5 w-5 mr-2 shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.332-.21 3.03-1.742 3.03H4.42c-1.532 0-2.493-1.698-1.742-3.03l5.58-9.92zM9 11a1 1 0 112 0v1a1 1 0 11-2 0v-1zm1-4a1 1 0 00-1 1v3a1 1 0 002 0V8a1 1 0 00-1-1z" clip-rule="evenodd"></path></svg>
+                    Ajustes Solicitados pelo ADM
+                </h3>
+                <p id="obs-adm-text" class="text-gray-200 mt-2 whitespace-pre-wrap pl-7"></p>
+            </div>
+
+            <!-- Container das Categorias -->
+            <div id="categorias-container" class="space-y-4">
+                <!-- Categorias serão injetadas aqui por laudo.js -->
+            </div>
+            
+            <!-- Placeholder de Carregamento -->
+            <div id="laudo-loader" class="text-center py-20">
+                <svg class="h-8 w-8 text-cyan-400 mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <p class="mt-2 text-gray-400">Carregando dados do laudo...</p>
+            </div>
+        </div>
+    </main>
+
+    <!-- Footer Fixo -->
+    <footer class="laudo-footer fixed bottom-0 left-0 right-0 h-[76px] p-4 border-t">
+        <div class="max-w-2xl mx-auto grid grid-cols-2 gap-4">
+            <button id="add-categoria-btn" class="btn py-3 px-4 rounded-lg font-bold bg-cyan-600 hover:bg-cyan-700 text-white shadow-lg flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none disabled:shadow-none">
+                <svg class="h-5 w-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
+                Categoria
+            </button>
+            <button id="toggle-finalizado-btn" class="btn py-3 px-4 rounded-lg font-bold shadow-lg flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none disabled:shadow-none">
+                <!-- O conteúdo será definido por JS -->
+            </button>
+        </div>
+    </footer>
+    
+    <!-- Modal Genérico (para adicionar categoria, etc) -->
+    <div id="generic-modal" class="fixed inset-0 bg-black/70 z-[100] hidden items-center justify-center p-4 backdrop-blur-sm opacity-0">
+        <div class="bg-gray-800/90 backdrop-blur-sm rounded-xl shadow-xl p-6 w-full max-w-md border border-gray-700/50">
+            <!-- Conteúdo do modal será injetado aqui -->
+        </div>
+    </div>
+    
+    <!-- (NOVO) Modal para Visualização de Imagem -->
+    <div id="image-modal" class="fixed inset-0 bg-black/80 z-[110] hidden items-center justify-center p-4 backdrop-blur-sm opacity-0" onclick="hideImageModal()">
+        <div class="relative w-full max-w-3xl max-h-[90vh] rounded-lg overflow-hidden">
+            <img id="modal-image-src" src="https://placehold.co/600x400/0a0a0a/e5e7eb?text=Carregando..." alt="Imagem ampliada" class="w-full h-full object-contain">
+            <button class="absolute top-2 right-2 p-2 bg-black/50 rounded-full text-white hover:bg-black/80 btn" title="Fechar">
+                <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+            </button>
+        </div>
+    </div>
+
+    <!-- Toast de Notificação (com animação controlada por JS) -->
+    <div id="toast-notification" class="fixed top-0 left-1/2 z-[150] p-3 rounded-lg text-white shadow-lg transition-all duration-300 ease-out toast-enter">
+        <p id="toast-message" class="font-medium"></p>
+    </div>
+
+    <script src="./assets/auth.js"></script>
+    <script src="./assets/laudo.js"></script>
+</body>
+</html>
