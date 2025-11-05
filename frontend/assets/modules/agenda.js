@@ -80,11 +80,23 @@ function handleEventClick(clickInfo) {
         document.getElementById('btn-iniciar-agendamento').onclick = () => startAgendamentoWizard(event, calendar);
         document.getElementById('btn-fechar-horario').onclick = () => handleFecharHorario(event.id);
 
-    } else if (props.tipo !== 'FECHADO') {
+    } else if (props.tipo === 'FECHADO') {
+        // <<< INÍCIO DA MODIFICAÇÃO
+        // Se o tipo for FECHADO, oferece a opção de reabrir
+        renderConfirmReabrirModal(event.id, event);
+        // FIM DA MODIFICAÇÃO >>>
+    } else {
+        // <<< MODIFICAÇÃO
+        // Anteriormente: else if (props.tipo !== 'FECHADO')
+        // Agora: else (cobre todos os outros tipos, como AGENDADO, IMPRODUTIVA, etc.)
         renderVistoriaDetailsModal(event);
     }
 }
 
+/**
+ * MODIFICADO: Envia o payload correto para fechar o horário.
+ * @param {string} agendaId - O ID do horário da agenda.
+ */
 function handleFecharHorario(agendaId) {
     const modalHTML = `
         <h3 class="text-xl font-bold text-white mb-4">Fechar Horário</h3>
@@ -102,8 +114,15 @@ function handleFecharHorario(agendaId) {
     document.getElementById('form-fechar-horario').onsubmit = async (e) => {
         e.preventDefault();
         const motivo = document.getElementById('motivo-fechamento').value;
+        // <<< INÍCIO DA MODIFICAÇÃO
+        // Cria o payload esperado pelo backend
+        const payload = { fechar: true, motivo: motivo };
+        // FIM DA MODIFICAÇÃO >>>
         try {
-            await api.fecharHorario(agendaId, motivo);
+            // <<< INÍCIO DA MODIFICAÇÃO
+            // Envia o payload como segundo argumento
+            await api.fecharHorario(agendaId, payload);
+            // FIM DA MODIFICAÇÃO >>>
             showAlert('Horário fechado com sucesso!');
             hideModal();
             calendar.refetchEvents();
@@ -112,6 +131,46 @@ function handleFecharHorario(agendaId) {
         }
     };
 }
+
+// <<< INÍCIO DA ADIÇÃO
+/**
+ * NOVO: Renderiza o modal de confirmação para reabrir um horário.
+ * @param {string} agendaId - O ID do horário da agenda.
+ * @param {object} event - O objeto do evento do FullCalendar.
+ */
+function renderConfirmReabrirModal(agendaId, event) {
+    const props = event.extendedProps;
+    // O backend armazena o motivo em 'observacao_privada'
+    // O 'motivo_fechamento' é o que o 'renderEventContent' usa, então verificamos ambos.
+    const motivo = props.observacao_privada || props.motivo_fechamento || 'Motivo não especificado.';
+
+    const modalHTML = `
+        <h3 class="text-xl font-bold text-white mb-4">Reabrir Horário</h3>
+        <p class="text-gray-400 mb-2">Este horário foi fechado manualmente.</p>
+        <p class="text-gray-300 mb-6"><strong>Motivo:</strong> ${sanitizeHTML(motivo)}</p>
+        <p class="text-gray-300 mb-6">Deseja reabrir este horário e torná-lo "LIVRE"?</p>
+        <div class="flex justify-end gap-4">
+            <button id="btn-cancel-reabrir" class="px-4 py-2 bg-gray-600 hover:bg-gray-500 rounded-lg transition">Cancelar</button>
+            <button id="btn-confirm-reabrir" class="px-4 py-2 bg-green-600 hover:bg-green-500 text-white font-bold rounded-lg transition">Sim, Reabrir Horário</button>
+        </div>
+    `;
+    showModal(modalHTML, 'max-w-md');
+
+    document.getElementById('btn-cancel-reabrir').onclick = hideModal;
+    document.getElementById('btn-confirm-reabrir').onclick = async () => {
+        // Prepara o payload para REABRIR (fechar: false)
+        const payload = { fechar: false, motivo: "" }; // 'motivo' é ignorado pelo backend, mas o schema pode exigi-lo
+        try {
+            await api.fecharHorario(agendaId, payload);
+            showAlert('Horário reaberto com sucesso!');
+            hideModal();
+            calendar.refetchEvents();
+        } catch (error) {
+            showAlert(error.message || 'Não foi possível reabrir o horário.', 'error');
+        }
+    };
+}
+// FIM DA ADIÇÃO >>>
 
 /**
  * Renderiza o modal com detalhes de uma vistoria já agendada e adiciona os listeners de eventos.
@@ -600,4 +659,3 @@ export async function initAgenda() {
 
     calendar.render();
 }
-

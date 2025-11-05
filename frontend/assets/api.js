@@ -153,7 +153,7 @@ export const api = {
     cancelarVistoria: (id) => apiFetch(`/agenda/${id}/cancelar`, 'PUT'),
     reagendarVistoria: (id, targetId) => apiFetch(`/agenda/${id}/reagendar`, 'PUT', { target_agenda_id: targetId }),
     markAsImprodutiva: (id, data) => apiFetch(`/agenda/${id}/improdutiva`, 'PUT', data),
-    fecharHorario: (id, motivo) => apiFetch(`/agenda/${id}/fechar`, 'PUT', { motivo }),
+    fecharHorario: (id, data) => apiFetch(`/agenda/${id}/fechar`, 'PUT', data),
 
     // Relatórios
     getRelatorioImobiliaria: (imobiliariaId, mes, ano) => apiFetch(`/imobiliarias/${imobiliariaId}/relatorio?mes=${mes}&ano=${ano}`),

@@ -209,6 +209,7 @@ class AgendaReagendar(BaseModel):
     target_agenda_id: UUID
 
 class AgendaFecharHorario(BaseModel):
+    fechar: bool # se for true, fecha o horário, se for false, reabre
     motivo: str
 
 # Schema de exibição para Administradores (contém todos os campos)

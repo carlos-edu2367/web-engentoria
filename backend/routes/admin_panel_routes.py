@@ -827,26 +827,56 @@ def reagendar_vistoria(agenda_id: UUID, reagendamento: schemas.AgendaReagendar, 
     db.refresh(db_agenda_destino)
     return db_agenda_destino
 
-@router.put("/agenda/{agenda_id}/fechar", response_model=schemas.AgendaDisplay, summary="Fechar um horário livre na agenda")
-def fechar_horario(
+@router.put("/agenda/{agenda_id}/fechar", response_model=schemas.AgendaDisplay, summary="Fechar ou reabrir um horário da agenda")
+def fechar_ou_reabrir_horario(
     agenda_id: UUID,
     data: schemas.AgendaFecharHorario,
     db: Session = Depends(get_db)
 ):
     db_agenda = db.query(models.Agenda).filter(
-        models.Agenda.id == agenda_id,
-        models.Agenda.disponivel == True,
-        models.Agenda.tipo == 'LIVRE'
+        models.Agenda.id == agenda_id
     ).first()
-    if not db_agenda:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Horário não está livre ou não foi encontrado.")
 
-    db_agenda.tipo = "FECHADO"
-    db_agenda.disponivel = False
-    db_agenda.observacao_privada = data.motivo # Reutilizando o campo de observação para o motivo
-    
+    if not db_agenda:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Horário não encontrado."
+        )
+
+    # 🚫 Se está agendado, não pode mudar manualmente
+    if db_agenda.tipo not in ["LIVRE", "FECHADO"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Esse horário está agendado e não pode ser alterado manualmente."
+        )
+
+    # ✅ Fechar horário LIVRE -> FECHADO
+    if data.fechar:
+        if not (db_agenda.disponivel and db_agenda.tipo == "LIVRE"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Esse horário não está livre para ser fechado."
+            )
+
+        db_agenda.tipo = "FECHADO"
+        db_agenda.disponivel = False
+        db_agenda.observacao_privada = data.motivo
+
+    # ✅ Reabrir horário FECHADO -> LIVRE
+    else:
+        if not (not db_agenda.disponivel and db_agenda.tipo == "FECHADO"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Esse horário não está fechado para ser reaberto."
+            )
+
+        db_agenda.tipo = "LIVRE"
+        db_agenda.disponivel = True
+        db_agenda.observacao_privada = None
+
     db.commit()
     db.refresh(db_agenda)
+
     return db_agenda
 
 # =================================================================
