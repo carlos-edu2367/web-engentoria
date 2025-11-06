@@ -305,6 +305,18 @@ async function checkPendenciasNotification() {
                 window.location.href = 'pendencias.html';
             };
 
+            // *** ATUALIZAÇÃO ***
+            // Adiciona timer para esconder o banner automaticamente
+            setTimeout(() => {
+                banner.classList.remove('visible'); // Inicia a transição para sumir
+                
+                // Espera a transição terminar (ex: 500ms) para adicionar 'hidden'
+                setTimeout(() => {
+                    banner.classList.add('hidden');
+                }, 500); // Este tempo deve ser igual ao da sua transição CSS
+            }, 4000); // 4 segundos visível (4000ms)
+            // *** FIM DA ATUALIZAÇÃO ***
+
             // Atualiza o badge da sidebar
             sidebarBadge.textContent = count;
             sidebarBadge.classList.remove('hidden');
