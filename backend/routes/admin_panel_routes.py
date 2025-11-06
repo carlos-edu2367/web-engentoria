@@ -12,6 +12,7 @@ from dateutil.relativedelta import relativedelta
 from typing import Optional
 import io
 import logging, os, uuid, unicodedata, re
+from reportlab.lib.units import inch
 
 from ..supabase_client import deletar_arquivo_supabase, supabase, gerar_url_assinada
 
@@ -25,7 +26,9 @@ from openpyxl.utils import get_column_letter
 from openpyxl.workbook import Workbook
 
 from reportlab.lib.pagesizes import letter, landscape
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.platypus import (
+    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
+)
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib import colors
 
@@ -1252,23 +1255,261 @@ def _create_excel_report(data_sections: Dict[str, List[Dict]], file_title: str, 
     return virtual_workbook
 
 
-def _create_pdf_report(report_data: Union[schemas.RelatorioImobiliaria, schemas.RelatorioVistoriador, schemas.RelatorioGeral]):
+def _create_pdf_report(
+    report_data: Union[
+        schemas.RelatorioImobiliaria,
+        schemas.RelatorioVistoriador,
+        schemas.RelatorioGeral,
+        List[schemas.RelatorioImobiliaria], # O seu _get_relatorio_geral_data retorna ESTE tipo
+    ]
+):
+    """
+    Cria um relatório PDF a partir dos dados fornecidos.
+    Esta função agora lida com múltiplos tipos de dados.
+    """
     buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=landscape(letter))
+    # Usando landscape (paisagem) para mais espaço horizontal
+    doc = SimpleDocTemplate(buffer, pagesize=landscape(letter),
+                            rightMargin=inch/2, leftMargin=inch/2,
+                            topMargin=inch/2, bottomMargin=inch/2)
     elements = []
     styles = getSampleStyleSheet()
+
+    # Estilos de Tabela
+    header_style = TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#4F81BD")),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('GRID', (0, 0), (-1, -1), 1, colors.black),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+    ])
     
-    if isinstance(report_data, schemas.RelatorioGeral):
+    body_style = TableStyle([
+        ('GRID', (0, 0), (-1, -1), 1, colors.black),
+        ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+    ])
+
+
+    # --- CASO 1: Relatório de Imobiliária Específica ---
+    if isinstance(report_data, schemas.RelatorioImobiliaria):
+        elements.append(Paragraph(f"Relatório: {report_data.imobiliaria_nome}", styles['h1']))
+        elements.append(Paragraph(f"Período: {report_data.periodo}", styles['h2']))
+        elements.append(Spacer(1, 0.25*inch))
+        
+        # Bloco de Totais
+        total_data = [
+            ["Total Vistorias", f"R$ {report_data.total_vistorias:.2f}"],
+            ["Total Improdutivas", f"R$ {report_data.total_improdutivas:.2f}"],
+            ["TOTAL GERAL", f"R$ {report_data.total_geral:.2f}"],
+        ]
+        t_totais = Table(total_data, colWidths=[2*inch, 2*inch])
+        t_totais.setStyle(TableStyle([
+            ('GRID', (0, 0), (-1, -1), 1, colors.black),
+            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+            ('FONTNAME', (0, 2), (-1, 2), 'Helvetica-Bold'), # Linha Total Geral
+            ('BACKGROUND', (0, 2), (-1, 2), colors.lightgrey),
+        ]))
+        elements.append(t_totais)
+        elements.append(Spacer(1, 0.25*inch))
+
+        # Tabela de Vistorias
+        if report_data.vistorias:
+            elements.append(Paragraph("Vistorias Realizadas", styles['h3']))
+            vistorias_data = [["Data", "Cód. Imóvel", "Endereço", "Tamanho", "Mobília", "Valor", "Obs. Privada"]]
+            for v in report_data.vistorias:
+                vistorias_data.append([
+                    v.data.strftime('%d/%m/%Y'),
+                    v.cod_imovel,
+                    Paragraph(v.endereco, styles['Normal']),
+                    f"{v.tamanho} m²",
+                    v.tipo_mobilia,
+                    f"R$ {v.valor:.2f}",
+                    Paragraph(v.observacao_privada or '---', styles['Normal'])
+                ])
+            
+            t_vistorias = Table(vistorias_data, colWidths=[60, 70, 250, 60, 80, 80, 150]) # Ajuste larguras
+            t_vistorias.setStyle(header_style)
+            t_vistorias.setStyle(body_style)
+            elements.append(t_vistorias)
+            elements.append(Spacer(1, 0.2*inch))
+
+        # Tabela de Improdutivas
+        if report_data.improdutivas:
+            elements.append(Paragraph("Vistorias Improdutivas", styles['h3']))
+            improd_data = [["Data", "Cód. Imóvel", "Motivo", "Valor Cobrado"]]
+            for i in report_data.improdutivas:
+                improd_data.append([
+                    i.data_vistoria_original.strftime('%d/%m/%Y'),
+                    i.cod_imovel or "N/A",
+                    Paragraph(i.motivo_improdutividade, styles['Normal']),
+                    f"R$ {i.valor_cobrado:.2f}"
+                ])
+            
+            t_improd = Table(improd_data, colWidths=[70, 70, 460, 80]) # Ajuste larguras
+            t_improd.setStyle(header_style)
+            t_improd.setStyle(body_style)
+            elements.append(t_improd)
+
+    # --- CASO 2: Relatório de Vistoriador Específico ---
+    elif isinstance(report_data, schemas.RelatorioVistoriador):
+        elements.append(Paragraph(f"Relatório de Comissão: {report_data.vistoriador_nome}", styles['h1']))
+        elements.append(Paragraph(f"Período: {report_data.periodo}", styles['h2']))
+        elements.append(Spacer(1, 0.25*inch))
+
+        # Bloco de Totais
+        total_data = [
+            ["Comissão Vistorias", f"R$ {report_data.total_comissao_vistorias:.2f}"],
+            ["Comissão Improdutivas", f"R$ {report_data.total_comissao_improdutivas:.2f}"],
+            ["TOTAL GERAL", f"R$ {report_data.total_geral_comissao:.2f}"],
+        ]
+        t_totais = Table(total_data, colWidths=[2*inch, 2*inch])
+        t_totais.setStyle(TableStyle([
+            ('GRID', (0, 0), (-1, -1), 1, colors.black),
+            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+            ('FONTNAME', (0, 2), (-1, 2), 'Helvetica-Bold'),
+            ('BACKGROUND', (0, 2), (-1, 2), colors.lightgrey),
+        ]))
+        elements.append(t_totais)
+        elements.append(Spacer(1, 0.25*inch))
+        
+        # Tabelas de Vistorias por Imobiliária
+        for imob_nome, vistorias in report_data.vistorias_por_imobiliaria.items():
+            elements.append(Paragraph(f"Imobiliária: {imob_nome}", styles['h3']))
+            vistorias_data = [["Data", "Cód. Imóvel", "Tipo", "Obs. Vistoriador", "Comissão"]]
+            for v in vistorias:
+                vistorias_data.append([
+                    v.data.strftime('%d/%m/%Y'),
+                    v.cod_imovel,
+                    v.tipo_vistoria,
+                    Paragraph(v.observacao_privada or '---', styles['Normal']), # Usando obs. privada aqui, ajuste se for outra
+                    f"R$ {v.comissao_vistoriador:.2f}"
+                ])
+            
+            t_vistorias = Table(vistorias_data, colWidths=[70, 70, 80, 400, 80])
+            t_vistorias.setStyle(header_style)
+            t_vistorias.setStyle(body_style)
+            elements.append(t_vistorias)
+            elements.append(Spacer(1, 0.2*inch))
+
+        # Tabela de Improdutivas
+        if report_data.improdutivas:
+            elements.append(Paragraph("Comissão Improdutivas", styles['h3']))
+            improd_data = [["Data", "Motivo", "Comissão"]]
+            for i in report_data.improdutivas:
+                improd_data.append([
+                    i.data_vistoria_original.strftime('%d/%m/%Y'),
+                    Paragraph(i.motivo_improdutividade, styles['Normal']),
+                    f"R$ {i.comissao_vistoriador:.2f}"
+                ])
+            
+            t_improd = Table(improd_data, colWidths=[70, 550, 80])
+            t_improd.setStyle(header_style)
+            t_improd.setStyle(body_style)
+            elements.append(t_improd)
+
+    # --- CASO 3: Relatório Geral (Detalhado, por Imobiliária) ---
+    elif isinstance(report_data, list):
+        # Este é o caso do _get_relatorio_geral_data, que retorna List[RelatorioImobiliaria]
+        elements.append(Paragraph("Relatório Geral Detalhado por Imobiliária", styles['h1']))
+        if report_data: # Adiciona o período do primeiro relatório (todos devem ser iguais)
+             elements.append(Paragraph(f"Período: {report_data[0].periodo}", styles['h2']))
+
+        for rel_imob in report_data:
+            elements.append(Spacer(1, 0.25*inch))
+            elements.append(Paragraph(f"Imobiliária: {rel_imob.imobiliaria_nome}", styles['h2']))
+            elements.append(Spacer(1, 0.2*inch))
+
+            # Bloco de Totais (copiado do CASO 1)
+            total_data = [
+                ["Total Vistorias", f"R$ {rel_imob.total_vistorias:.2f}"],
+                ["Total Improdutivas", f"R$ {rel_imob.total_improdutivas:.2f}"],
+                ["TOTAL GERAL", f"R$ {rel_imob.total_geral:.2f}"],
+            ]
+            t_totais = Table(total_data, colWidths=[2*inch, 2*inch])
+            t_totais.setStyle(TableStyle([
+                ('GRID', (0, 0), (-1, -1), 1, colors.black),
+                ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+                ('FONTNAME', (0, 2), (-1, 2), 'Helvetica-Bold'),
+                ('BACKGROUND', (0, 2), (-1, 2), colors.lightgrey),
+            ]))
+            elements.append(t_totais)
+            elements.append(Spacer(1, 0.2*inch))
+            
+            # Tabela de Vistorias (copiado do CASO 1)
+            if rel_imob.vistorias:
+                elements.append(Paragraph("Vistorias Realizadas", styles['h3']))
+                vistorias_data = [["Data", "Cód. Imóvel", "Endereço", "Valor"]] # Versão simplificada para o geral
+                for v in rel_imob.vistorias:
+                    vistorias_data.append([
+                        v.data.strftime('%d/%m/%Y'),
+                        v.cod_imovel,
+                        Paragraph(v.endereco, styles['Normal']),
+                        f"R$ {v.valor:.2f}",
+                    ])
+                t_vistorias = Table(vistorias_data, colWidths=[60, 70, 470, 80])
+                t_vistorias.setStyle(header_style)
+                t_vistorias.setStyle(body_style)
+                elements.append(t_vistorias)
+                elements.append(Spacer(1, 0.2*inch))
+
+            # Tabela de Improdutivas (copiado do CASO 1)
+            if rel_imob.improdutivas:
+                elements.append(Paragraph("Vistorias Improdutivas", styles['h3']))
+                improd_data = [["Data", "Cód. Imóvel", "Motivo", "Valor Cobrado"]]
+                for i in rel_imob.improdutivas:
+                    improd_data.append([
+                        i.data_vistoria_original.strftime('%d/%m/%Y'),
+                        i.cod_imovel or "N/A",
+                        Paragraph(i.motivo_improdutividade, styles['Normal']),
+                        f"R$ {i.valor_cobrado:.2f}"
+                    ])
+                t_improd = Table(improd_data, colWidths=[70, 70, 460, 80])
+                t_improd.setStyle(header_style)
+                t_improd.setStyle(body_style)
+                elements.append(t_improd)
+            
+            elements.append(PageBreak()) # Pula para a próxima página para a próxima imobiliária
+
+
+    # --- CASO 4: Relatório Geral (Resumo - Lógica Antiga) ---
+    elif isinstance(report_data, schemas.RelatorioGeral):
+        # Esta era a sua lógica original.
         elements.append(Paragraph(f"Relatório Geral de Faturamento - {report_data.periodo}", styles['h1']))
         elements.append(Spacer(1, 12))
-        data = [["Imobiliária", "Vistorias", "Improdutivas", "Valor Vistorias", "Valor Improdutivas"]]
+        data = [["Imobiliária", "Vistorias (Qtd)", "Improdutivas (Qtd)", "Valor Vistorias", "Valor Improdutivas"]]
         for item in report_data.data:
             data.append([item.imobiliaria_nome, item.total_vistorias, item.total_improdutivas, f"R$ {item.valor_total_vistorias:.2f}", f"R$ {item.valor_total_improdutivas:.2f}"])
-        data.append(["TOTAIS", report_data.total_geral_vistorias, report_data.total_geral_improdutivas, f"R$ {report_data.valor_final_vistorias:.2f}", f"R$ {report_data.valor_final_improdutivas:.2f}"])
-        t = Table(data)
-        t.setStyle(TableStyle([('BACKGROUND', (0, 0), (-1, 0), colors.grey), ('GRID', (0, 0), (-1, -1), 1, colors.black)]))
+        
+        # Linha de Totais
+        data.append([
+            "TOTAIS", 
+            report_data.total_geral_vistorias, 
+            report_data.total_geral_improdutivas, 
+            f"R$ {report_data.valor_final_vistorias:.2f}", 
+            f"R$ {report_data.valor_final_improdutivas:.2f}"
+        ])
+        
+        t = Table(data, colWidths=[200, 100, 100, 100, 100])
+        # Aplicando estilos de header e corpo
+        t.setStyle(header_style)
+        t.setStyle(body_style)
+        # Estilo para a linha de total
+        t.setStyle(TableStyle([
+            ('BACKGROUND', (0, -1), (-1, -1), colors.lightgrey),
+            ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+        ]))
         elements.append(t)
-    
+
+    # --- Fallback ---
+    if not elements:
+        # Se nenhum 'if' foi satisfeito, 'elements' estará vazio.
+        # Adicionamos uma página de erro para evitar o bug "sem páginas".
+        elements.append(Paragraph("Erro: Não foi possível gerar o conteúdo para este relatório em PDF.", styles['Normal']))
+        elements.append(Paragraph("Tipo de dado recebido não foi reconhecido.", styles['Normal']))
+
     doc.build(elements)
     buffer.seek(0)
     return buffer
@@ -1374,20 +1615,35 @@ def download_relatorio(
                     "Motivo": i.motivo_improdutividade, "Valor": i.valor_cobrado
                 } for i in report.improdutivas]
                 data_for_excel[f"IMOBILIÁRIA: {report.imobiliaria_nome.upper()} - IMPRODUTIVAS"] = improdutivas_list
+        
+        # --- CORREÇÃO ---
+        # A linha abaixo estava faltando. Ela atribui os dados 
+        # (List[schemas.RelatorioImobiliaria]) à variável que 
+        # a função de PDF espera.
+        report_data = list_of_reports
 
     if not data_for_excel:
         raise HTTPException(status_code=404, detail="Nenhum dado encontrado para gerar o relatório.")
 
-    filename = f"{filename_prefix}_{mes:02d}_{ano}.{'xlsx' if formato == 'excel' else 'pdf'}"
+    # filename = f"{filename_prefix}_{mes:02d}_{ano}.{'xlsx' if formato == 'excel' else 'pdf'}"
+    # Vamos mover a linha acima para dentro dos blocos lógicos
     
     if formato == "excel":
+        filename = f"{filename_prefix}_{mes:02d}_{ano}.xlsx" # Define o nome para Excel
         file_stream = _create_excel_report(data_for_excel, filename_prefix, value_column_name)
         media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     else: # pdf
-        file_stream = _create_pdf_report(report_data) # PDF continua com a lógica antiga por enquanto
+        filename = f"{filename_prefix}_{mes:02d}_{ano}.pdf" # Define o nome para PDF
+        
+        logger.info(f"Gerando PDF para: {filename}") # Log agora mostra o .pdf
+        
+        file_stream = _create_pdf_report(report_data) 
         media_type = "application/pdf"
 
-    headers = {'Content-Disposition': f'attachment; filename="{filename}"'}
+    headers = {
+        'Content-Disposition': f'attachment; filename="{filename}"',
+        'Access-Control-Expose-Headers': 'Content-Disposition'
+    }
     return StreamingResponse(file_stream, media_type=media_type, headers=headers)
 
 # =================================================================
