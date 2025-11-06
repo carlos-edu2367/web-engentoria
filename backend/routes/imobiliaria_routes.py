@@ -400,24 +400,43 @@ def download_monthly_report(
     db: Session = Depends(get_db),
     current_user: models.GrupoImobiliaria = Depends(auth.get_current_active_imobiliaria_group)
 ):
-    report_data = get_report_data(mes, ano, db, current_user)
-    if not report_data:
+    # report_data agora é o dicionário completo retornado pela função
+    full_report_data = get_report_data(mes, ano, db, current_user)
+    
+    # Extraímos a LISTA de relatórios, que é o que as funções de exportação esperam
+    report_list = full_report_data.get("relatorios")
+
+    if not report_list:
         raise HTTPException(status_code=404, detail="Nenhum dado encontrado para gerar o relatório.")
 
+    # --- CORREÇÃO DE SANITIZAÇÃO ---
     nome_user = current_user.nome.strip()
-    filename = f"relatorio_{nome_user.replace(' ', '_')}_{mes}_{ano}"
+    # 1. Cria o nome base
+    base_filename = f"relatorio_{nome_user}_{mes}_{ano}"
+    
+    # 2. Sanitiza o nome base (removendo acentos e caracteres especiais, exceto _ e -)
+    nome_sanitizado = unicodedata.normalize('NFD', base_filename)
+    nome_sanitizado = ''.join(c for c in nome_sanitizado if unicodedata.category(c) != 'Mn')
+    nome_sanitizado = nome_sanitizado.replace(" ", "_")
+    # Remove qualquer coisa que não seja letra, número, _ ou - (garantindo que não haja '.')
+    nome_sanitizado = re.sub(r"[^a-zA-Z0-9_-]", "", nome_sanitizado)
+    # Remove _ ou - duplicados
+    nome_sanitizado = re.sub(r"[_.-]+", "_", nome_sanitizado)
+    nome_sanitizado = nome_sanitizado.rstrip('_-')
+
     
     if formato == "excel":
-        file_stream = create_excel_report(report_data)
+        file_stream = create_excel_report(report_list)
         media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        filename += ".xlsx"
+        filename = f"{nome_sanitizado}.xlsx" # 3. Adiciona a extensão limpa
     else: # pdf
-        file_stream = create_pdf_report(report_data)
+        file_stream = create_pdf_report(report_list)
         media_type = "application/pdf"
-        filename += ".pdf"
+        filename = f"{nome_sanitizado}.pdf" # 3. Adiciona a extensão limpa
 
     headers = {
-        'Content-Disposition': f'attachment; filename="{filename}"'
+        'Content-Disposition': f'attachment; filename="{filename}"',
+        'Access-Control-Expose-Headers': 'Content-Disposition'
     }
     
     return StreamingResponse(file_stream, media_type=media_type, headers=headers)

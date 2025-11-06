@@ -1318,10 +1318,12 @@ async function downloadReport(format) {
         let filename = `relatorio_${mes}_${ano}.${format === 'excel' ? 'xlsx' : 'pdf'}`;
         
         if (contentDisposition) {
-            const filenameMatch = contentDisposition.match(/filename="?(.+)"?/);
+            const filenameMatch = contentDisposition.match(/filename="?([^"]+)"?/);
             if (filenameMatch && filenameMatch.length > 1) {
-                filename = filenameMatch[1];
-            }
+                filename = filenameMatch[1].trim();
+                // Remover possíveis aspas ou underscores extras
+                filename = filename.replace(/["'_]+$/, "");
+}
         }
 
         const downloadUrl = window.URL.createObjectURL(blob);
