@@ -35,6 +35,12 @@ async function apiFetch(endpoint, method = 'GET', body = null) {
         const responseBody = await response.text();
 
         if (!response.ok) {
+            // A API de laudo por agendamento retorna 404 se não encontrado,
+            // o que é um fluxo esperado e não um erro.
+            if (response.status === 404 && endpoint.includes('/laudos/agendamento/')) {
+                throw new Error('404 Not Found'); // Lança um erro específico
+            }
+            
             try {
                 const errorData = JSON.parse(responseBody);
                 throw new Error(errorData.detail || `Erro HTTP: ${response.status}`);
@@ -231,6 +237,13 @@ export const api = {
     getInfoMensal: (mes, ano, grupoId) => apiFetch(`/mensal/${mes}/${ano}/${grupoId}`),
     postInfoMensalMensagem: (infoId, mensagem) => apiFetch(`/mensal/${infoId}/mensagem?mensagem=${encodeURIComponent(mensagem)}`, 'POST'),
     postInfoMensalDocumento: (formData) => apiFetchFormData(`/mensal/documento`, 'POST', formData),
-    deleteInfoMensalDocumento: (docId) => apiFetch(`/deletar_doc_info/${docId}`, 'DELETE')
-    // --- FIM DA PARTE 1 (Endpoints) ---
+    deleteInfoMensalDocumento: (docId) => apiFetch(`/deletar_doc_info/${docId}`, 'DELETE'),
+    
+    // --- INÍCIO DAS NOVAS ROTAS DE LAUDO ---
+    getLaudosPendentes: () => apiFetch('/laudos/pendentes'),
+    getLaudoDetails: (id_laudo) => apiFetch(`/laudo/${id_laudo}`),
+    updateLaudoStatus: (data) => apiFetch('/laudo/status', 'PUT', data),
+    getLaudoCategoriaDetails: (id_categoria) => apiFetch(`/laudos/categoria/${id_categoria}`),
+    getLaudoByAgendamento: (id_agendamento) => apiFetch(`/laudos/agendamento/${id_agendamento}`)
+    // --- FIM DAS NOVAS ROTAS DE LAUDO ---
 };

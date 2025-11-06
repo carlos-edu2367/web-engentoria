@@ -135,17 +135,34 @@ async function renderAdminDocumentosTab(agendaId, containerId) {
         container.querySelectorAll('.delete-doc-btn').forEach(btn => {
             btn.addEventListener('click', async (e) => {
                 const docId = e.currentTarget.dataset.docId;
-                if (confirm('Tem certeza que deseja deletar este documento?')) {
+                // MODIFICAÇÃO: Removido confirm()
+                showModal(`
+                    <h2 class="text-2xl font-bold text-red-400 mb-4">Confirmar Exclusão</h2>
+                    <p class="text-gray-300 mb-6">Tem certeza que deseja deletar este documento?</p>
+                    <div id="modal-error" class="text-red-400 text-sm hidden mb-4"></div>
+                    <div class="flex justify-end gap-4">
+                        <button id="btn-cancel" class="px-4 py-2 bg-gray-600 hover:bg-gray-500 rounded-lg transition">Cancelar</button>
+                        <button id="btn-confirm" class="px-4 py-2 bg-red-600 hover:bg-red-500 text-white font-bold rounded-lg transition">Sim, Deletar</button>
+                    </div>
+                `, 'max-w-md');
+
+                document.getElementById('btn-cancel').onclick = hideModal;
+                document.getElementById('btn-confirm').onclick = async () => {
+                    const confirmBtn = document.getElementById('btn-confirm');
+                    confirmBtn.disabled = true;
+                    confirmBtn.textContent = 'Deletando...';
                     try {
-                        // Usa a nova API do admin
                         await api.deleteDocumentoVistoria(docId);
+                        showAlert('Documento deletado.');
+                        hideModal();
                         renderAdminDocumentosTab(agendaId, containerId); // Recarrega
-                    } catch (e) { 
-                        const errorDiv = container.querySelector('#doc-error');
-                        errorDiv.textContent = e.message;
-                        errorDiv.classList.remove('hidden');
+                    } catch (e) {
+                        document.getElementById('modal-error').textContent = e.message;
+                        document.getElementById('modal-error').classList.remove('hidden');
+                        confirmBtn.disabled = false;
+                        confirmBtn.textContent = 'Sim, Deletar';
                     }
-                }
+                };
             });
         });
 
@@ -228,16 +245,12 @@ function handleEventClick(clickInfo) {
         document.getElementById('btn-iniciar-agendamento').onclick = () => startAgendamentoWizard(event, calendar);
         document.getElementById('btn-fechar-horario').onclick = () => handleFecharHorario(event.id);
 
-    // ================= INÍCIO DA RESOLUÇÃO DO CONFLITO =================
-    // Mantém a sua lógica para 'FECHADO'
     } else if (props.tipo === 'FECHADO') {
         renderConfirmReabrirModal(event.id, event);
     
-    // Adiciona a lógica do GitHub para todos os outros tipos
     } else {
-        showAdminVistoriaModal(event); // Nova chamada para o modal com abas
+        showAdminVistoriaModal(event); // Modal com abas para vistorias ocupadas
     }
-    // ================= FIM DA RESOLUÇÃO DO CONFLITO =================
 }
 
 /**
@@ -261,10 +274,8 @@ function handleFecharHorario(agendaId) {
     document.getElementById('form-fechar-horario').onsubmit = async (e) => {
         e.preventDefault();
         const motivo = document.getElementById('motivo-fechamento').value;
-        // Cria o payload esperado pelo backend
         const payload = { fechar: true, motivo: motivo };
         try {
-            // Envia o payload como segundo argumento
             await api.fecharHorario(agendaId, payload);
             showAlert('Horário fechado com sucesso!');
             hideModal();
@@ -276,14 +287,12 @@ function handleFecharHorario(agendaId) {
 }
 
 /**
- * NOVO: Renderiza o modal de confirmação para reabrir um horário.
+ * Renderiza o modal de confirmação para reabrir um horário.
  * @param {string} agendaId - O ID do horário da agenda.
  * @param {object} event - O objeto do evento do FullCalendar.
  */
 function renderConfirmReabrirModal(agendaId, event) {
     const props = event.extendedProps;
-    // O backend armazena o motivo em 'observacao_privada'
-    // O 'motivo_fechamento' é o que o 'renderEventContent' usa, então verificamos ambos.
     const motivo = props.observacao_privada || props.motivo_fechamento || 'Motivo não especificado.';
 
     const modalHTML = `
@@ -300,8 +309,7 @@ function renderConfirmReabrirModal(agendaId, event) {
 
     document.getElementById('btn-cancel-reabrir').onclick = hideModal;
     document.getElementById('btn-confirm-reabrir').onclick = async () => {
-        // Prepara o payload para REABRIR (fechar: false)
-        const payload = { fechar: false, motivo: "" }; // 'motivo' é ignorado pelo backend, mas o schema pode exigi-lo
+        const payload = { fechar: false, motivo: "" };
         try {
             await api.fecharHorario(agendaId, payload);
             showAlert('Horário reaberto com sucesso!');
@@ -314,12 +322,10 @@ function renderConfirmReabrirModal(agendaId, event) {
 }
 
 /**
- * INÍCIO DA PARTE 2: Nova função para Modal com Abas
- * Renderiza o modal com abas (Detalhes, Mural, Documentos) para uma vistoria.
- * Substitui a antiga 'renderVistoriaDetailsModal'.
+ * MODAL DA VISTORIA DO ADMIN (com abas e verificação de laudo)
  * @param {object} event - O evento do FullCalendar.
  */
-function showAdminVistoriaModal(event) {
+async function showAdminVistoriaModal(event) {
     const props = event.extendedProps;
     const imovel = props.imovel || {};
     const cliente = imovel.cliente || {};
@@ -336,6 +342,12 @@ function showAdminVistoriaModal(event) {
             <p><strong>Valor Vistoria:</strong> R$ ${props.valor_final_vistoria?.toFixed(2) || '0.00'}</p>
             <p><strong>Valor Vistoriador:</strong> R$ ${props.valor_vistoriador?.toFixed(2) || '0.00'}</p>
         </div>
+
+        <!-- NOVO CONTAINER DE VERIFICAÇÃO DE LAUDO -->
+        <div id="laudo-admin-container" class="mt-4 p-4 bg-gray-900/50 rounded-lg">
+            <p class="text-sm text-gray-400 text-center">Verificando status do laudo...</p>
+        </div>
+        <!-- FIM DO NOVO CONTAINER -->
 
         <div class="border-t border-gray-700 mt-4 pt-4 space-y-3">
             <div>
@@ -389,9 +401,9 @@ function showAdminVistoriaModal(event) {
     `;
 
     // 3. Exibe o modal
-    showModal(modalHTML, 'max-w-3xl'); // Um pouco maior para as abas
+    showModal(modalHTML, 'max-w-3xl');
 
-    // 4. Adiciona Listeners para as ações (copiado do modal antigo)
+    // 4. Adiciona Listeners para as ações
     document.getElementById('vistoria-actions').addEventListener('click', (e) => {
         const action = e.target.dataset.action;
         if (!action) return;
@@ -426,14 +438,47 @@ function showAdminVistoriaModal(event) {
         const contentDiv = document.getElementById(`tab-content-${tabId}`);
         contentDiv.classList.remove('hidden');
 
-        // Carrega conteúdo dinâmico (só carrega se for a primeira vez)
         if (contentDiv.innerHTML.includes('Carregando...')) {
             if (tabId === 'mural') renderAdminMuralTab(event.id, 'tab-content-mural');
             if (tabId === 'documentos') renderAdminDocumentosTab(event.id, 'tab-content-documentos');
         }
     });
+
+    // 7. (NOVO) Chama a verificação do laudo
+    try {
+        const laudo = await api.getLaudoByAgendamento(event.id);
+        const laudoContainer = document.getElementById('laudo-admin-container');
+        
+        // Laudo encontrado e finalizado
+        const statusClass = laudo.aprovado ? 'bg-green-600/50 text-green-300' : 'bg-yellow-600/50 text-yellow-300';
+        const statusText = laudo.aprovado ? 'Laudo Aprovado' : 'Pendente de Análise';
+
+        laudoContainer.innerHTML = `
+            <div class="flex flex-col sm:flex-row justify-between items-center gap-2">
+                <div>
+                    <p class="font-semibold text-white">Status do Laudo</p>
+                    <span class="text-xs font-bold px-2 py-0.5 rounded ${statusClass}">${statusText}</span>
+                </div>
+                <button id="view-laudo-btn" data-laudo-id="${laudo.id}" class="w-full sm:w-auto action-btn bg-cyan-600 hover:bg-cyan-500 text-sm">
+                    Ver Laudo para Análise
+                </button>
+            </div>
+        `;
+        document.getElementById('view-laudo-btn').onclick = (e) => {
+            const laudoId = e.currentTarget.dataset.laudoId;
+            hideModal();
+            window.location.hash = `#laudos?view=${laudoId}`;
+        };
+
+    } catch (error) {
+        const laudoContainer = document.getElementById('laudo-admin-container');
+        if (error.message.includes('404')) {
+            laudoContainer.innerHTML = '<p class="text-sm text-gray-500 text-center">Laudo ainda não finalizado pelo vistoriador.</p>';
+        } else {
+            laudoContainer.innerHTML = `<p class="text-sm text-red-400 text-center">Erro ao verificar laudo: ${error.message}</p>`;
+        }
+    }
 }
-// --- FIM DA PARTE 2: Nova função de Modal ---
 
 
 function handleCancelarAgendamento(event) {
@@ -459,22 +504,19 @@ function handleCancelarAgendamento(event) {
     };
 }
 
-/**
- * Abre o modal para marcar uma vistoria como improdutiva, solicitando motivo e valor.
- * @param {object} event - O objeto do evento do FullCalendar.
- */
 function handleMarcarImprodutiva(event) {
     const modalHTML = `
         <h3 class="text-xl font-bold text-white mb-4">Marcar Vistoria como Improdutiva</h3>
         <form id="form-improdutiva" class="space-y-4">
             <div>
                 <label for="motivo_improdutiva" class="block text-sm mb-1">Motivo</label>
-                <textarea id="motivo_improdutiva" required class="w-full bg-gray-700 rounded p-2 h-24" placeholder="Descreva o motivo pelo qual a vistoria não pôde ser realizada..."></textarea>
+                <textarea id="motivo_improdutiva" required class="w-full bg-gray-700 rounded p-2 h-24" placeholder="Descreva o motivo..."></textarea>
             </div>
             <div>
                 <label for="valor_cobranca" class="block text-sm mb-1">Valor a ser Cobrado da Imobiliária (R$)</label>
                 <input type="number" step="0.01" min="0" id="valor_cobranca" required class="w-full bg-gray-700 rounded p-2" placeholder="Ex: 80.00">
             </div>
+            <div id="modal-error" class="text-red-400 text-sm hidden"></div>
             <div class="flex justify-end gap-3 pt-4">
                 <button type="button" id="cancel-modal" class="px-4 py-2 bg-gray-600 rounded">Cancelar</button>
                 <button type="submit" class="px-4 py-2 bg-yellow-500 hover:bg-yellow-400 text-black font-bold rounded-lg transition">Confirmar Improdutiva</button>
@@ -487,13 +529,23 @@ function handleMarcarImprodutiva(event) {
     document.getElementById('form-improdutiva').onsubmit = async (e) => {
         e.preventDefault();
         const btn = e.target.querySelector('button[type="submit"]');
+        const errorDiv = document.getElementById('modal-error');
         btn.disabled = true;
         btn.textContent = 'Confirmando...';
+        errorDiv.classList.add('hidden');
 
         const data = {
             motivo: document.getElementById('motivo_improdutiva').value,
             valor_cobranca: parseFloat(document.getElementById('valor_cobranca').value)
         };
+
+        if (isNaN(data.valor_cobranca)) {
+            errorDiv.textContent = 'Por favor, insira um valor de cobrança válido.';
+            errorDiv.classList.remove('hidden');
+            btn.disabled = false;
+            btn.textContent = 'Confirmar Improdutiva';
+            return;
+        }
 
         try {
             await api.markAsImprodutiva(event.id, data);
@@ -501,17 +553,14 @@ function handleMarcarImprodutiva(event) {
             hideModal();
             calendar.refetchEvents();
         } catch (error) {
-            showAlert(error.message || 'Não foi possível marcar como improdutiva.', 'error');
+            errorDiv.textContent = error.message || 'Não foi possível marcar como improdutiva.';
+            errorDiv.classList.remove('hidden');
             btn.disabled = false;
             btn.textContent = 'Confirmar Improdutiva';
         }
     };
 }
 
-/**
- * Lida com a edição completa de uma vistoria, incluindo dados do imóvel.
- * @param {object} event - O evento do FullCalendar.
- */
 function handleEditarVistoria(event) {
     const props = event.extendedProps;
     const imovel = props.imovel || {};
@@ -568,12 +617,10 @@ function handleEditarVistoria(event) {
                         <input type="number" step="0.01" id="valor_vistoriador" class="w-full bg-gray-700 rounded px-3 py-2 mt-1" placeholder="Automático" value="${props.valor_vistoriador || ''}">
                     </div>
                 </div>
-                <!-- INÍCIO DA MODIFICAÇÃO: Adicionado campo de observação para o vistoriador -->
                  <div class="mt-4">
                     <label for="observacao_vistoriador" class="block text-sm">Observação para Vistoriador</label>
                     <textarea id="observacao_vistoriador" rows="2" class="w-full bg-gray-700 rounded px-3 py-2 mt-1">${props.observacao_vistoriador || ''}</textarea>
                 </div>
-                <!-- FIM DA MODIFICAÇÃO -->
                  <div class="mt-4">
                     <label for="observacao_privada" class="block text-sm">Observação Privada</label>
                     <textarea id="observacao_privada" rows="2" class="w-full bg-gray-700 rounded px-3 py-2 mt-1">${props.observacao_privada || ''}</textarea>
@@ -612,19 +659,15 @@ function handleEditarVistoria(event) {
 
     document.getElementById('form-edit-vistoria').onsubmit = async (e) => {
         e.preventDefault();
-        // INÍCIO DA MODIFICAÇÃO: Captura o valor da nova observação
         const data = {
-            // Dados do imóvel
             cod_imovel: document.getElementById('cod_imovel').value,
             endereco: document.getElementById('endereco').value,
             tamanho: parseFloat(document.getElementById('tamanho').value),
             mobiliado: document.getElementById('mobiliado').value,
-            // Dados da vistoria
             tipo_vistoria: document.getElementById('tipo_vistoria').value,
             observacao_privada: document.getElementById('observacao_privada').value,
             observacao_vistoriador: document.getElementById('observacao_vistoriador').value
         };
-        // FIM DA MODIFICAÇÃO
 
         if (!recalcularCheckbox.checked) {
             data.valor_final_vistoria = parseFloat(valorVistoriaInput.value) || null;
@@ -649,7 +692,6 @@ function enterReagendamentoMode(event) {
     
     const banner = document.createElement('div');
     banner.id = 'reagendamento-banner';
-    // Aplicando estilos mobile-first (sticky, z-index) e responsivos (text-center, p-2)
     banner.className = 'bg-purple-600 text-white text-center p-2 font-bold sticky top-0 z-30 text-sm sm:text-base';
     banner.innerHTML = `
         Reagendando vistoria de ${sanitizeHTML(event.extendedProps.imovel?.cod_imovel || 'Vistoria')}. 

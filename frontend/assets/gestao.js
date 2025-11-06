@@ -12,6 +12,8 @@ import { initImoveis } from './modules/imoveis.js';
 import { initAgenda } from './modules/agenda.js';
 import { initRelatorios } from './modules/relatorios.js';
 import { initConfiguracoes } from './modules/configuracoes.js';
+// NOVO MÓDULO DE LAUDOS
+import { initLaudos } from './modules/laudos.js';
 
 // Estado global simples da aplicação (para caching)
 const AppState = {
@@ -33,13 +35,18 @@ const routes = {
     '#clientes': initClientes,
     '#imoveis': initImoveis,
     '#agenda': initAgenda,
+    '#laudos': initLaudos, // NOVA ROTA
     '#relatorios': initRelatorios,
     '#configuracoes': initConfiguracoes
 };
 
 function setActiveLink(hash) {
     navLinks.forEach(link => {
-        if (link.getAttribute('href') === hash) {
+        // Limpa o hash de query params (ex: #laudos?view=123 -> #laudos)
+        const linkHash = link.getAttribute('href').split('?')[0];
+        const pageHash = hash.split('?')[0];
+        
+        if (linkHash === pageHash) {
             link.classList.add('active');
         } else {
             link.classList.remove('active');
@@ -50,7 +57,8 @@ function setActiveLink(hash) {
 // Router: Função que carrega o conteúdo da página com base na URL hash
 function router() {
     const hash = window.location.hash || '#dashboard';
-    const routeHandler = routes[hash];
+    const routeKey = hash.split('?')[0]; // Pega a rota base, ex: '#laudos'
+    const routeHandler = routes[routeKey];
     
     setActiveLink(hash);
 
@@ -87,7 +95,7 @@ function init() {
     navLinks.forEach(link => {
         link.addEventListener('click', (e) => {
             const hash = e.currentTarget.getAttribute('href');
-            if(hash && routes[hash]) {
+            if(hash && routes[hash.split('?')[0]]) {
                 // Apenas muda o hash, o 'hashchange' listener fará o resto
                 window.location.hash = hash;
             }

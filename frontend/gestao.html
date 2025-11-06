@@ -78,6 +78,58 @@
         .fc .fc-daygrid-day-number { color: #9ca3af; }
         .fc .fc-col-header-cell-cushion { color: #d1d5db; }
         .fc-event { cursor: pointer; }
+
+        /* Estilos para o novo Laudo Viewer */
+        .laudo-header {
+            background: linear-gradient(145deg, #1f2937, #111827);
+        }
+        .laudo-categoria summary {
+            background-color: rgba(31, 41, 55, 0.7);
+            transition: background-color 0.2s;
+        }
+        .laudo-categoria summary:hover {
+            background-color: rgba(55, 65, 81, 0.7);
+        }
+        .laudo-categoria summary svg {
+            transition: transform 0.2s;
+        }
+        .laudo-categoria[open] summary svg {
+            transform: rotate(180deg);
+        }
+        .laudo-item {
+            background-color: rgba(17, 24, 39, 0.5);
+        }
+        .laudo-image-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+            gap: 0.75rem; /* 12px */
+        }
+        .laudo-image-thumbnail {
+            width: 100%;
+            padding-top: 100%; /* Aspect ratio 1:1 */
+            background-size: cover;
+            background-position: center;
+            border-radius: 0.5rem; /* 8px */
+            cursor: pointer;
+            border: 2px solid #374151;
+            transition: border-color 0.2s;
+        }
+        .laudo-image-thumbnail:hover {
+            border-color: #00ffb3;
+        }
+        #laudo-image-viewer {
+            transition: opacity 0.3s;
+        }
+        #laudo-image-viewer img {
+            max-height: 90vh;
+            max-width: 90vw;
+            animation: zoomIn 0.3s ease-out;
+        }
+        @keyframes zoomIn {
+            from { transform: scale(0.8); opacity: 0; }
+            to { transform: scale(1); opacity: 1; }
+        }
+
     </style>
 </head>
 <body class="text-gray-200">
@@ -118,6 +170,12 @@
                 <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
                 <span class="ml-4">Agenda</span>
             </a>
+            <!-- NOVO LINK PARA LAUDOS PENDENTES -->
+            <a href="#laudos" class="nav-link flex items-center p-3 rounded-lg hover:bg-gray-700/50 transition">
+                <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                <span class="ml-4">Laudos Pendentes</span>
+            </a>
+            <!-- FIM DO NOVO LINK -->
             <a href="#relatorios" class="nav-link flex items-center p-3 rounded-lg hover:bg-gray-700/50 transition">
                 <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
                 <span class="ml-4">Relatórios</span>
@@ -147,9 +205,14 @@
     
     <!-- Modal Genérico -->
     <div id="generic-modal" class="fixed inset-0 bg-black/70 z-50 hidden items-center justify-center p-4 backdrop-blur-sm">
-        <div id="modal-content" class="bg-gray-800/90 backdrop-blur-sm rounded-xl shadow-xl p-4 sm:p-6 w-full max-w-2xl border border-gray-700/50 max-h-[90vh] overflow-y-auto neon-border">
+        <div id="modal-content" class_DEFAULT="bg-gray-800/90 backdrop-blur-sm rounded-xl shadow-xl p-4 sm:p-6 w-full max-w-2xl border border-gray-700/50 max-h-[90vh] overflow-y-auto neon-border">
             <!-- O conteúdo do modal será inserido aqui dinamicamente -->
         </div>
+    </div>
+
+    <!-- NOVO: Modal para Visualização de Imagem do Laudo -->
+    <div id="laudo-image-viewer" class="fixed inset-0 bg-black/80 z-[60] hidden items-center justify-center p-4 backdrop-blur-sm opacity-0" onclick="this.classList.add('opacity-0'); setTimeout(() => this.classList.add('hidden'), 300)">
+        <img src="" alt="Visualização de Imagem" class="rounded-lg shadow-2xl">
     </div>
 
     <script src="assets/auth.js"></script>

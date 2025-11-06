@@ -2181,6 +2181,7 @@ async def atualizar_status(data: schemas.LaudoStatus,
     laudo.aprovado = data.aprovado
     if data.aprovado == False:
         laudo.obs_adm = data.obs
+        laudo.finalizado = False
 
     try:
         session.commit()
