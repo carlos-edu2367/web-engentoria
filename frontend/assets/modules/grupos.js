@@ -389,6 +389,11 @@ async function handleResumoSearch(grupoId, mes, ano) {
     const container = document.getElementById('resumo-content-container');
     container.innerHTML = `<p class="text-center text-gray-400">Buscando resumo...</p>`;
     
+    // ADICIONADO: Contêiner separado para o remetente de e-mail
+    const emailSenderContainer = document.createElement('div');
+    emailSenderContainer.id = 'email-sender-container';
+    emailSenderContainer.className = 'mt-6';
+
     try {
         const infoStatus = await api.getInfoMensal(mes, ano, grupoId);
         
@@ -422,6 +427,8 @@ async function handleResumoSearch(grupoId, mes, ano) {
             </div>
         `;
         container.innerHTML = resumoHTML;
+        // ADICIONADO: Anexa o contêiner do remetente de e-mail
+        container.appendChild(emailSenderContainer);
 
         // Adiciona listeners para as sub-abas
         document.getElementById('info-tabs').addEventListener('click', (e) => {
@@ -448,6 +455,11 @@ async function handleResumoSearch(grupoId, mes, ano) {
 
         // Carrega a primeira sub-aba (Chat)
         renderInfoMensalChat(infoStatus, 'tab-content-chat');
+
+        // ADICIONADO: Renderiza o formulário de envio de e-mail se o relatório estiver aceito
+        if (infoStatus.accepted) {
+            renderEmailSenderForm(infoStatus, 'email-sender-container');
+        }
 
     } catch (error) {
         if (error.message.includes('404')) {
@@ -618,5 +630,104 @@ async function renderInfoMensalDocumentos(infoStatus, containerId) {
     });
     // FIM DA CORREÇÃO
 }
-// --- FIM DA PARTE 4 ---
 
+/**
+ * ADICIONADO: Renderiza o formulário de envio de e-mail para relatórios aprovados.
+ * @param {object} infoStatus - O objeto de status vindo da API.
+ * @param {string} containerId - O ID do container onde o formulário será renderizado.
+ */
+function renderEmailSenderForm(infoStatus, containerId) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    const formHTML = `
+        <div class="bg-gray-800/50 p-4 rounded-lg neon-border border-purple-500/50">
+            <h3 class="text-xl font-bold text-purple-300 mb-4">Enviar Relatório Aprovado por E-mail</h3>
+            <form id="email-sender-form">
+                <div class="mb-4">
+                    <label for="email-list-input" class="block text-sm font-medium text-gray-300 mb-1">Destinatários</label>
+                    <textarea 
+                        id="email-list-input" 
+                        rows="3" 
+                        class="w-full p-2 bg-gray-700/50 border border-gray-600/50 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500/50" 
+                        placeholder="email1@exemplo.com, email2@exemplo.com&#10;ou um por linha..."
+                    ></textarea>
+                    <p class="text-xs text-gray-400 mt-1">Separe os e-mails por vírgula ou um por linha.</p>
+                </div>
+                <div class="flex flex-col sm:flex-row justify-end items-center gap-4">
+                    <div id="email-sender-error" class="text-red-400 text-sm hidden w-full sm:w-auto"></div>
+                    <button id="send-email-btn" type="submit" class="w-full sm:w-auto py-2 px-5 rounded-lg bg-purple-600 hover:bg-purple-700 text-white font-bold transition-colors flex items-center justify-center gap-2">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>
+                        Agendar Envio
+                    </button>
+                </div>
+            </form>
+        </div>
+    `;
+    container.innerHTML = formHTML;
+
+    // Adiciona listener ao formulário
+    document.getElementById('email-sender-form').addEventListener('submit', (e) => {
+        handleEmailSendSubmit(e, infoStatus.id);
+    });
+}
+
+/**
+ * ADICIONADO: Lida com o submit do formulário de envio de e-mail.
+ * @param {Event} event 
+ * @param {string} infoId 
+ */
+async function handleEmailSendSubmit(event, infoId) {
+    event.preventDefault();
+    
+    const form = document.getElementById('email-sender-form');
+    const textarea = form.querySelector('#email-list-input');
+    const btn = form.querySelector('#send-email-btn');
+    const errorDiv = form.querySelector('#email-sender-error');
+
+    btn.disabled = true;
+    btn.innerHTML = `
+        <svg class="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+        </svg>
+        Enviando...
+    `;
+    errorDiv.classList.add('hidden');
+    errorDiv.textContent = '';
+
+    // Processa a lista de e-mails
+    const emailList = textarea.value
+        .split(/[\n,]+/) // Divide por nova linha ou vírgula
+        .map(email => email.trim()) // Remove espaços em branco
+        .filter(email => email.length > 0 && email.includes('@')); // Filtra e-mails válidos
+
+    if (emailList.length === 0) {
+        errorDiv.textContent = 'Por favor, insira pelo menos um e-mail válido.';
+        errorDiv.classList.remove('hidden');
+        btn.disabled = false;
+        btn.innerHTML = 'Agendar Envio'; // Restaura o texto original
+        return;
+    }
+
+    try {
+        // Chama a função da API (que você precisará criar em api.js)
+        await api.postEnviarRelatorioEmail(infoId, { emails: emailList });
+        
+        showAlert('Envio do relatório agendado com sucesso!');
+        textarea.value = ''; // Limpa o campo
+
+    } catch (e) {
+        console.error('Erro ao enviar e-mail:', e);
+        errorDiv.textContent = e.message || 'Erro ao agendar envio.';
+        errorDiv.classList.remove('hidden');
+    } finally {
+        btn.disabled = false;
+        // Restaura o ícone e o texto
+        btn.innerHTML = `
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>
+            Agendar Envio
+        `;
+    }
+}
+// --- FIM DA PARTE 4 ---

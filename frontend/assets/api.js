@@ -166,6 +166,15 @@ export const api = {
     getDashboardFinancialStats: () => apiFetch('/dashboard/financial-stats'),
     getVistoriasChartData: () => apiFetch('/dashboard/vistorias-chart'),
 
+    // ==================================================================
+    // AQUI ESTÁ A CORREÇÃO
+    // ==================================================================
+    postEnviarRelatorioEmail: (infoId, data) => {
+        // Usando 'apiFetch' (a função correta) e o endpoint relativo
+        return apiFetch(`/mensal/${infoId}/enviar-relatorio`, 'POST', data);
+    },
+    // ==================================================================
+
     // Imobiliárias
     getImobiliarias: () => apiFetch('/imobiliarias/'),
     createImobiliaria: (data) => apiFetch('/imobiliarias/', 'POST', data),

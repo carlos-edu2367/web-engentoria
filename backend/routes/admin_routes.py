@@ -10,6 +10,7 @@ from datetime import datetime, date
 from .. import models, schemas, auth
 from ..config import get_db
 
+
 # Roteador para o painel de gestão, protegido para acesso de gestores (TI).
 router = APIRouter(
     prefix="/admin",

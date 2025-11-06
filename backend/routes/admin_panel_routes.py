@@ -13,6 +13,12 @@ from typing import Optional
 import io
 import logging, os, uuid, unicodedata, re
 from reportlab.lib.units import inch
+import base64
+from pydantic import BaseModel, EmailStr
+from sendgrid.helpers.mail import (
+    Mail, Attachment, FileContent, FileName, 
+    FileType, Disposition, Cc
+)
 
 from ..supabase_client import deletar_arquivo_supabase, supabase, gerar_url_assinada
 
@@ -48,9 +54,102 @@ router = APIRouter(
     tags=["Painel de Administração"],
     dependencies=[Depends(get_current_admin_user)]
 )
+class EnvioRelatorioEmailSchema(BaseModel):
+    emails: List[EmailStr]
+
 
 # Configura o logger
 logger = logging.getLogger(__name__)
+
+def _send_report_email_task(
+    db: Session,
+    info_id: UUID,
+    grupo_id: UUID,
+    mes: int,
+    ano: int,
+    recipient_emails: List[str]
+):
+    """
+    Tarefa em background para gerar e enviar o relatório por e-mail.
+    """
+    logger.info(f"Iniciando tarefa de envio de e-mail para InfoMensal ID: {info_id}")
+    
+    try:
+        # 1. Obter os dados do relatório (reaproveitando sua função existente)
+        # Note: get_report_data precisa de um db.Session, passamos o objeto db.
+        report_data_full = get_report_data(mes=mes, ano=ano, db=db, id_grupo=grupo_id)
+        report_list = report_data_full.get("relatorios")
+
+        if not report_list:
+            logger.warning(f"Nenhum dado de relatório encontrado para InfoMensal ID: {info_id}. Abortando envio.")
+            return
+
+        # 2. Gerar o PDF em memória (reaproveitando sua função existente)
+        # _create_pdf_report espera a LISTA de relatórios
+        pdf_stream = _create_pdf_report(report_list) 
+        pdf_content = pdf_stream.read()
+        pdf_stream.close()
+
+        # 3. Codificar o PDF para Base64
+        pdf_base64 = base64.b64encode(pdf_content).decode()
+
+        # 4. Montar o e-mail do SendGrid
+        
+        # Obter o nome do grupo para o título do e-mail
+        grupo = db.query(models.GrupoImobiliaria).filter(models.GrupoImobiliaria.id == grupo_id).first()
+        nome_grupo = grupo.nome if grupo else f"Grupo ID {grupo_id}"
+        
+        assunto = f"Relatório de Vistorias - {nome_grupo} - {mes:02d}/{ano}"
+        nome_arquivo = f"relatorio_{nome_grupo.lower().replace(' ', '_')}_{mes:02d}_{ano}.pdf"
+
+        html_content = f"""
+        <html>
+        <body>
+            <p>Olá,</p>
+            <p>Segue em anexo o relatório de vistorias consolidado para <strong>{nome_grupo}</strong> referente ao período de <strong>{mes:02d}/{ano}</strong>.</p>
+            <p>Este relatório foi aprovado e enviado pelo painel de administração.</p>
+            <br>
+            <p>Atenciosamente,<br>Equipe Engentoria</p>
+        </body>
+        </html>
+        """
+
+        message = Mail(
+            from_email=settings.EMAIL_FROM,
+            to_emails=recipient_emails, # Lista de e-mails principal
+            subject=assunto,
+            html_content=html_content
+        )
+
+        # 5. Adicionar a Cópia (CC)
+        message.add_cc(Cc('engentoria@outlook.com', 'Engentoria Cópia'))
+
+        # 6. Criar e Anexar o PDF
+        attached_pdf = Attachment(
+            file_content=FileContent(pdf_base64),
+            file_name=FileName(nome_arquivo),
+            file_type=FileType('application/pdf'),
+            disposition=Disposition('attachment')
+        )
+        message.attachment = attached_pdf
+
+        # 7. Enviar o e-mail
+        sg = SendGridAPIClient(settings.SENDGRID_API_KEY)
+        response = sg.send(message)
+        
+        logger.info(f"E-mail de relatório para InfoMensal ID: {info_id} enviado com sucesso. Status: {response.status_code}")
+
+    except Exception as e:
+        # É CRUCIAL logar o erro, pois a tarefa em background não 
+        # reportará o erro de volta para a API.
+        logger.error(f"Falha ao enviar e-mail de relatório para InfoMensal ID: {info_id}. Erro: {str(e)}")
+    finally:
+        # Importante: Fechar a sessão do DB se você criou uma nova para esta tarefa.
+        # Se você passou a sessão da requisição, não a feche aqui.
+        # No exemplo do endpoint abaixo, passamos a sessão, então não fechamos.
+        pass
+
+
 
 def get_report_data(mes: int, ano: int, db: Session, id_grupo: UUID):
     """
@@ -1261,6 +1360,7 @@ def _create_pdf_report(
         schemas.RelatorioVistoriador,
         schemas.RelatorioGeral,
         List[schemas.RelatorioImobiliaria], # O seu _get_relatorio_geral_data retorna ESTE tipo
+        List[schemas.RelatorioMensal] # ADICIONANDO ESTE NOVO TIPO
     ]
 ):
     """
@@ -1278,7 +1378,7 @@ def _create_pdf_report(
     # Estilos de Tabela
     header_style = TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#4F81BD")),
-        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke), # CORREÇÃO: whitesmoke
         ('GRID', (0, 0), (-1, -1), 1, colors.black),
         ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
         ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
@@ -1409,6 +1509,72 @@ def _create_pdf_report(
             t_improd.setStyle(header_style)
             t_improd.setStyle(body_style)
             elements.append(t_improd)
+
+    # --- NOVO CASO: Relatório Mensal (List[schemas.RelatorioMensal]) ---
+    # Esta verificação deve vir ANTES do 'CASO 3' para garantir que 
+    # o tipo List[RelatorioMensal] seja tratado primeiro.
+    elif isinstance(report_data, list) and report_data and isinstance(report_data[0], schemas.RelatorioMensal):
+        elements.append(Paragraph("Relatório Mensal de Vistorias", styles['h1']))
+        if report_data:
+             elements.append(Paragraph(f"Período: {report_data[0].mes_ano}", styles['h2']))
+
+        for rel_mensal in report_data:
+            elements.append(Spacer(1, 0.25*inch))
+            elements.append(Paragraph(f"Imobiliária: {rel_mensal.imobiliaria_nome}", styles['h2']))
+            elements.append(Spacer(1, 0.2*inch))
+
+            # Bloco de Totais
+            total_data = [
+                ["Total Vistorias", f"R$ {rel_mensal.valor_vistorias:.2f}"],
+                ["Total Improdutivas", f"R$ {rel_mensal.valor_improdutivas:.2f}"],
+                ["TOTAL GERAL", f"R$ {rel_mensal.valor_total:.2f}"],
+            ]
+            t_totais = Table(total_data, colWidths=[2*inch, 2*inch])
+            t_totais.setStyle(TableStyle([
+                ('GRID', (0, 0), (-1, -1), 1, colors.black),
+                ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+                ('FONTNAME', (0, 2), (-1, 2), 'Helvetica-Bold'),
+                ('BACKGROUND', (0, 2), (-1, 2), colors.lightgrey),
+            ]))
+            elements.append(t_totais)
+            elements.append(Spacer(1, 0.2*inch))
+            
+            # Tabela de Vistorias Agendadas
+            if rel_mensal.vistorias_agendadas:
+                elements.append(Paragraph("Vistorias Realizadas", styles['h3']))
+                vistorias_data = [["Data", "Cód. Imóvel", "Endereço", "Mobília", "Tipo", "Valor"]]
+                for v in rel_mensal.vistorias_agendadas:
+                    vistorias_data.append([
+                        v.data.strftime('%d/%m/%Y'),
+                        v.cod_imovel,
+                        Paragraph(v.endereco, styles['Normal']),
+                        v.mobiliado,
+                        v.tipo,
+                        f"R$ {v.valor:.2f}",
+                    ])
+                t_vistorias = Table(vistorias_data, colWidths=[60, 70, 300, 80, 80, 80])
+                t_vistorias.setStyle(header_style)
+                t_vistorias.setStyle(body_style)
+                elements.append(t_vistorias)
+                elements.append(Spacer(1, 0.2*inch))
+
+            # Tabela de Improdutivas
+            if rel_mensal.vistorias_improdutivas:
+                elements.append(Paragraph("Vistorias Improdutivas", styles['h3']))
+                improd_data = [["Data", "Cód. Imóvel", "Motivo", "Valor Cobrado"]]
+                for i in rel_mensal.vistorias_improdutivas:
+                    improd_data.append([
+                        i.data_vistoria_original.strftime('%d/%m/%Y'),
+                        i.cod_imovel or "N/A",
+                        Paragraph(i.motivo_improdutividade, styles['Normal']),
+                        f"R$ {i.valor_cobranca:.2f}"
+                    ])
+                t_improd = Table(improd_data, colWidths=[70, 70, 460, 80])
+                t_improd.setStyle(header_style)
+                t_improd.setStyle(body_style)
+                elements.append(t_improd)
+            
+            elements.append(PageBreak())
 
     # --- CASO 3: Relatório Geral (Detalhado, por Imobiliária) ---
     elif isinstance(report_data, list):
@@ -2260,4 +2426,46 @@ async def ver_laudo_agendamento(id_agendamento: str,
             "created_at": c.created_at
         }for c in categorias]
     }
+
+@router.post("/mensal/{info_id}/enviar-relatorio", status_code=status.HTTP_202_ACCEPTED)
+async def enviar_relatorio_mensal_email(
+    info_id: str,
+    data: EnvioRelatorioEmailSchema, # O schema que definimos na Etapa 2
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
+):
+    """
+    Envia o relatório mensal aceito (InfoMensal) por e-mail para 
+    os destinatários especificados.
+    """
+    try:
+        info_uuid = UUID(info_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="ID da InfoMensal inválido.")
+
+    # 1. Buscar e Validar o InfoMensal
+    info = db.query(models.InfoMensal).filter(models.InfoMensal.id == info_uuid).first()
+    if not info:
+        raise HTTPException(status_code=404, detail="InfoMensal não encontrada.")
+
+    # 2. Validação de Negócio CRÍTICA
+    if info.accepted != True:
+        raise HTTPException(status_code=400, detail="Este relatório ainda não foi aceito pela imobiliária. O envio não é permitido.")
+
+    # 3. Adicionar a tarefa em background
+    # Passamos os dados necessários para a função, pois o objeto 'db'
+    # pode não ser seguro de usar diretamente em outro thread (depende da config).
+    # Passar os dados brutos é mais seguro.
+    background_tasks.add_task(
+        _send_report_email_task,
+        db=db,
+        info_id=info.id,
+        grupo_id=info.grupo_id,
+        mes=info.month,
+        ano=info.year,
+        recipient_emails=[email for email in data.emails] # Converte EmailStr para str
+    )
+
+    # 4. Retornar imediatamente
+    return {"message": "Envio do relatório foi agendado com sucesso. Os e-mails serão disparados em segundo plano."}
 
