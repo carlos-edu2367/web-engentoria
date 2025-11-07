@@ -11,9 +11,11 @@ import io
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from reportlab.lib.pagesizes import letter, landscape
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib import colors
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.enums import TA_CENTER, TA_RIGHT, TA_LEFT
+
 import uuid, os, logging
 from ..supabase_client import supabase, gerar_url_assinada, deletar_arquivo_supabase
 from uuid import UUID
@@ -256,135 +258,358 @@ def get_monthly_report(mes: int = Query(..., ge=1, le=12), ano: int = Query(...,
 
 # --- Funções para Download de Relatórios ---
 
-def create_excel_report(report_data: List[schemas.RelatorioMensal]):
+def create_excel_report(report_data: List): # Removido 'schemas.RelatorioMensal' para ser genérico se 'schemas' não estiver disponível
+    """
+    Gera um relatório Excel (BytesIO) a partir dos dados do relatório mensal.
+    
+    Melhorias:
+    - Quebra de linha automática (wrap_text=True) em células de dados.
+    - Alinhamento vertical superior para melhor leitura de texto quebrado.
+    - Cores de linha alternadas (banding) para facilitar a leitura.
+    - Estilo de borda fina em todas as células de dados.
+    - Cabeçalhos de tabela com preenchimento azul (corrigido).
+    - Formatação de data e moeda explícita.
+    - Linha de "Total Geral" com uma borda superior para destaque.
+    """
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Relatório Mensal"
 
+    # --- Definição de Estilos ---
     title_font = Font(name='Calibri', size=16, bold=True, color="FFFFFF")
     header_font = Font(name='Calibri', size=12, bold=True, color="FFFFFF")
-    header_fill = PatternFill(start_color="3B82F6", end_color="3B82F6", fill_type="solid")
+    data_font = Font(name='Calibri', size=11)
     total_font = Font(name='Calibri', size=12, bold=True)
+    
+    header_fill = PatternFill(start_color="3B82F6", end_color="3B82F6", fill_type="solid")
+    even_row_fill = PatternFill(start_color="F3F4F6", end_color="F3F4F6", fill_type="solid")
+    
+    center_align = Alignment(horizontal='center', vertical='center', wrap_text=True)
+    left_top_wrap_align = Alignment(horizontal='left', vertical='top', wrap_text=True)
+    right_align = Alignment(horizontal='right', vertical='center')
+    
+    thin_border_side = Side(style='thin', color="D4D4D4")
+    thin_border = Border(left=thin_border_side, right=thin_border_side, top=thin_border_side, bottom=thin_border_side)
+    total_top_border = Border(top=Side(style='medium', color='000000'))
+
     currency_format = "R$ #,##0.00"
+    date_format = "dd/mm/yyyy"
     
     row_cursor = 1
     for report in report_data:
+        # --- Título Principal do Relatório ---
         ws.merge_cells(start_row=row_cursor, start_column=1, end_row=row_cursor, end_column=7)
         title_cell = ws.cell(row=row_cursor, column=1, value=f"Relatório de Vistorias - {report.imobiliaria_nome} ({report.mes_ano})")
         title_cell.font = title_font
         title_cell.fill = header_fill
-        title_cell.alignment = Alignment(horizontal='center')
+        title_cell.alignment = center_align
         row_cursor += 2
 
-        ws.cell(row=row_cursor, column=1, value="Vistorias Agendadas").font = header_font
+        # --- Tabela: Vistorias Agendadas ---
+        ws.merge_cells(start_row=row_cursor, start_column=1, end_row=row_cursor, end_column=7)
+        sub_title_agendadas = ws.cell(row=row_cursor, column=1, value="Vistorias Agendadas")
+        sub_title_agendadas.font = header_font
+        sub_title_agendadas.fill = header_fill
+        sub_title_agendadas.alignment = center_align
         row_cursor += 1
-        headers_agendadas = ["Data", "Cód. Imóvel", "Endereço", "Tamanho", "Mobília", "Tipo Vistoria", "Valor"]
-        for col, header in enumerate(headers_agendadas, 1):
-            ws.cell(row=row_cursor, column=col, value=header).font = header_font
         
-        for vistoria in report.vistorias_agendadas:
+        headers_agendadas = ["Data", "Cód. Imóvel", "Endereço", "Tamanho", "Mobília", "Tipo Vistoria", "Valor"]
+        header_start_row = row_cursor
+        for col, header in enumerate(headers_agendadas, 1):
+            cell = ws.cell(row=row_cursor, column=col, value=header)
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = center_align
+            cell.border = thin_border
+        
+        data_start_row = row_cursor + 1
+        for i, vistoria in enumerate(report.vistorias_agendadas):
             row_cursor += 1
-            ws.cell(row=row_cursor, column=1, value=vistoria.data.strftime("%d/%m/%Y"))
-            ws.cell(row=row_cursor, column=2, value=vistoria.cod_imovel)
-            ws.cell(row=row_cursor, column=3, value=vistoria.endereco)
-            ws.cell(row=row_cursor, column=4, value=f"{vistoria.tamanho} m²")
-            ws.cell(row=row_cursor, column=5, value=vistoria.mobiliado.replace('_', ' ').title())
-            ws.cell(row=row_cursor, column=6, value=vistoria.tipo)
-            ws.cell(row=row_cursor, column=7, value=vistoria.valor).number_format = currency_format
+            is_even_row = i % 2 == 1 # 0-indexed, so 1 is the second row
+            row_fill = even_row_fill if is_even_row else None
+            
+            row_data = [
+                (vistoria.data, date_format, center_align),
+                (vistoria.cod_imovel, None, center_align),
+                (vistoria.endereco, None, left_top_wrap_align),
+                (f"{vistoria.tamanho} m²", None, center_align),
+                (vistoria.mobiliado.replace('_', ' ').title(), None, center_align),
+                (vistoria.tipo, None, center_align),
+                (vistoria.valor, currency_format, right_align),
+            ]
+            
+            for col, (value, num_format, align) in enumerate(row_data, 1):
+                cell = ws.cell(row=row_cursor, column=col, value=value)
+                cell.font = data_font
+                cell.border = thin_border
+                cell.alignment = align
+                if num_format:
+                    cell.number_format = num_format
+                if row_fill:
+                    cell.fill = row_fill
+        
         row_cursor += 2
 
-        ws.cell(row=row_cursor, column=1, value="Vistorias Improdutivas").font = header_font
+        # --- Tabela: Vistorias Improdutivas ---
+        ws.merge_cells(start_row=row_cursor, start_column=1, end_row=row_cursor, end_column=4)
+        sub_title_improdutivas = ws.cell(row=row_cursor, column=1, value="Vistorias Improdutivas")
+        sub_title_improdutivas.font = header_font
+        sub_title_improdutivas.fill = header_fill
+        sub_title_improdutivas.alignment = center_align
         row_cursor += 1
+        
         headers_improdutivas = ["Data", "Cód. Imóvel", "Motivo", "Valor Cobrado"]
         for col, header in enumerate(headers_improdutivas, 1):
-            ws.cell(row=row_cursor, column=col, value=header).font = header_font
+            cell = ws.cell(row=row_cursor, column=col, value=header)
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = center_align
+            cell.border = thin_border
         
-        for vistoria in report.vistorias_improdutivas:
+        data_start_row = row_cursor + 1
+        for i, vistoria in enumerate(report.vistorias_improdutivas):
             row_cursor += 1
-            ws.cell(row=row_cursor, column=1, value=vistoria.data_vistoria_original.strftime("%d/%m/%Y"))
-            ws.cell(row=row_cursor, column=2, value=vistoria.cod_imovel)
-            ws.cell(row=row_cursor, column=3, value=vistoria.motivo_improdutividade)
-            ws.cell(row=row_cursor, column=4, value=vistoria.valor_cobranca).number_format = currency_format
+            is_even_row = i % 2 == 1
+            row_fill = even_row_fill if is_even_row else None
+            
+            row_data = [
+                (vistoria.data_vistoria_original, date_format, center_align),
+                (vistoria.cod_imovel, None, center_align),
+                (vistoria.motivo_improdutividade, None, left_top_wrap_align),
+                (vistoria.valor_cobranca, currency_format, right_align),
+            ]
+            
+            for col, (value, num_format, align) in enumerate(row_data, 1):
+                cell = ws.cell(row=row_cursor, column=col, value=value)
+                cell.font = data_font
+                cell.border = thin_border
+                cell.alignment = align
+                if num_format:
+                    cell.number_format = num_format
+                if row_fill:
+                    cell.fill = row_fill
+
         row_cursor += 2
         
-        ws.cell(row=row_cursor, column=6, value="Total Vistorias:").font = total_font
-        ws.cell(row=row_cursor, column=7, value=report.valor_vistorias).number_format = currency_format
-        row_cursor += 1
-        ws.cell(row=row_cursor, column=6, value="Total Improdutivas:").font = total_font
-        ws.cell(row=row_cursor, column=7, value=report.valor_improdutivas).number_format = currency_format
-        row_cursor += 1
-        ws.cell(row=row_cursor, column=6, value="TOTAL GERAL:").font = total_font
-        ws.cell(row=row_cursor, column=7, value=report.valor_total).number_format = currency_format
-        row_cursor += 3
+        # --- Bloco de Totais ---
+        total_rows = [
+            ("Total Vistorias:", report.valor_vistorias),
+            ("Total Improdutivas:", report.valor_improdutivas),
+            ("TOTAL GERAL:", report.valor_total),
+        ]
+        
+        for i, (label, value) in enumerate(total_rows):
+            is_total_geral = (i == len(total_rows) - 1)
+            
+            label_cell = ws.cell(row=row_cursor, column=6, value=label)
+            label_cell.font = total_font
+            label_cell.alignment = right_align
+            
+            value_cell = ws.cell(row=row_cursor, column=7, value=value)
+            value_cell.font = total_font
+            value_cell.number_format = currency_format
+            value_cell.alignment = right_align
 
-    for col_letter in ['A', 'B', 'D', 'E', 'F', 'G']: ws.column_dimensions[col_letter].width = 15
-    ws.column_dimensions['C'].width = 40
+            if is_total_geral:
+                label_cell.border = total_top_border
+                value_cell.border = total_top_border
+
+            row_cursor += 1
+            
+        row_cursor += 3 # Espaço antes do próximo relatório
+
+    # --- Ajuste Final das Colunas ---
+    ws.column_dimensions['A'].width = 12 # Data
+    ws.column_dimensions['B'].width = 12 # Cód. Imóvel
+    ws.column_dimensions['C'].width = 45 # Endereço / Motivo
+    ws.column_dimensions['D'].width = 15 # Tamanho / Valor Cobrado
+    ws.column_dimensions['E'].width = 15 # Mobília
+    ws.column_dimensions['F'].width = 15 # Tipo Vistoria
+    ws.column_dimensions['G'].width = 15 # Valor
     
+    # --- Salvar e Retornar ---
     virtual_workbook = io.BytesIO()
     wb.save(virtual_workbook)
     virtual_workbook.seek(0)
     return virtual_workbook
 
-def create_pdf_report(report_data: List[schemas.RelatorioMensal]):
+def create_pdf_report(report_data: List): # Removido 'schemas.RelatorioMensal' para ser genérico
+    """
+    Gera um relatório PDF (BytesIO) a partir dos dados do relatório mensal.
+    
+    Melhorias:
+    - Estilos de título (H1, H2) personalizados com a cor do tema.
+    - Cores de linha alternadas (banding) nas tabelas.
+    - Grade da tabela com cor mais suave (cinza) em vez de preto.
+    - Alinhamento à esquerda para colunas de texto longo (Endereço, Motivo)
+    - Alinhamento centralizado ou à direita para outros dados.
+    - Estilo de tabela de total com linha superior na linha "TOTAL GERAL".
+    """
     buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=landscape(letter))
+    doc = SimpleDocTemplate(buffer, pagesize=landscape(letter),
+                            leftMargin=36, rightMargin=36,
+                            topMargin=36, bottomMargin=36)
+    
     styles = getSampleStyleSheet()
+    
+    # --- Definição de Estilos Personalizados ---
+    styles.add(ParagraphStyle(
+        name='CustomH1',
+        parent=styles['h1'],
+        alignment=TA_CENTER,
+        fontSize=18,
+        fontName='Helvetica-Bold',
+        textColor=colors.HexColor("#3B82F6"),
+        spaceAfter=12
+    ))
+    
+    styles.add(ParagraphStyle(
+        name='CustomH2',
+        parent=styles['h2'],
+        fontSize=14,
+        fontName='Helvetica-Bold',
+        textColor=colors.HexColor("#2C5282"), # Um azul mais escuro
+        spaceAfter=6
+    ))
+
+    # Estilo para o texto dentro das células (quebra de linha)
+    data_para_style = ParagraphStyle(
+        name='DataPara',
+        parent=styles['Normal'],
+        alignment=TA_LEFT,
+        fontSize=9
+    )
+    
+    # Estilo para dados numéricos ou curtos
+    data_style = ParagraphStyle(
+        name='Data',
+        parent=styles['Normal'],
+        alignment=TA_CENTER,
+        fontSize=9
+    )
+
+    # Função helper para formatar moeda
+    def format_currency(value):
+        return f"R$ {value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
     elements = []
 
     for report in report_data:
-        elements.append(Paragraph(f"Relatório de Vistorias - {report.imobiliaria_nome} ({report.mes_ano})", styles['h1']))
+        elements.append(Paragraph(f"Relatório de Vistorias - {report.imobiliaria_nome} ({report.mes_ano})", styles['CustomH1']))
         elements.append(Spacer(1, 12))
 
-        elements.append(Paragraph("Vistorias Agendadas", styles['h2']))
-        agendadas_data = [["Data", "Cód.", "Endereço", "Tam.", "Mobília", "Tipo", "Valor"]]
+        # --- Tabela: Vistorias Agendadas ---
+        elements.append(Paragraph("Vistorias Agendadas", styles['CustomH2']))
+        
+        agendadas_data = [
+            ["Data", "Cód.", "Endereço", "Tam.", "Mobília", "Tipo", "Valor"] # Cabeçalho
+        ]
+        
         for v in report.vistorias_agendadas:
-            agendadas_data.append([v.data.strftime("%d/%m/%Y"), v.cod_imovel, Paragraph(v.endereco, styles['Normal']), f"{v.tamanho} m²", v.mobiliado.replace('_', ' '), v.tipo, f"R$ {v.valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")])
+            agendadas_data.append([
+                v.data.strftime("%d/%m/%Y"),
+                v.cod_imovel,
+                Paragraph(v.endereco, data_para_style),
+                f"{v.tamanho} m²",
+                v.mobiliado.replace('_', ' '),
+                v.tipo,
+                format_currency(v.valor)
+            ])
         
         table_agendadas = Table(agendadas_data, colWidths=[55, 50, 250, 50, 80, 80, 70])
-        table_agendadas.setStyle(TableStyle([
+        
+        # Comandos de estilo para a tabela
+        style_commands = [
             ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#3B82F6")),
             ('TEXTCOLOR',(0,0),(-1,0), colors.whitesmoke),
-            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+            ('ALIGN', (0,0), (-1,0), 'CENTER'), # Alinhamento do Cabeçalho
             ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
             ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-            ('BOTTOMPADDING', (0,0), (-1,0), 12),
-            ('BACKGROUND', (0,1), (-1,-1), colors.HexColor("#F3F4F6")),
-            ('GRID', (0,0), (-1,-1), 1, colors.black)
-        ]))
+            ('FONTSIZE', (0,0), (-1,-1), 9),
+            ('BOTTOMPADDING', (0,0), (-1,0), 8), # Padding cabeçalho
+            ('GRID', (0,0), (-1,-1), 1, colors.HexColor("#D4D4D4")), # Grade suave
+            
+            # Alinhamento de dados
+            ('ALIGN', (0,1), (1,-1), 'CENTER'), # Data, Cód
+            ('ALIGN', (2,1), (2,-1), 'LEFT'),   # Endereço (Paragraph já é Left)
+            ('ALIGN', (3,1), (5,-1), 'CENTER'), # Tam, Mobília, Tipo
+            ('ALIGN', (6,1), (6,-1), 'RIGHT'),  # Valor
+        ]
+        
+        # Adiciona cores de linha alternadas
+        for i, row in enumerate(agendadas_data[1:], 1): # Começa do 1 (linha de dados)
+            if i % 2 == 0:
+                style_commands.append(('BACKGROUND', (0,i), (-1,i), colors.HexColor("#F3F4F6")))
+        
+        table_agendadas.setStyle(TableStyle(style_commands))
         elements.append(table_agendadas)
         elements.append(Spacer(1, 24))
 
-        elements.append(Paragraph("Vistorias Improdutivas", styles['h2']))
-        improdutivas_data = [["Data", "Cód. Imóvel", "Motivo", "Valor Cobrado"]]
+        # --- Tabela: Vistorias Improdutivas ---
+        elements.append(Paragraph("Vistorias Improdutivas", styles['CustomH2']))
+        
+        improdutivas_data = [
+            ["Data", "Cód. Imóvel", "Motivo", "Valor Cobrado"] # Cabeçalho
+        ]
+        
         for v in report.vistorias_improdutivas:
-            improdutivas_data.append([v.data_vistoria_original.strftime("%d/%m/%Y"), v.cod_imovel, Paragraph(v.motivo_improdutividade, styles['Normal']), f"R$ {v.valor_cobranca:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")])
+            improdutivas_data.append([
+                v.data_vistoria_original.strftime("%d/%m/%Y"),
+                v.cod_imovel,
+                Paragraph(v.motivo_improdutividade, data_para_style),
+                format_currency(v.valor_cobranca)
+            ])
         
         table_improdutivas = Table(improdutivas_data, colWidths=[80, 80, 450, 100])
-        table_improdutivas.setStyle(TableStyle([
+        
+        style_commands_improd = [
             ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#3B82F6")),
             ('TEXTCOLOR',(0,0),(-1,0), colors.whitesmoke),
-            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+            ('ALIGN', (0,0), (-1,0), 'CENTER'),
             ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
             ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-            ('BOTTOMPADDING', (0,0), (-1,0), 12),
-            ('BACKGROUND', (0,1), (-1,-1), colors.HexColor("#F3F4F6")),
-            ('GRID', (0,0), (-1,-1), 1, colors.black)
-        ]))
+            ('FONTSIZE', (0,0), (-1,-1), 9),
+            ('BOTTOMPADDING', (0,0), (-1,0), 8),
+            ('GRID', (0,0), (-1,-1), 1, colors.HexColor("#D4D4D4")),
+
+            # Alinhamento de dados
+            ('ALIGN', (0,1), (1,-1), 'CENTER'), # Data, Cód
+            ('ALIGN', (2,1), (2,-1), 'LEFT'),   # Motivo
+            ('ALIGN', (3,1), (3,-1), 'RIGHT'),  # Valor
+        ]
+
+        # Adiciona cores de linha alternadas
+        for i, row in enumerate(improdutivas_data[1:], 1):
+            if i % 2 == 0:
+                style_commands_improd.append(('BACKGROUND', (0,i), (-1,i), colors.HexColor("#F3F4F6")))
+
+        table_improdutivas.setStyle(TableStyle(style_commands_improd))
         elements.append(table_improdutivas)
         elements.append(Spacer(1, 24))
 
+        # --- Tabela de Totais ---
         total_data = [
-            ["Total Vistorias:", f"R$ {report.valor_vistorias:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")],
-            ["Total Improdutivas:", f"R$ {report.valor_improdutivas:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")],
-            ["TOTAL GERAL:", f"R$ {report.valor_total:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")]
+            ["Total Vistorias:", format_currency(report.valor_vistorias)],
+            ["Total Improdutivas:", format_currency(report.valor_improdutivas)],
+            ["TOTAL GERAL:", format_currency(report.valor_total)]
         ]
+        
         table_total = Table(total_data, colWidths=[120, 100])
         table_total.setStyle(TableStyle([
             ('ALIGN', (0,0), (-1,-1), 'RIGHT'),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
             ('FONTNAME', (0,0), (-1,-1), 'Helvetica-Bold'),
+            ('FONTSIZE', (0,0), (-1,-1), 10),
+            
+            # Estilo específico para "TOTAL GERAL"
             ('FONTNAME', (0,2), (1,2), 'Helvetica-Bold'),
             ('TEXTCOLOR', (0,2), (1,2), colors.red),
+            ('LINEABOVE', (0,2), (1,2), 1, colors.black), # Linha acima do total
+            ('TOPPADDING', (0,2), (1,2), 6),
         ]))
+        
+        # Alinha a tabela de total à direita da página
+        table_total.hAlign = 'RIGHT'
         elements.append(table_total)
         elements.append(Spacer(1, 48))
 

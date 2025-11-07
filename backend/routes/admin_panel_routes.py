@@ -1451,19 +1451,22 @@ def _create_pdf_report(
         # Tabela de Vistorias (ALTERADO para usar Paragraph em todas as células)
         if report_data.vistorias:
             elements.append(Paragraph("Vistorias Realizadas", styles['h3']))
-            vistorias_data = [["Data", "Cód. Imóvel", "Endereço", "Tamanho", "Mobília", "Valor", "Obs. Privada"]]
+            # CORREÇÃO: Cabeçalho ajustado conforme solicitado
+            vistorias_data = [["Data", "Cód. Imóvel", "Endereço", "Tamanho", "Tipo de Mobília", "Tipo de Vistoria", "Valor Cobrado"]]
             for v in report_data.vistorias:
+                # CORREÇÃO: Colunas ajustadas conforme solicitado
                 vistorias_data.append([
                     Paragraph(v.data.strftime('%d/%m/%Y'), cell_style_normal),
                     Paragraph(str(v.cod_imovel), cell_style_normal),
                     Paragraph(v.endereco, cell_style_normal),
                     Paragraph(f"{v.tamanho} m²", cell_style_normal),
                     Paragraph(str(v.tipo_mobilia), cell_style_normal),
-                    Paragraph(f"R$ {v.valor:.2f}", cell_style_normal),
-                    Paragraph(v.observacao_privada or '---', cell_style_normal)
+                    Paragraph(str(v.tipo_vistoria), cell_style_normal),
+                    Paragraph(f"R$ {v.valor:.2f}", cell_style_normal)
                 ])
             
-            t_vistorias = Table(vistorias_data, colWidths=[60, 70, 250, 60, 80, 80, 150])
+            # CORREÇÃO: Ajuste nas larguras das colunas para 7 colunas
+            t_vistorias = Table(vistorias_data, colWidths=[60, 70, 260, 60, 100, 100, 100])
             t_vistorias.setStyle(header_style)
             t_vistorias.setStyle(body_style)
             elements.append(t_vistorias)
@@ -1487,6 +1490,7 @@ def _create_pdf_report(
             elements.append(t_improd)
 
     # --- CASO 2: Relatório de Vistoriador Específico ---
+    # (Esta seção não foi alterada, pois lida com "Comissão", não "Valor Cobrado")
     elif isinstance(report_data, schemas.RelatorioVistoriador):
         elements.append(Paragraph(f"Relatório de Comissão: {report_data.vistoriador_nome}", styles['h1']))
         elements.append(Paragraph(f"Período: {report_data.periodo}", styles['h2']))
@@ -1571,17 +1575,21 @@ def _create_pdf_report(
             # Tabela de Vistorias Agendadas (ALTERADO para usar Paragraph)
             if rel_mensal.vistorias_agendadas:
                 elements.append(Paragraph("Vistorias Realizadas", styles['h3']))
-                vistorias_data = [["Data", "Cód. Imóvel", "Endereço", "Mobília", "Tipo", "Valor"]]
+                # CORREÇÃO: Cabeçalho ajustado conforme solicitado
+                vistorias_data = [["Data", "Cód. Imóvel", "Endereço", "Tamanho", "Tipo de Mobília", "Tipo de Vistoria", "Valor Cobrado"]]
                 for v in rel_mensal.vistorias_agendadas:
+                    # CORREÇÃO: Colunas ajustadas conforme solicitado
                     vistorias_data.append([
                         Paragraph(v.data.strftime('%d/%m/%Y'), cell_style_normal),
                         Paragraph(str(v.cod_imovel), cell_style_normal),
                         Paragraph(v.endereco, cell_style_normal),
+                        Paragraph(f"{v.tamanho} m²", cell_style_normal), # <-- ADICIONADO
                         Paragraph(str(v.mobiliado), cell_style_normal),
                         Paragraph(str(v.tipo), cell_style_normal),
                         Paragraph(f"R$ {v.valor:.2f}", cell_style_normal),
                     ])
-                t_vistorias = Table(vistorias_data, colWidths=[60, 70, 300, 80, 80, 80])
+                # CORREÇÃO: Ajuste nas larguras das colunas para 7 colunas
+                t_vistorias = Table(vistorias_data, colWidths=[60, 70, 260, 60, 100, 100, 100])
                 t_vistorias.setStyle(header_style)
                 t_vistorias.setStyle(body_style)
                 elements.append(t_vistorias)
@@ -1609,6 +1617,7 @@ def _create_pdf_report(
     elif isinstance(report_data, list):
         elements.append(Paragraph("Relatório Geral Detalhado por Imobiliária", styles['h1']))
         if report_data:
+             # Assumindo que todos os relatórios na lista são do mesmo período
              elements.append(Paragraph(f"Período: {report_data[0].periodo}", styles['h2']))
 
         for rel_imob in report_data:
@@ -1634,15 +1643,21 @@ def _create_pdf_report(
             # Tabela de Vistorias (ALTERADO para usar Paragraph)
             if rel_imob.vistorias:
                 elements.append(Paragraph("Vistorias Realizadas", styles['h3']))
-                vistorias_data = [["Data", "Cód. Imóvel", "Endereço", "Valor"]]
+                # CORREÇÃO: Cabeçalho ajustado conforme solicitado
+                vistorias_data = [["Data", "Cód. Imóvel", "Endereço", "Tamanho", "Tipo de Mobília", "Tipo de Vistoria", "Valor Cobrado"]]
                 for v in rel_imob.vistorias:
+                    # CORREÇÃO: Colunas ajustadas conforme solicitado
                     vistorias_data.append([
                         Paragraph(v.data.strftime('%d/%m/%Y'), cell_style_normal),
                         Paragraph(str(v.cod_imovel), cell_style_normal),
                         Paragraph(v.endereco, cell_style_normal),
+                        Paragraph(f"{v.tamanho} m²", cell_style_normal), # <-- ADICIONADO
+                        Paragraph(str(v.tipo_mobilia), cell_style_normal), # <-- ADICIONADO
+                        Paragraph(str(v.tipo_vistoria), cell_style_normal),
                         Paragraph(f"R$ {v.valor:.2f}", cell_style_normal),
                     ])
-                t_vistorias = Table(vistorias_data, colWidths=[60, 70, 470, 80])
+                # CORREÇÃO: Ajuste nas larguras das colunas para 7 colunas
+                t_vistorias = Table(vistorias_data, colWidths=[60, 70, 260, 60, 100, 100, 100])
                 t_vistorias.setStyle(header_style)
                 t_vistorias.setStyle(body_style)
                 elements.append(t_vistorias)
