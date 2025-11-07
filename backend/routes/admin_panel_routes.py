@@ -37,6 +37,8 @@ from reportlab.platypus import (
 )
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib import colors
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle # <-- NOVO: ParagraphStyle
+from reportlab.lib.enums import TA_LEFT # <-- NOVO: TA_LEFT para alinhamento
 
 # Imports para envio de e-mail
 from sendgrid import SendGridAPIClient
@@ -1359,8 +1361,8 @@ def _create_pdf_report(
         schemas.RelatorioImobiliaria,
         schemas.RelatorioVistoriador,
         schemas.RelatorioGeral,
-        List[schemas.RelatorioImobiliaria], # O seu _get_relatorio_geral_data retorna ESTE tipo
-        List[schemas.RelatorioMensal] # ADICIONANDO ESTE NOVO TIPO
+        List[schemas.RelatorioImobiliaria], 
+        List[schemas.RelatorioMensal] 
     ]
 ):
     """
@@ -1368,17 +1370,49 @@ def _create_pdf_report(
     Esta função agora lida com múltiplos tipos de dados.
     """
     buffer = io.BytesIO()
-    # Usando landscape (paisagem) para mais espaço horizontal
     doc = SimpleDocTemplate(buffer, pagesize=landscape(letter),
                             rightMargin=inch/2, leftMargin=inch/2,
                             topMargin=inch/2, bottomMargin=inch/2)
     elements = []
     styles = getSampleStyleSheet()
 
+    # NOVO: Estilo de Parágrafo para células de dados (garante alinhamento e quebra)
+    # Vamos usar o 'styles['Normal']' como base, que já é alinhado à esquerda.
+    cell_style_normal = styles['Normal']
+    
+    # NOVO: Estilo de Parágrafo para células de Total (para substituir o FONTNAME)
+    cell_style_total = ParagraphStyle(
+        name='CellTotal',
+        parent=styles['Normal'],
+        fontName='Helvetica-Bold',
+        alignment=TA_LEFT
+    )
+    # NOVO: Estilo para Totais de Bloco (Negrito)
+    cell_style_block_total_label = ParagraphStyle(
+        name='BlockTotalLabel',
+        parent=styles['Normal'],
+        fontName='Helvetica-Bold',
+        alignment=TA_LEFT
+    )
+    cell_style_block_total_value = ParagraphStyle(
+        name='BlockTotalValue',
+        parent=styles['Normal'],
+        # Apenas o rótulo é negrito nos seus blocos de totais, exceto o TOTAL GERAL
+        fontName='Helvetica', 
+        alignment=TA_LEFT
+    )
+    cell_style_block_total_geral = ParagraphStyle(
+        name='BlockTotalGeral',
+        parent=styles['Normal'],
+        fontName='Helvetica-Bold',
+        alignment=TA_LEFT
+    )
+
+
     # Estilos de Tabela
     header_style = TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#4F81BD")),
-        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke), # CORREÇÃO: whitesmoke
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke), 
         ('GRID', (0, 0), (-1, -1), 1, colors.black),
         ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
         ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
@@ -1387,9 +1421,9 @@ def _create_pdf_report(
     
     body_style = TableStyle([
         ('GRID', (0, 0), (-1, -1), 1, colors.black),
-        ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
-        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        # ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'), # REMOVIDO: O Paragraph controla
+        # ('ALIGN', (0, 0), (-1, -1), 'LEFT'), # REMOVIDO: O Paragraph controla
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'), # VALIGN 'MIDDLE' é bom manter
     ])
 
 
@@ -1399,56 +1433,55 @@ def _create_pdf_report(
         elements.append(Paragraph(f"Período: {report_data.periodo}", styles['h2']))
         elements.append(Spacer(1, 0.25*inch))
         
-        # Bloco de Totais
+        # Bloco de Totais (ALTERADO para usar Paragraph)
         total_data = [
-            ["Total Vistorias", f"R$ {report_data.total_vistorias:.2f}"],
-            ["Total Improdutivas", f"R$ {report_data.total_improdutivas:.2f}"],
-            ["TOTAL GERAL", f"R$ {report_data.total_geral:.2f}"],
+            [Paragraph("Total Vistorias", cell_style_block_total_label), Paragraph(f"R$ {report_data.total_vistorias:.2f}", cell_style_block_total_value)],
+            [Paragraph("Total Improdutivas", cell_style_block_total_label), Paragraph(f"R$ {report_data.total_improdutivas:.2f}", cell_style_block_total_value)],
+            [Paragraph("TOTAL GERAL", cell_style_block_total_geral), Paragraph(f"R$ {report_data.total_geral:.2f}", cell_style_block_total_geral)],
         ]
         t_totais = Table(total_data, colWidths=[2*inch, 2*inch])
         t_totais.setStyle(TableStyle([
             ('GRID', (0, 0), (-1, -1), 1, colors.black),
-            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
-            ('FONTNAME', (0, 2), (-1, 2), 'Helvetica-Bold'), # Linha Total Geral
+            # ('FONTNAME', ...), # REMOVIDO: Controlado pelo ParagraphStyle
             ('BACKGROUND', (0, 2), (-1, 2), colors.lightgrey),
         ]))
         elements.append(t_totais)
         elements.append(Spacer(1, 0.25*inch))
 
-        # Tabela de Vistorias
+        # Tabela de Vistorias (ALTERADO para usar Paragraph em todas as células)
         if report_data.vistorias:
             elements.append(Paragraph("Vistorias Realizadas", styles['h3']))
             vistorias_data = [["Data", "Cód. Imóvel", "Endereço", "Tamanho", "Mobília", "Valor", "Obs. Privada"]]
             for v in report_data.vistorias:
                 vistorias_data.append([
-                    v.data.strftime('%d/%m/%Y'),
-                    v.cod_imovel,
-                    Paragraph(v.endereco, styles['Normal']),
-                    f"{v.tamanho} m²",
-                    v.tipo_mobilia,
-                    f"R$ {v.valor:.2f}",
-                    Paragraph(v.observacao_privada or '---', styles['Normal'])
+                    Paragraph(v.data.strftime('%d/%m/%Y'), cell_style_normal),
+                    Paragraph(str(v.cod_imovel), cell_style_normal),
+                    Paragraph(v.endereco, cell_style_normal),
+                    Paragraph(f"{v.tamanho} m²", cell_style_normal),
+                    Paragraph(str(v.tipo_mobilia), cell_style_normal),
+                    Paragraph(f"R$ {v.valor:.2f}", cell_style_normal),
+                    Paragraph(v.observacao_privada or '---', cell_style_normal)
                 ])
             
-            t_vistorias = Table(vistorias_data, colWidths=[60, 70, 250, 60, 80, 80, 150]) # Ajuste larguras
+            t_vistorias = Table(vistorias_data, colWidths=[60, 70, 250, 60, 80, 80, 150])
             t_vistorias.setStyle(header_style)
             t_vistorias.setStyle(body_style)
             elements.append(t_vistorias)
             elements.append(Spacer(1, 0.2*inch))
 
-        # Tabela de Improdutivas
+        # Tabela de Improdutivas (ALTERADO para usar Paragraph)
         if report_data.improdutivas:
             elements.append(Paragraph("Vistorias Improdutivas", styles['h3']))
             improd_data = [["Data", "Cód. Imóvel", "Motivo", "Valor Cobrado"]]
             for i in report_data.improdutivas:
                 improd_data.append([
-                    i.data_vistoria_original.strftime('%d/%m/%Y'),
-                    i.cod_imovel or "N/A",
-                    Paragraph(i.motivo_improdutividade, styles['Normal']),
-                    f"R$ {i.valor_cobrado:.2f}"
+                    Paragraph(i.data_vistoria_original.strftime('%d/%m/%Y'), cell_style_normal),
+                    Paragraph(str(i.cod_imovel or "N/A"), cell_style_normal),
+                    Paragraph(i.motivo_improdutividade, cell_style_normal),
+                    Paragraph(f"R$ {i.valor_cobrado:.2f}", cell_style_normal)
                 ])
             
-            t_improd = Table(improd_data, colWidths=[70, 70, 460, 80]) # Ajuste larguras
+            t_improd = Table(improd_data, colWidths=[70, 70, 460, 80])
             t_improd.setStyle(header_style)
             t_improd.setStyle(body_style)
             elements.append(t_improd)
@@ -1459,33 +1492,32 @@ def _create_pdf_report(
         elements.append(Paragraph(f"Período: {report_data.periodo}", styles['h2']))
         elements.append(Spacer(1, 0.25*inch))
 
-        # Bloco de Totais
+        # Bloco de Totais (ALTERADO para usar Paragraph)
         total_data = [
-            ["Comissão Vistorias", f"R$ {report_data.total_comissao_vistorias:.2f}"],
-            ["Comissão Improdutivas", f"R$ {report_data.total_comissao_improdutivas:.2f}"],
-            ["TOTAL GERAL", f"R$ {report_data.total_geral_comissao:.2f}"],
+            [Paragraph("Comissão Vistorias", cell_style_block_total_label), Paragraph(f"R$ {report_data.total_comissao_vistorias:.2f}", cell_style_block_total_value)],
+            [Paragraph("Comissão Improdutivas", cell_style_block_total_label), Paragraph(f"R$ {report_data.total_comissao_improdutivas:.2f}", cell_style_block_total_value)],
+            [Paragraph("TOTAL GERAL", cell_style_block_total_geral), Paragraph(f"R$ {report_data.total_geral_comissao:.2f}", cell_style_block_total_geral)],
         ]
         t_totais = Table(total_data, colWidths=[2*inch, 2*inch])
         t_totais.setStyle(TableStyle([
             ('GRID', (0, 0), (-1, -1), 1, colors.black),
-            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
-            ('FONTNAME', (0, 2), (-1, 2), 'Helvetica-Bold'),
+            # ('FONTNAME', ...), # REMOVIDO
             ('BACKGROUND', (0, 2), (-1, 2), colors.lightgrey),
         ]))
         elements.append(t_totais)
         elements.append(Spacer(1, 0.25*inch))
         
-        # Tabelas de Vistorias por Imobiliária
+        # Tabelas de Vistorias por Imobiliária (ALTERADO para usar Paragraph)
         for imob_nome, vistorias in report_data.vistorias_por_imobiliaria.items():
             elements.append(Paragraph(f"Imobiliária: {imob_nome}", styles['h3']))
             vistorias_data = [["Data", "Cód. Imóvel", "Tipo", "Obs. Vistoriador", "Comissão"]]
             for v in vistorias:
                 vistorias_data.append([
-                    v.data.strftime('%d/%m/%Y'),
-                    v.cod_imovel,
-                    v.tipo_vistoria,
-                    Paragraph(v.observacao_privada or '---', styles['Normal']), # Usando obs. privada aqui, ajuste se for outra
-                    f"R$ {v.comissao_vistoriador:.2f}"
+                    Paragraph(v.data.strftime('%d/%m/%Y'), cell_style_normal),
+                    Paragraph(str(v.cod_imovel), cell_style_normal),
+                    Paragraph(str(v.tipo_vistoria), cell_style_normal),
+                    Paragraph(v.observacao_privada or '---', cell_style_normal),
+                    Paragraph(f"R$ {v.comissao_vistoriador:.2f}", cell_style_normal)
                 ])
             
             t_vistorias = Table(vistorias_data, colWidths=[70, 70, 80, 400, 80])
@@ -1494,15 +1526,15 @@ def _create_pdf_report(
             elements.append(t_vistorias)
             elements.append(Spacer(1, 0.2*inch))
 
-        # Tabela de Improdutivas
+        # Tabela de Improdutivas (ALTERADO para usar Paragraph)
         if report_data.improdutivas:
             elements.append(Paragraph("Comissão Improdutivas", styles['h3']))
             improd_data = [["Data", "Motivo", "Comissão"]]
             for i in report_data.improdutivas:
                 improd_data.append([
-                    i.data_vistoria_original.strftime('%d/%m/%Y'),
-                    Paragraph(i.motivo_improdutividade, styles['Normal']),
-                    f"R$ {i.comissao_vistoriador:.2f}"
+                    Paragraph(i.data_vistoria_original.strftime('%d/%m/%Y'), cell_style_normal),
+                    Paragraph(i.motivo_improdutividade, cell_style_normal),
+                    Paragraph(f"R$ {i.comissao_vistoriador:.2f}", cell_style_normal)
                 ])
             
             t_improd = Table(improd_data, colWidths=[70, 550, 80])
@@ -1510,9 +1542,7 @@ def _create_pdf_report(
             t_improd.setStyle(body_style)
             elements.append(t_improd)
 
-    # --- NOVO CASO: Relatório Mensal (List[schemas.RelatorioMensal]) ---
-    # Esta verificação deve vir ANTES do 'CASO 3' para garantir que 
-    # o tipo List[RelatorioMensal] seja tratado primeiro.
+    # --- NOVO CASO: Relatório Mensal ---
     elif isinstance(report_data, list) and report_data and isinstance(report_data[0], schemas.RelatorioMensal):
         elements.append(Paragraph("Relatório Mensal de Vistorias", styles['h1']))
         if report_data:
@@ -1523,34 +1553,33 @@ def _create_pdf_report(
             elements.append(Paragraph(f"Imobiliária: {rel_mensal.imobiliaria_nome}", styles['h2']))
             elements.append(Spacer(1, 0.2*inch))
 
-            # Bloco de Totais
+            # Bloco de Totais (ALTERADO para usar Paragraph)
             total_data = [
-                ["Total Vistorias", f"R$ {rel_mensal.valor_vistorias:.2f}"],
-                ["Total Improdutivas", f"R$ {rel_mensal.valor_improdutivas:.2f}"],
-                ["TOTAL GERAL", f"R$ {rel_mensal.valor_total:.2f}"],
+                [Paragraph("Total Vistorias", cell_style_block_total_label), Paragraph(f"R$ {rel_mensal.valor_vistorias:.2f}", cell_style_block_total_value)],
+                [Paragraph("Total Improdutivas", cell_style_block_total_label), Paragraph(f"R$ {rel_mensal.valor_improdutivas:.2f}", cell_style_block_total_value)],
+                [Paragraph("TOTAL GERAL", cell_style_block_total_geral), Paragraph(f"R$ {rel_mensal.valor_total:.2f}", cell_style_block_total_geral)],
             ]
             t_totais = Table(total_data, colWidths=[2*inch, 2*inch])
             t_totais.setStyle(TableStyle([
                 ('GRID', (0, 0), (-1, -1), 1, colors.black),
-                ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
-                ('FONTNAME', (0, 2), (-1, 2), 'Helvetica-Bold'),
+                # ('FONTNAME', ...), # REMOVIDO
                 ('BACKGROUND', (0, 2), (-1, 2), colors.lightgrey),
             ]))
             elements.append(t_totais)
             elements.append(Spacer(1, 0.2*inch))
             
-            # Tabela de Vistorias Agendadas
+            # Tabela de Vistorias Agendadas (ALTERADO para usar Paragraph)
             if rel_mensal.vistorias_agendadas:
                 elements.append(Paragraph("Vistorias Realizadas", styles['h3']))
                 vistorias_data = [["Data", "Cód. Imóvel", "Endereço", "Mobília", "Tipo", "Valor"]]
                 for v in rel_mensal.vistorias_agendadas:
                     vistorias_data.append([
-                        v.data.strftime('%d/%m/%Y'),
-                        v.cod_imovel,
-                        Paragraph(v.endereco, styles['Normal']),
-                        v.mobiliado,
-                        v.tipo,
-                        f"R$ {v.valor:.2f}",
+                        Paragraph(v.data.strftime('%d/%m/%Y'), cell_style_normal),
+                        Paragraph(str(v.cod_imovel), cell_style_normal),
+                        Paragraph(v.endereco, cell_style_normal),
+                        Paragraph(str(v.mobiliado), cell_style_normal),
+                        Paragraph(str(v.tipo), cell_style_normal),
+                        Paragraph(f"R$ {v.valor:.2f}", cell_style_normal),
                     ])
                 t_vistorias = Table(vistorias_data, colWidths=[60, 70, 300, 80, 80, 80])
                 t_vistorias.setStyle(header_style)
@@ -1558,16 +1587,16 @@ def _create_pdf_report(
                 elements.append(t_vistorias)
                 elements.append(Spacer(1, 0.2*inch))
 
-            # Tabela de Improdutivas
+            # Tabela de Improdutivas (ALTERADO para usar Paragraph)
             if rel_mensal.vistorias_improdutivas:
                 elements.append(Paragraph("Vistorias Improdutivas", styles['h3']))
                 improd_data = [["Data", "Cód. Imóvel", "Motivo", "Valor Cobrado"]]
                 for i in rel_mensal.vistorias_improdutivas:
                     improd_data.append([
-                        i.data_vistoria_original.strftime('%d/%m/%Y'),
-                        i.cod_imovel or "N/A",
-                        Paragraph(i.motivo_improdutividade, styles['Normal']),
-                        f"R$ {i.valor_cobranca:.2f}"
+                        Paragraph(i.data_vistoria_original.strftime('%d/%m/%Y'), cell_style_normal),
+                        Paragraph(str(i.cod_imovel or "N/A"), cell_style_normal),
+                        Paragraph(i.motivo_improdutividade, cell_style_normal),
+                        Paragraph(f"R$ {i.valor_cobranca:.2f}", cell_style_normal)
                     ])
                 t_improd = Table(improd_data, colWidths=[70, 70, 460, 80])
                 t_improd.setStyle(header_style)
@@ -1576,11 +1605,10 @@ def _create_pdf_report(
             
             elements.append(PageBreak())
 
-    # --- CASO 3: Relatório Geral (Detalhado, por Imobiliária) ---
+    # --- CASO 3: Relatório Geral (Detalhado) ---
     elif isinstance(report_data, list):
-        # Este é o caso do _get_relatorio_geral_data, que retorna List[RelatorioImobiliaria]
         elements.append(Paragraph("Relatório Geral Detalhado por Imobiliária", styles['h1']))
-        if report_data: # Adiciona o período do primeiro relatório (todos devem ser iguais)
+        if report_data:
              elements.append(Paragraph(f"Período: {report_data[0].periodo}", styles['h2']))
 
         for rel_imob in report_data:
@@ -1588,32 +1616,31 @@ def _create_pdf_report(
             elements.append(Paragraph(f"Imobiliária: {rel_imob.imobiliaria_nome}", styles['h2']))
             elements.append(Spacer(1, 0.2*inch))
 
-            # Bloco de Totais (copiado do CASO 1)
+            # Bloco de Totais (ALTERADO para usar Paragraph)
             total_data = [
-                ["Total Vistorias", f"R$ {rel_imob.total_vistorias:.2f}"],
-                ["Total Improdutivas", f"R$ {rel_imob.total_improdutivas:.2f}"],
-                ["TOTAL GERAL", f"R$ {rel_imob.total_geral:.2f}"],
+                [Paragraph("Total Vistorias", cell_style_block_total_label), Paragraph(f"R$ {rel_imob.total_vistorias:.2f}", cell_style_block_total_value)],
+                [Paragraph("Total Improdutivas", cell_style_block_total_label), Paragraph(f"R$ {rel_imob.total_improdutivas:.2f}", cell_style_block_total_value)],
+                [Paragraph("TOTAL GERAL", cell_style_block_total_geral), Paragraph(f"R$ {rel_imob.total_geral:.2f}", cell_style_block_total_geral)],
             ]
             t_totais = Table(total_data, colWidths=[2*inch, 2*inch])
             t_totais.setStyle(TableStyle([
                 ('GRID', (0, 0), (-1, -1), 1, colors.black),
-                ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
-                ('FONTNAME', (0, 2), (-1, 2), 'Helvetica-Bold'),
+                # ('FONTNAME', ...), # REMOVIDO
                 ('BACKGROUND', (0, 2), (-1, 2), colors.lightgrey),
             ]))
             elements.append(t_totais)
             elements.append(Spacer(1, 0.2*inch))
             
-            # Tabela de Vistorias (copiado do CASO 1)
+            # Tabela de Vistorias (ALTERADO para usar Paragraph)
             if rel_imob.vistorias:
                 elements.append(Paragraph("Vistorias Realizadas", styles['h3']))
-                vistorias_data = [["Data", "Cód. Imóvel", "Endereço", "Valor"]] # Versão simplificada para o geral
+                vistorias_data = [["Data", "Cód. Imóvel", "Endereço", "Valor"]]
                 for v in rel_imob.vistorias:
                     vistorias_data.append([
-                        v.data.strftime('%d/%m/%Y'),
-                        v.cod_imovel,
-                        Paragraph(v.endereco, styles['Normal']),
-                        f"R$ {v.valor:.2f}",
+                        Paragraph(v.data.strftime('%d/%m/%Y'), cell_style_normal),
+                        Paragraph(str(v.cod_imovel), cell_style_normal),
+                        Paragraph(v.endereco, cell_style_normal),
+                        Paragraph(f"R$ {v.valor:.2f}", cell_style_normal),
                     ])
                 t_vistorias = Table(vistorias_data, colWidths=[60, 70, 470, 80])
                 t_vistorias.setStyle(header_style)
@@ -1621,58 +1648,63 @@ def _create_pdf_report(
                 elements.append(t_vistorias)
                 elements.append(Spacer(1, 0.2*inch))
 
-            # Tabela de Improdutivas (copiado do CASO 1)
+            # Tabela de Improdutivas (ALTERADO para usar Paragraph)
             if rel_imob.improdutivas:
                 elements.append(Paragraph("Vistorias Improdutivas", styles['h3']))
                 improd_data = [["Data", "Cód. Imóvel", "Motivo", "Valor Cobrado"]]
                 for i in rel_imob.improdutivas:
                     improd_data.append([
-                        i.data_vistoria_original.strftime('%d/%m/%Y'),
-                        i.cod_imovel or "N/A",
-                        Paragraph(i.motivo_improdutividade, styles['Normal']),
-                        f"R$ {i.valor_cobrado:.2f}"
+                        Paragraph(i.data_vistoria_original.strftime('%d/%m/%Y'), cell_style_normal),
+                        Paragraph(str(i.cod_imovel or "N/A"), cell_style_normal),
+                        Paragraph(i.motivo_improdutividade, cell_style_normal),
+                        Paragraph(f"R$ {i.valor_cobrado:.2f}", cell_style_normal)
                     ])
                 t_improd = Table(improd_data, colWidths=[70, 70, 460, 80])
                 t_improd.setStyle(header_style)
                 t_improd.setStyle(body_style)
                 elements.append(t_improd)
             
-            elements.append(PageBreak()) # Pula para a próxima página para a próxima imobiliária
+            elements.append(PageBreak()) 
 
 
-    # --- CASO 4: Relatório Geral (Resumo - Lógica Antiga) ---
+    # --- CASO 4: Relatório Geral (Resumo) ---
     elif isinstance(report_data, schemas.RelatorioGeral):
-        # Esta era a sua lógica original.
         elements.append(Paragraph(f"Relatório Geral de Faturamento - {report_data.periodo}", styles['h1']))
         elements.append(Spacer(1, 12))
         data = [["Imobiliária", "Vistorias (Qtd)", "Improdutivas (Qtd)", "Valor Vistorias", "Valor Improdutivas"]]
-        for item in report_data.data:
-            data.append([item.imobiliaria_nome, item.total_vistorias, item.total_improdutivas, f"R$ {item.valor_total_vistorias:.2f}", f"R$ {item.valor_total_improdutivas:.2f}"])
         
-        # Linha de Totais
+        # ALTERADO para usar Paragraph
+        for item in report_data.data:
+            data.append([
+                Paragraph(str(item.imobiliaria_nome), cell_style_normal),
+                Paragraph(str(item.total_vistorias), cell_style_normal),
+                Paragraph(str(item.total_improdutivas), cell_style_normal),
+                Paragraph(f"R$ {item.valor_total_vistorias:.2f}", cell_style_normal),
+                Paragraph(f"R$ {item.valor_total_improdutivas:.2f}", cell_style_normal)
+            ])
+        
+        # Linha de Totais (ALTERADO para usar Paragraph com estilo 'total')
         data.append([
-            "TOTAIS", 
-            report_data.total_geral_vistorias, 
-            report_data.total_geral_improdutivas, 
-            f"R$ {report_data.valor_final_vistorias:.2f}", 
-            f"R$ {report_data.valor_final_improdutivas:.2f}"
+            Paragraph("TOTAIS", cell_style_total), 
+            Paragraph(str(report_data.total_geral_vistorias), cell_style_total), 
+            Paragraph(str(report_data.total_geral_improdutivas), cell_style_total), 
+            Paragraph(f"R$ {report_data.valor_final_vistorias:.2f}", cell_style_total), 
+            Paragraph(f"R$ {report_data.valor_final_improdutivas:.2f}", cell_style_total)
         ])
         
         t = Table(data, colWidths=[200, 100, 100, 100, 100])
-        # Aplicando estilos de header e corpo
         t.setStyle(header_style)
         t.setStyle(body_style)
-        # Estilo para a linha de total
+        
+        # Estilo para a linha de total (REMOVIDO FONTNAME)
         t.setStyle(TableStyle([
             ('BACKGROUND', (0, -1), (-1, -1), colors.lightgrey),
-            ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+            # ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'), # REMOVIDO
         ]))
         elements.append(t)
 
     # --- Fallback ---
     if not elements:
-        # Se nenhum 'if' foi satisfeito, 'elements' estará vazio.
-        # Adicionamos uma página de erro para evitar o bug "sem páginas".
         elements.append(Paragraph("Erro: Não foi possível gerar o conteúdo para este relatório em PDF.", styles['Normal']))
         elements.append(Paragraph("Tipo de dado recebido não foi reconhecido.", styles['Normal']))
 
