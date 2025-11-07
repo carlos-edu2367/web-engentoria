@@ -24,13 +24,15 @@ function formatMobilia(status) {
 
 /**
  * Renderiza o relatório de uma imobiliária no container de resultados para visualização.
+ * ATUALIZADO: Agrupa por tipo de vistoria e remove coluna de observação.
  * @param {object} data - Os dados do relatório vindos da API.
  */
 function renderRelatorioImobiliaria(data) {
     const container = document.getElementById('report-results');
     const { vistorias, improdutivas, total_vistorias, total_improdutivas, total_geral } = data;
 
-    const renderTable = (title, items, columns) => {
+    // Função interna para renderizar tabela de improdutivas (ou qualquer tabela simples)
+    const renderSimpleTable = (title, items, columns) => {
         if (items.length === 0) return `<h4 class="text-lg font-semibold text-cyan-300 mt-6 mb-2">${title}</h4><p class="text-gray-400">Nenhum item encontrado.</p>`;
         return `
             <h4 class="text-lg font-semibold text-cyan-300 mt-6 mb-2">${title}</h4>
@@ -51,17 +53,71 @@ function renderRelatorioImobiliaria(data) {
         `;
     };
 
-    const vistoriasCols = [
-        { header: 'Data', render: item => new Date(item.data + 'T00:00:00').toLocaleDateString('pt-BR') },
-        { header: 'Cód. Imóvel', render: item => sanitizeHTML(item.cod_imovel) },
-        { header: 'Endereço', render: item => sanitizeHTML(item.endereco), className: 'truncate max-w-xs', title: item => item.endereco },
-        { header: 'Tamanho', render: item => `${item.tamanho} m²` },
-        { header: 'Mobília', render: item => formatMobilia(item.tipo_mobilia) },
-        { header: 'Valor', render: item => `R$ ${(item.valor || 0).toFixed(2)}` },
-        { header: 'Obs. Vistoriador', render: item => sanitizeHTML(item.observacao_vistoriador || '---'), className: 'truncate max-w-xs', title: item => item.observacao_vistoriador },
-        { header: 'Obs. Privada', render: item => sanitizeHTML(item.observacao_privada || '---'), className: 'truncate max-w-xs', title: item => item.observacao_privada },
-    ];
+    // Geração do HTML das vistorias agrupadas
+    let vistoriasHTML = '<h4 class="text-lg font-semibold text-cyan-300 mt-6 mb-2">Vistorias Realizadas</h4>';
+    if (vistorias.length > 0) {
+        // 1. Agrupar vistorias por tipo
+        const vistoriasAgrupadas = vistorias.reduce((acc, v) => {
+            const tipo = v.tipo_vistoria || 'Sem Tipo';
+            if (!acc[tipo]) acc[tipo] = [];
+            acc[tipo].push(v);
+            return acc;
+        }, {});
+
+        // 2. Definir ordem e ordenar os tipos
+        const ordemTipos = ['ENTRADA', 'SAIDA', 'CONFERENCIA', 'AVERIGUACAO', 'COMPLEMENTO_VISITA'];
+        const tiposOrdenados = Object.keys(vistoriasAgrupadas).sort((a, b) => {
+            const indexA = ordemTipos.indexOf(a);
+            const indexB = ordemTipos.indexOf(b);
+            const valA = (indexA === -1) ? Infinity : indexA;
+            const valB = (indexB === -1) ? Infinity : indexB;
+            if (valA !== valB) return valA - valB;
+            return a.localeCompare(b); // Fallback
+        });
+
+        // 3. Renderizar uma tabela para cada tipo
+        for (const tipo of tiposOrdenados) {
+            const vistoriasDoTipo = vistoriasAgrupadas[tipo];
+            
+            vistoriasHTML += `
+                <h5 class="text-md font-medium text-gray-300 mt-4 mb-2 ml-1">${sanitizeHTML(tipo)} (${vistoriasDoTipo.length} vistorias)</h5>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead class="bg-gray-900/50">
+                            <tr>
+                                <th class="p-2 text-left">Data</th>
+                                <th class="p-2 text-left">Cód. Imóvel</th>
+                                <th class="p-2 text-left">Endereço</th>
+                                <th class="p-2 text-left">Tamanho</th>
+                                <th class="p-2 text-left">Mobília</th>
+                                <th class="p-2 text-left">Tipo</th>
+                                <th class="p-2 text-left">Valor</th>
+                                <th class="p-2 text-left">Obs. Privada</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${vistoriasDoTipo.map(v => `
+                                <tr class="border-b border-gray-700">
+                                    <td class="p-2">${new Date(v.data + 'T00:00:00').toLocaleDateString('pt-BR')}</td>
+                                    <td class="p-2">${sanitizeHTML(v.cod_imovel)}</td>
+                                    <td class="p-2 truncate max-w-xs" title="${sanitizeHTML(v.endereco)}">${sanitizeHTML(v.endereco)}</td>
+                                    <td class="p-2">${v.tamanho} m²</td>
+                                    <td class="p-2">${formatMobilia(v.tipo_mobilia)}</td>
+                                    <td class="p-2">${sanitizeHTML(v.tipo_vistoria)}</td>
+                                    <td class="p-2">R$ ${(v.valor || 0).toFixed(2)}</td>
+                                    <td class="p-2 truncate max-w-xs" title="${sanitizeHTML(v.observacao_privada || '---')}">${sanitizeHTML(v.observacao_privada || '---')}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        }
+    } else {
+        vistoriasHTML += '<p class="text-gray-400">Nenhum item encontrado.</p>';
+    }
     
+    // Definição das colunas de improdutivas
     const improdutivasCols = [
         { header: 'Data', render: item => new Date(item.data_vistoria_original + 'T00:00:00').toLocaleDateString('pt-BR') },
         { header: 'Cód. Imóvel', render: item => sanitizeHTML(item.cod_imovel) },
@@ -69,6 +125,7 @@ function renderRelatorioImobiliaria(data) {
         { header: 'Valor', render: item => `R$ ${(item.valor_cobrado || 0).toFixed(2)}` },
     ];
 
+    // Renderização final
     container.innerHTML = `
         <div class="bg-gray-800/50 p-6 rounded-xl neon-border mt-8">
             <div class="border-b border-gray-700 pb-4 mb-4">
@@ -91,14 +148,15 @@ function renderRelatorioImobiliaria(data) {
                 </div>
             </div>
 
-            ${renderTable('Vistorias Realizadas', vistorias, vistoriasCols)}
-            ${renderTable('Vistorias Improdutivas', improdutivas, improdutivasCols)}
+            ${vistoriasHTML}
+            ${renderSimpleTable('Vistorias Improdutivas', improdutivas, improdutivasCols)}
         </div>
     `;
 }
 
 /**
  * Renderiza o relatório de um vistoriador para visualização.
+ * ATUALIZADO: Agrupa por tipo de vistoria e remove coluna de observação.
  * @param {object} data - Os dados do relatório.
  */
 function renderRelatorioVistoriador(data) {
@@ -109,33 +167,63 @@ function renderRelatorioVistoriador(data) {
     if (Object.keys(vistorias_por_imobiliaria).length > 0) {
         for (const imobNome in vistorias_por_imobiliaria) {
             const vistorias = vistorias_por_imobiliaria[imobNome];
+            
             tablesHTML += `
                 <h4 class="text-lg font-semibold text-cyan-300 mt-6 mb-2">Imobiliária: ${sanitizeHTML(imobNome)}</h4>
-                <div class="overflow-x-auto">
-                    <table class="w-full text-sm">
-                        <thead class="bg-gray-900/50">
-                            <tr>
-                                <th class="p-2 text-left">Data</th>
-                                <th class="p-2 text-left">Cód. Imóvel</th>
-                                <th class="p-2 text-left">Tipo</th>
-                                <th class="p-2 text-left">Obs. Vistoriador</th>
-                                <th class="p-2 text-left">Comissão</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${vistorias.map(v => `
-                                <tr class="border-b border-gray-700">
-                                    <td class="p-2">${new Date(v.data + 'T00:00:00').toLocaleDateString('pt-BR')}</td>
-                                    <td class="p-2">${sanitizeHTML(v.cod_imovel)}</td>
-                                    <td class="p-2">${sanitizeHTML(v.tipo_vistoria)}</td>
-                                    <td class="p-2 truncate max-w-xs" title="${sanitizeHTML(v.observacao_vistoriador || '')}">${sanitizeHTML(v.observacao_vistoriador || '---')}</td>
-                                    <td class="p-2">R$ ${(v.comissao_vistoriador || 0).toFixed(2)}</td>
-                                </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
-                </div>
             `;
+
+            // 1. Agrupar vistorias por tipo
+            const vistoriasAgrupadas = vistorias.reduce((acc, v) => {
+                const tipo = v.tipo_vistoria || 'Sem Tipo';
+                if (!acc[tipo]) acc[tipo] = [];
+                acc[tipo].push(v);
+                return acc;
+            }, {});
+
+            // 2. Definir ordem e ordenar os tipos
+            // A data já vem ordenada do backend
+            const ordemTipos = ['ENTRADA', 'SAIDA', 'CONFERENCIA', 'AVERIGUACAO', 'COMPLEMENTO_VISITA'];
+            const tiposOrdenados = Object.keys(vistoriasAgrupadas).sort((a, b) => {
+                const indexA = ordemTipos.indexOf(a);
+                const indexB = ordemTipos.indexOf(b);
+                
+                const valA = (indexA === -1) ? Infinity : indexA;
+                const valB = (indexB === -1) ? Infinity : indexB;
+
+                if (valA !== valB) return valA - valB;
+                return a.localeCompare(b); // Fallback para tipos não listados
+            });
+
+            // 3. Renderizar uma tabela para cada tipo
+            for (const tipo of tiposOrdenados) {
+                const vistoriasDoTipo = vistoriasAgrupadas[tipo];
+                
+                tablesHTML += `
+                    <h5 class="text-md font-medium text-gray-300 mt-4 mb-2 ml-1">${sanitizeHTML(tipo)} (${vistoriasDoTipo.length} vistorias)</h5>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm">
+                            <thead class="bg-gray-900/50">
+                                <tr>
+                                    <th class="p-2 text-left">Data</th>
+                                    <th class="p-2 text-left">Cód. Imóvel</th>
+                                    <th class="p-2 text-left">Tipo</th>
+                                    <th class="p-2 text-left">Comissão</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${vistoriasDoTipo.map(v => `
+                                    <tr class="border-b border-gray-700">
+                                        <td class="p-2">${new Date(v.data + 'T00:00:00').toLocaleDateString('pt-BR')}</td>
+                                        <td class="p-2">${sanitizeHTML(v.cod_imovel)}</td>
+                                        <td class="p-2">${sanitizeHTML(v.tipo_vistoria)}</td>
+                                        <td class="p-2">R$ ${(v.comissao_vistoriador || 0).toFixed(2)}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+            }
         }
     } else {
         tablesHTML += '<p class="text-gray-400 mt-4">Nenhuma vistoria encontrada para este período.</p>';
