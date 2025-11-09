@@ -547,7 +547,7 @@ async def ver_laudo_agendamento(id_agendamento: str,
     if not laudo:
         raise HTTPException(status_code=404, detail="Nenhum laudo encontrado")
     
-    categorias = sorted(laudo.categorias, key=lambda d: d.created_at, reverse=True)
+    categorias = sorted(laudo.categorias, key=lambda d: d.created_at, reverse=False)
     
     return {
         "id": laudo.id,

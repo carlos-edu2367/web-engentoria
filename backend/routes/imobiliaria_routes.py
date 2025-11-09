@@ -1000,3 +1000,97 @@ async def ver_comentarios(  id_agendamento: str,
         } for c in comentarios]
     }
 
+@router.get("/agenda/{id_agenda}/laudo")
+async def ver_status_laudo(id_agenda: str,
+                           session: Session = Depends(get_db),
+                           user: models.GrupoImobiliaria = Depends(auth.get_current_active_imobiliaria_group)):
+    
+    try:
+        agenda_id = UUID(id_agenda)
+    except:
+        raise HTTPException(status_code=400, detail="ID inválido")
+    
+    laudo = (session.query(models.Laudo)
+             .filter(models.Laudo.agenda_id == agenda_id)
+             .first())
+    if not laudo:
+        raise HTTPException(status_code=404, detail="Nenhum laudo encontrado")
+    
+    return {
+        "id": laudo.id,
+        "finalizado": laudo.finalizado,
+        "aprovado": laudo.aprovado
+    }
+
+@router.get("/laudo/{id_laudo}")
+async def ver_laudo(id_laudo: str,
+                    session: Session = Depends(get_db),
+                    user: models.GrupoImobiliaria = Depends(auth.get_current_active_imobiliaria_group)):
+    try:
+        laudo_id = UUID(id_laudo)
+    except:
+        raise HTTPException(status_code=400, detail="ID inválido")
+    
+    laudo = (session.query(models.Laudo)
+             .options(joinedload(models.Laudo.categorias))
+             .filter(models.Laudo.id == laudo_id)
+             .first())
+    if not laudo:
+        raise HTTPException(status_code=404, detail="Laudo não encontrado")
+    
+    if laudo.aprovado != True:
+        raise HTTPException(status_code=400, detail="Aguarde a aprovação do laudo")
+    
+    categorias = sorted(laudo.categorias, key=lambda d: d.created_at, reverse=False)
+
+    return {
+        "id": laudo.id,
+        "finalizado": laudo.finalizado,
+        "aprovado": laudo.aprovado,
+        "codigo_imovel": laudo.imovel.cod_imovel,
+        "endereco": laudo.imovel.endereco,
+        "data_agendada": laudo.agenda.data,
+        "categorias": [{
+            "id": c.id,
+            "titulo": c.titulo
+        }for c in categorias]
+    }
+
+@router.get("/categoria/{id_categoria}")
+async def ver_categoria(id_categoria: str,
+                    session: Session = Depends(get_db),
+                    user: models.GrupoImobiliaria = Depends(auth.get_current_active_imobiliaria_group)):
+    try:
+        categoria_id = UUID(id_categoria)
+    except:
+        raise HTTPException(status_code=400, detail="ID inválido")
+    
+    categoria = (session.query(models.CategoriaLaudo)
+                 .options(joinedload(models.CategoriaLaudo.imagens),
+                          joinedload(models.CategoriaLaudo.itens))
+                 .filter(models.CategoriaLaudo.id == categoria_id)
+                 .first())
+    if not categoria:
+        raise HTTPException(status_code=404, detail="Categoria não encontrada")
+    
+    if categoria.laudo.aprovado != True:
+        raise HTTPException(status_code=400, detail="Aguarde a aprovação do laudo")
+    
+    itens = sorted(categoria.itens, key=lambda d: d.created_at, reverse=False)
+    imagens = categoria.imagens
+
+    return {
+        "id": categoria.id,
+        "titulo": categoria.titulo,
+        "created_at": categoria.created_at,
+        "itens": [{
+            "id": i.id,
+            "descricao": i.descricao,
+            "created_at": i.created_at
+        }for i in itens],
+        "imagens": [{
+            "id": i.id,
+            "file_path": i.file_path,
+            "link": gerar_url_assinada(bucket="imagens", file_path=i.file_path)
+        }for i in imagens]
+    }
