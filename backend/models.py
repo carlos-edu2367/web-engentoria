@@ -81,6 +81,7 @@ class Imobiliaria(Base):
     valor_sem_mobilia = Column(Numeric(10, 2), nullable=False, default=0.0)
     valor_semi_mobiliado = Column(Numeric(10, 2), nullable=False, default=0.0)
     valor_mobiliado = Column(Numeric(10, 2), nullable=False, default=0.0)
+    valor_minimo = Column(Numeric(10, 2))
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
     updated_at = Column(TIMESTAMP(timezone=True), default=func.now(), onupdate=func.now())
     is_deleted = Column(Boolean, default=False, nullable=False, index=True)

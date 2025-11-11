@@ -278,17 +278,42 @@ def _calculate_valor_base_imovel(imobiliaria: models.Imobiliaria, tamanho: float
     
     return round(tamanho * float(valor_m2), 2)
 
-def _calculate_valor_final_vistoria(imovel: models.Imovel, tipo_vistoria: str) -> float:
-    """Calcula o valor FINAL (cobrado) da vistoria com base no tipo."""
-    if tipo_vistoria == 'AVERIGUACAO':
-        return 65.00
-
-    valor_base = float(imovel.valor)
+def _calculate_valor_final_vistoria(imovel: models.Imovel, imobiliaria: models.Imobiliaria, tipo_vistoria: str) -> float:
+    """
+    Calcula o valor FINAL (cobrado) da vistoria com base no tipo
+    e no valor mínimo da imobiliária.
+    """
     
-    if tipo_vistoria in ['CONFERENCIA', 'COMPLEMENTO_VISITA']:
-        return round(valor_base * 0.5, 2)
-    else:
-        return round(valor_base, 2)
+    valor_base_calculado = 0.0
+    valor_minimo_aplicavel = 0.0
+    # Garante que o valor mínimo seja um float, tratando o caso de ser None
+    valor_minimo_imob = float(imobiliaria.valor_minimo or 0)
+
+    if tipo_vistoria == 'AVERIGUACAO':
+        # Valor fixo para averiguação
+        valor_base_calculado = 65.00
+        # Averiguação é valor cheio, então o mínimo aplicável é o valor mínimo total
+        valor_minimo_aplicavel = valor_minimo_imob
+    
+    elif tipo_vistoria in ['CONFERENCIA', 'COMPLEMENTO_VISITA']:
+        # Vistorias com 50% do valor
+        valor_base_imovel = float(imovel.valor)
+        valor_base_calculado = valor_base_imovel * 0.5
+        # Regra: Se for 50%, o mínimo também é 50%
+        valor_minimo_aplicavel = valor_minimo_imob * 0.5
+    
+    else: 
+        # Vistorias de valor "cheio" (ENTRADA, SAIDA, etc.)
+        valor_base_imovel = float(imovel.valor)
+        valor_base_calculado = valor_base_imovel
+        # Vistoria de valor cheio, o mínimo é o valor cheio
+        valor_minimo_aplicavel = valor_minimo_imob
+
+    # Compara o valor calculado com o mínimo aplicável para aquele tipo de vistoria
+    # O valor final é o maior dos dois (nunca será menor que o mínimo)
+    valor_final = max(valor_base_calculado, valor_minimo_aplicavel)
+    
+    return round(valor_final, 2)
 
 def _calculate_valor_comissao_vistoriador(tamanho_m2: float, mobiliado_status: str, tipo_vistoria_agenda: str) -> float:
     """Calcula o valor da COMISSÃO do vistoriador com base nas regras."""
@@ -801,14 +826,22 @@ def generate_agenda(semanas: int = 4, db: Session = Depends(get_db)):
 
 @router.post("/agenda/agendar", response_model=schemas.AgendaDisplay, summary="Agendar uma nova vistoria")
 def schedule_vistoria(agendamento: schemas.AgendaCreate, db: Session = Depends(get_db)):
-    db_imovel = db.query(models.Imovel).filter(
+    # ATUALIZAÇÃO: Adicionado joinedload(models.Imovel.imobiliaria)
+    db_imovel = db.query(models.Imovel).options(
+        joinedload(models.Imovel.imobiliaria)
+    ).filter(
         models.Imovel.id == agendamento.imovel_id,
         models.Imovel.imobiliaria_id == agendamento.imobiliaria_id,
         models.Imovel.is_deleted == False
     ).first()
+    
     if not db_imovel:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Imóvel não encontrado ou não pertence à imobiliária informada.")
     
+    # Validação extra para garantir que a imobiliária foi carregada
+    if not db_imovel.imobiliaria:
+         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Imobiliária associada ao imóvel não encontrada.")
+
     db_agenda_1 = db.query(models.Agenda).filter(
         models.Agenda.id == agendamento.horario_id,
         models.Agenda.disponivel == True
@@ -817,7 +850,10 @@ def schedule_vistoria(agendamento: schemas.AgendaCreate, db: Session = Depends(g
     if not db_agenda_1:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Horário selecionado não está livre ou não existe.")
     
-    valor_final = _calculate_valor_final_vistoria(db_imovel, agendamento.tipo.value)
+    # ATUALIZAÇÃO: Passa o objeto 'db_imovel.imobiliaria' para a função de cálculo
+    valor_final = _calculate_valor_final_vistoria(db_imovel, db_imovel.imobiliaria, agendamento.tipo.value)
+    
+    # Esta função não foi alterada, pois não depende do valor_minimo
     valor_comissao = _calculate_valor_comissao_vistoriador(db_imovel.tamanho, db_imovel.mobiliado, agendamento.tipo.value)
 
     necessita_horario_duplo = ((agendamento.tipo.value in ["ENTRADA", "SAIDA"]) and 
@@ -854,13 +890,11 @@ def schedule_vistoria(agendamento: schemas.AgendaCreate, db: Session = Depends(g
     db_agenda_1.disponivel = False
     db_agenda_1.valor_final_vistoria = valor_final if valor_final is not None else 0
     db_agenda_1.valor_vistoriador = valor_comissao if valor_comissao is not None else 0
-    # ADICIONADO: Salva a observação para o vistoriador
     db_agenda_1.observacao_vistoriador = agendamento.observacao_vistoriador
 
     db.commit()
     db.refresh(db_agenda_1)
     return db_agenda_1
-
 
 @router.put("/agenda/{agenda_id}", response_model=schemas.AgendaDisplay, summary="Atualiza os detalhes de uma vistoria")
 def update_vistoria(
@@ -868,6 +902,7 @@ def update_vistoria(
     update_data: schemas.AgendaUpdate,
     db: Session = Depends(get_db)
 ):
+    # Esta query já carregava a imobiliária, o que é ótimo
     db_agenda = db.query(models.Agenda).options(
         joinedload(models.Agenda.imovel).joinedload(models.Imovel.imobiliaria)
     ).filter(models.Agenda.id == agenda_id).first()
@@ -877,6 +912,10 @@ def update_vistoria(
 
     if not db_agenda.imovel:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Este agendamento não está vinculado a um imóvel.")
+
+    # Validação extra para garantir que a imobiliária foi carregada
+    if not db_agenda.imovel.imobiliaria:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Imobiliária associada ao imóvel não foi carregada.")
 
     update_payload = update_data.model_dump(exclude_unset=True)
     recalcular = False
@@ -894,10 +933,16 @@ def update_vistoria(
         recalcular = True
 
     if recalcular and "valor_final_vistoria" not in update_payload and "valor_vistoriador" not in update_payload:
+        # Cálculo do valor base do imóvel (não muda)
         db_agenda.imovel.valor = _calculate_valor_base_imovel(db_agenda.imovel.imobiliaria, db_agenda.imovel.tamanho, db_agenda.imovel.mobiliado)
-        db_agenda.valor_final_vistoria = _calculate_valor_final_vistoria(db_agenda.imovel, db_agenda.tipo)
+        
+        # ATUALIZAÇÃO: Passa o objeto 'db_agenda.imovel.imobiliaria' para a função de cálculo
+        db_agenda.valor_final_vistoria = _calculate_valor_final_vistoria(db_agenda.imovel, db_agenda.imovel.imobiliaria, db_agenda.tipo)
+        
+        # Cálculo da comissão (não muda)
         db_agenda.valor_vistoriador = _calculate_valor_comissao_vistoriador(db_agenda.imovel.tamanho, db_agenda.imovel.mobiliado, db_agenda.tipo)
     else:
+        # Lógica para atualização manual de valores (não muda)
         if "valor_final_vistoria" in update_payload:
             db_agenda.valor_final_vistoria = Decimal(str(update_payload["valor_final_vistoria"]))
         if "valor_vistoriador" in update_payload:
@@ -906,7 +951,6 @@ def update_vistoria(
     if "observacao_privada" in update_payload:
         db_agenda.observacao_privada = update_payload["observacao_privada"]
     
-    # ADICIONADO: Atualiza a observação para o vistoriador
     if "observacao_vistoriador" in update_payload:
         db_agenda.observacao_vistoriador = update_payload["observacao_vistoriador"]
 
