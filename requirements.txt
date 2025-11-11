@@ -16,3 +16,4 @@ openpyxl
 reportlab
 sendgrid
 supabase>=2.0.0
+requests
