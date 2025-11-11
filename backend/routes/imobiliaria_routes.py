@@ -691,7 +691,7 @@ async def add_documento_agendamento(id_agendamento: str = Form(...),
     nome = sanitize_filename(nome)
     nome_arquivo = f"{nome}-CODIGO-{uuid.uuid4()}{extensao}"
 
-    if not extensao.lower() in [".jpg", ".png", ".jpeg", ".pdf"]:
+    if not extensao.lower() in [".jpg", ".png", ".jpeg", ".pdf", ".docx"]:
             raise HTTPException(status_code=400, detail="Tipo de imagem não aceita")
     
     try:
@@ -836,7 +836,7 @@ async def add_doc_info(id_info: str = Form(...),
     nome = sanitize_filename(nome)
     nome_arquivo = f"{nome}-CODIGO-{uuid.uuid4()}{extensao}"
 
-    if not extensao.lower() in [".jpg", ".png", ".jpeg", ".pdf"]:
+    if not extensao.lower() in [".jpg", ".png", ".jpeg", ".pdf", ".docx"]:
             raise HTTPException(status_code=400, detail="Tipo de imagem não aceita")
     
     try:
