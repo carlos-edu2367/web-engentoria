@@ -1050,6 +1050,7 @@ async def ver_laudo(id_laudo: str,
         "codigo_imovel": laudo.imovel.cod_imovel,
         "endereco": laudo.imovel.endereco,
         "data_agendada": laudo.agenda.data,
+        "documento": gerar_url_assinada(bucket="documentos", file_path=laudo.file_path),
         "categorias": [{
             "id": c.id,
             "titulo": c.titulo

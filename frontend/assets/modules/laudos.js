@@ -1,5 +1,3 @@
-// /assets/modules/laudos.js
-
 import { api } from '../api.js';
 import { showModal, hideModal, showAlert, renderPageContent, sanitizeHTML } from '../ui.js';
 
@@ -99,6 +97,25 @@ async function renderLaudoDetails(laudoId) {
             </div>
         ` : '';
 
+        // *** NOVO: Bloco de HTML para o Laudo Anexado ***
+        // (Assume-se que 'api.getLaudoDetails' agora retorna o campo 'documento')
+        const pdfHTML = data.documento ? `
+            <div class="mb-6 p-4 bg-gray-900/50 border border-cyan-700/50 rounded-lg">
+                <h4 class="font-bold text-cyan-300 mb-3">Laudo Anexado (PDF/DOCX)</h4>
+                <p class="text-sm text-gray-400 mb-4">Este é o arquivo enviado pelo vistoriador. Use-o como base para aprovar ou recusar o laudo.</p>
+                <a href="${data.documento}" target="_blank" class="w-full sm:w-auto inline-block px-8 py-3 bg-cyan-600 hover:bg-cyan-500 text-white font-bold rounded-lg shadow-lg transition-transform transform hover:scale-105">
+                    <svg class="w-5 h-5 inline-block -mt-1 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg>
+                    Abrir Laudo Anexado
+                </a>
+            </div>
+        ` : `
+            <div class="mb-6 p-4 bg-gray-700/50 border border-gray-600/50 rounded-lg">
+                <h4 class="font-bold text-gray-400 mb-2">Laudo Anexado (PDF/DOCX)</h4>
+                <p class="text-sm text-gray-500">Nenhum laudo (PDF ou DOCX) foi anexado pelo vistoriador.</p>
+            </div>
+        `;
+        // *** FIM DO NOVO BLOCO ***
+
         const actionsHTML = `
             <div class="flex flex-col sm:flex-row justify-center gap-4 p-4 sticky bottom-4 z-20">
                 <button id="btn-recusar-laudo" data-id="${data.id}" class="w-full sm:w-auto px-8 py-3 bg-yellow-600 hover:bg-yellow-500 text-black font-bold rounded-lg shadow-lg transition-transform transform hover:scale-105">
@@ -127,6 +144,7 @@ async function renderLaudoDetails(laudoId) {
             <!-- 2. Corpo do Laudo -->
             <div class="bg-gray-800/80 p-6 rounded-b-xl neon-border border-t-0">
                 ${obsHTML}
+                ${pdfHTML} <!-- <<< ADICIONADO AQUI -->
                 <h3 class="text-2xl font-bold text-white mb-6 border-b border-gray-700/50 pb-2">Itens Vistoriados</h3>
                 <div id="categorias-container" class="space-y-4">
                     ${data.categorias.map(cat => `
