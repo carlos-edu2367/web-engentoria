@@ -315,31 +315,80 @@ def _calculate_valor_final_vistoria(imovel: models.Imovel, imobiliaria: models.I
     
     return round(valor_final, 2)
 
-def _calculate_valor_comissao_vistoriador(tamanho_m2: float, mobiliado_status: str, tipo_vistoria_agenda: str) -> float:
-    """Calcula o valor da COMISSÃO do vistoriador com base nas regras."""
+def _calculate_valor_comissao_vistoriador(
+    tamanho_m2: float, 
+    mobiliado_status: str, 
+    tipo_vistoria_agenda: str,
+    vistoriador: models.Usuario # Novo parâmetro para lidar com a "Regra Adicional"
+) -> float:
+    """
+    Calcula o valor da COMISSÃO do vistoriador com base nas novas regras
+    de Entrada/Saída e na regra de "preco_unico".
+    """
     tamanho_m2 = float(tamanho_m2)
+    
+    # 1. Lida com tipos especiais primeiro (regra parece inalterada)
     if tipo_vistoria_agenda == 'AVERIGUACAO':
         return 65.00
-    
-    valor_base = 0.0
-    if mobiliado_status == 'mobiliado':
-        if tamanho_m2 < 50: valor_base = 65.00
-        elif 50 <= tamanho_m2 < 100: valor_base = tamanho_m2 * 1.25
-        elif 100 <= tamanho_m2 <= 140: valor_base = 125.00
-        else: valor_base = tamanho_m2 * 0.90
-    elif mobiliado_status in ['sem_mobilia', 'semi_mobiliado']:
-        if tamanho_m2 < 50: valor_base = 50.00
-        elif 50 <= tamanho_m2 < 100: valor_base = tamanho_m2 * 1.00
-        elif 100 <= tamanho_m2 <= 135: valor_base = 100.00
-        else: valor_base = tamanho_m2 * 0.75
-    else:
-        return 0.0
 
+    valor_base = 0.0
+    
+    # 2. Determina qual conjunto de regras usar (Entrada ou Saída)
+    # Regra Adicional:
+    # Se a vistoria for de ENTRADA, OU se o vistoriador for antigo (preco_unico == True),
+    # usamos as regras de ENTRADA.
+    # Caso contrário (é SAIDA, CONFERENCIA, etc. E preco_unico == False), usamos as regras de SAÍDA.
+    
+    usa_regras_entrada = False
+    if tipo_vistoria_agenda == 'ENTRADA':
+        usa_regras_entrada = True
+    elif vistoriador and vistoriador.preco_unico == True:
+        # Se for vistoriador antigo, TODAS as vistorias (Saída, Conf, etc.)
+        # são calculadas pela tabela de ENTRADA.
+        usa_regras_entrada = True
+         
+    # 3. Calcula o valor_base com base no conjunto de regras determinado
+    if usa_regras_entrada:
+        # --- REGRAS DE ENTRADA ---
+        if mobiliado_status == 'mobiliado':
+            # Entrada - Com Mobília
+            if tamanho_m2 < 50: valor_base = 65.00
+            elif 50 <= tamanho_m2 < 100: valor_base = tamanho_m2 * 1.25
+            elif 100 <= tamanho_m2 <= 125: valor_base = 125.00
+            else: valor_base = tamanho_m2 * 1.00 # Acima de 125
+        elif mobiliado_status in ['sem_mobilia', 'semi_mobiliado']:
+            # Entrada - Sem Mobília
+            if tamanho_m2 < 50: valor_base = 50.00
+            elif 50 <= tamanho_m2 < 100: valor_base = tamanho_m2 * 1.00
+            elif 100 <= tamanho_m2 <= 120: valor_base = 100.00
+            else: valor_base = tamanho_m2 * 0.85 # Acima de 120
+        else:
+            valor_base = 0.0 # Status de mobília desconhecido
+    else:
+        # --- REGRAS DE SAÍDA ---
+        # (Aplica-se a SAIDA, CONFERENCIA, COMPLEMENTO, etc.
+        #  somente se vistoriador.preco_unico == False)
+        if mobiliado_status == 'mobiliado':
+            # Saída - Com Mobília
+            if tamanho_m2 < 50: valor_base = 65.00
+            elif 50 <= tamanho_m2 < 100: valor_base = tamanho_m2 * 1.25
+            elif 100 <= tamanho_m2 <= 140: valor_base = 125.00
+            else: valor_base = tamanho_m2 * 0.90 # Acima de 140
+        elif mobiliado_status in ['sem_mobilia', 'semi_mobiliado']:
+            # Saída - Sem Mobília
+            if tamanho_m2 < 50: valor_base = 50.00
+            elif 50 <= tamanho_m2 < 100: valor_base = tamanho_m2 * 1.00
+            elif 100 <= tamanho_m2 <= 135: valor_base = 100.00
+            else: valor_base = tamanho_m2 * 0.75 # Acima de 135
+        else:
+            valor_base = 0.0 # Status de mobília desconhecido
+
+    # 4. Aplica o multiplicador de 50% para tipos de vistoria fracionados
     valor_final = valor_base
     if tipo_vistoria_agenda in ['CONFERENCIA', 'COMPLEMENTO_VISITA']:
         valor_final = valor_base * 0.5
-        if valor_final < 45.00:
-            valor_final = 45.00
+        # O antigo valor mínimo de R$45,00 foi removido,
+        # pois não foi mencionado nas novas regras.
         
     return round(valor_final, 2)
 
@@ -838,7 +887,6 @@ def schedule_vistoria(agendamento: schemas.AgendaCreate, db: Session = Depends(g
     if not db_imovel:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Imóvel não encontrado ou não pertence à imobiliária informada.")
     
-    # Validação extra para garantir que a imobiliária foi carregada
     if not db_imovel.imobiliaria:
          raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Imobiliária associada ao imóvel não encontrada.")
 
@@ -850,11 +898,26 @@ def schedule_vistoria(agendamento: schemas.AgendaCreate, db: Session = Depends(g
     if not db_agenda_1:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Horário selecionado não está livre ou não existe.")
     
+    # --- MODIFICAÇÃO INICIA AQUI ---
+    # Precisamos buscar o vistoriador para a nova regra de cálculo de comissão
+    db_vistoriador = db.query(models.Usuario).filter(models.Usuario.id == db_agenda_1.vistoriador_id).first()
+    if not db_vistoriador:
+        # Isso não deve acontecer se o db_agenda_1 existir e tiver um vistoriador_id válido
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vistoriador associado ao horário não encontrado.")
+    # --- MODIFICAÇÃO TERMINA AQUI ---
+
     # ATUALIZAÇÃO: Passa o objeto 'db_imovel.imobiliaria' para a função de cálculo
     valor_final = _calculate_valor_final_vistoria(db_imovel, db_imovel.imobiliaria, agendamento.tipo.value)
     
-    # Esta função não foi alterada, pois não depende do valor_minimo
-    valor_comissao = _calculate_valor_comissao_vistoriador(db_imovel.tamanho, db_imovel.mobiliado, agendamento.tipo.value)
+    # --- MODIFICAÇÃO INICIA AQUI ---
+    # ATUALIZAÇÃO: Passa o objeto db_vistoriador para a nova assinatura da função
+    valor_comissao = _calculate_valor_comissao_vistoriador(
+        db_imovel.tamanho, 
+        db_imovel.mobiliado, 
+        agendamento.tipo.value,
+        db_vistoriador # <-- Novo parâmetro
+    )
+    # --- MODIFICAÇÃO TERMINA AQUI ---
 
     necessita_horario_duplo = ((agendamento.tipo.value in ["ENTRADA", "SAIDA"]) and 
                               (float(db_imovel.tamanho) >= 100 or db_imovel.mobiliado == "mobiliado"))
@@ -902,10 +965,13 @@ def update_vistoria(
     update_data: schemas.AgendaUpdate,
     db: Session = Depends(get_db)
 ):
-    # Esta query já carregava a imobiliária, o que é ótimo
+    # --- MODIFICAÇÃO INICIA AQUI ---
+    # Precisamos carregar o vistoriador (joinedload) para a nova regra de cálculo
     db_agenda = db.query(models.Agenda).options(
-        joinedload(models.Agenda.imovel).joinedload(models.Imovel.imobiliaria)
+        joinedload(models.Agenda.imovel).joinedload(models.Imovel.imobiliaria),
+        joinedload(models.Agenda.vistoriador) # <-- Novo joinedload
     ).filter(models.Agenda.id == agenda_id).first()
+    # --- MODIFICAÇÃO TERMINA AQUI ---
 
     if not db_agenda:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agendamento não encontrado.")
@@ -913,9 +979,14 @@ def update_vistoria(
     if not db_agenda.imovel:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Este agendamento não está vinculado a um imóvel.")
 
-    # Validação extra para garantir que a imobiliária foi carregada
     if not db_agenda.imovel.imobiliaria:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Imobiliária associada ao imóvel não foi carregada.")
+
+    # --- MODIFICAÇÃO INICIA AQUI ---
+    # Validação para garantir que o vistoriador foi carregado
+    if not db_agenda.vistoriador:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vistoriador associado à agenda não foi carregado.")
+    # --- MODIFICAÇÃO TERMINA AQUI ---
 
     update_payload = update_data.model_dump(exclude_unset=True)
     recalcular = False
@@ -939,8 +1010,15 @@ def update_vistoria(
         # ATUALIZAÇÃO: Passa o objeto 'db_agenda.imovel.imobiliaria' para a função de cálculo
         db_agenda.valor_final_vistoria = _calculate_valor_final_vistoria(db_agenda.imovel, db_agenda.imovel.imobiliaria, db_agenda.tipo)
         
-        # Cálculo da comissão (não muda)
-        db_agenda.valor_vistoriador = _calculate_valor_comissao_vistoriador(db_agenda.imovel.tamanho, db_agenda.imovel.mobiliado, db_agenda.tipo)
+        # --- MODIFICAÇÃO INICIA AQUI ---
+        # Cálculo da comissão (agora passa o vistoriador)
+        db_agenda.valor_vistoriador = _calculate_valor_comissao_vistoriador(
+            db_agenda.imovel.tamanho, 
+            db_agenda.imovel.mobiliado, 
+            db_agenda.tipo,
+            db_agenda.vistoriador # <-- Novo parâmetro
+        )
+        # --- MODIFICAÇÃO TERMINA AQUI ---
     else:
         # Lógica para atualização manual de valores (não muda)
         if "valor_final_vistoria" in update_payload:
