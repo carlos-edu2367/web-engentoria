@@ -340,6 +340,9 @@ def _calculate_valor_comissao_vistoriador(tamanho_m2: float, mobiliado_status: s
         valor_final = valor_base * 0.5
         if valor_final < 45.00:
             valor_final = 45.00
+    else:
+        if valor_final < 50:
+            valor_final = 50
         
     return round(valor_final, 2)
 
