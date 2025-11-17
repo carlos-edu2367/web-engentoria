@@ -47,6 +47,7 @@ class Usuario(Base):
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
     updated_at = Column(TIMESTAMP(timezone=True), default=func.now(), onupdate=func.now())
     is_deleted = Column(Boolean, default=False, nullable=False, index=True)
+    preco_unico = Column(Boolean, default= False)
 
     # Relacionamentos
     vistorias = relationship("Agenda", back_populates="vistoriador")
@@ -348,6 +349,7 @@ class Laudo(Base):
     finalizado = Column(Boolean, nullable=False, default=False)
     aprovado = Column(Boolean, nullable=False, default=False)
     obs_adm = Column(Text, nullable=True)
+    file_path = Column(Text, nullable=True)
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
 
     agenda = relationship("Agenda", back_populates="laudos")

@@ -1,11 +1,12 @@
 from fastapi import APIRouter, Depends, Query, HTTPException, status, Form, File, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import func, extract, case
+from sqlalchemy import func, extract, case, or_
 from typing import List, Optional
 from datetime import date, timedelta, datetime
 from dateutil.relativedelta import relativedelta
 import io
+from pydantic import BaseModel
 
 # Imports para geração de relatórios
 import openpyxl
@@ -30,6 +31,21 @@ router = APIRouter(
     tags=["Painel da Imobiliária"],
     dependencies=[Depends(auth.get_current_active_imobiliaria_group)]
 )
+
+class LaudoAprovadoItem(BaseModel):
+    id: UUID
+    created_at: datetime
+    cod_imovel: str
+    endereco: str
+    aprovado: bool
+    file_path: Optional[str] = None
+    
+    class Config:
+        from_attributes = True # Compatibilidade com Pydantic v2 (ou orm_mode=True para v1)
+
+class LaudoAprovadoResponse(BaseModel):
+    laudos: List[LaudoAprovadoItem]
+    total: int
 
 # --- Funções Auxiliares ---
 def get_imobiliaria_ids_from_group(current_user: models.GrupoImobiliaria):
@@ -1050,6 +1066,7 @@ async def ver_laudo(id_laudo: str,
         "codigo_imovel": laudo.imovel.cod_imovel,
         "endereco": laudo.imovel.endereco,
         "data_agendada": laudo.agenda.data,
+        "documento": gerar_url_assinada(bucket="documentos", file_path=laudo.file_path),
         "categorias": [{
             "id": c.id,
             "titulo": c.titulo
@@ -1094,3 +1111,77 @@ async def ver_categoria(id_categoria: str,
             "link": gerar_url_assinada(bucket="imagens", file_path=i.file_path)
         }for i in imagens]
     }
+
+
+@router.get("/laudos", response_model=LaudoAprovadoResponse)
+async def listar_laudos_aprovados(
+    search: Optional[str] = Query(None, description="Buscar por código do imóvel ou endereço"),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(10, ge=1, le=100),
+    session: Session = Depends(get_db),
+    current_user: models.GrupoImobiliaria = Depends(auth.get_current_active_imobiliaria_group)
+):
+    """
+    Lista os laudos aprovados para as imobiliárias do grupo,
+    com suporte para pesquisa e paginação.
+    """
+    # 1. Obter IDs das imobiliárias do grupo
+    imobiliaria_ids = get_imobiliaria_ids_from_group(current_user)
+
+    # 2. Construir a query base com as regras de segurança
+    base_query = (
+        session.query(models.Laudo)
+        .join(models.Imovel, models.Laudo.imovel_id == models.Imovel.id)
+        .options(joinedload(models.Laudo.imovel)) # Carrega dados do imóvel
+        .filter(
+            models.Laudo.aprovado == True, # Regra 1: Somente aprovados
+            models.Laudo.imobiliaria_id.in_(imobiliaria_ids) # Regra 2: Somente do grupo
+        )
+    )
+
+    # 3. Aplicar filtro de pesquisa, se houver
+    if search:
+        search_term = f"%{search}%"
+        base_query = base_query.filter(
+            or_(
+                models.Imovel.cod_imovel.ilike(search_term),
+                models.Imovel.endereco.ilike(search_term)
+            )
+        )
+
+    # 4. Obter o total de registros (para paginação)
+    # Usamos uma subquery para eficiência
+    total = base_query.with_entities(func.count(models.Laudo.id)).scalar()
+
+    # 5. Obter os laudos paginados e ordenados
+    laudos = (
+        base_query
+        .order_by(models.Laudo.created_at.desc()) # Ordenação decrescente
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
+
+    # 6. Formatar a resposta
+    # O Pydantic (com Config.from_attributes) pode fazer isso automaticamente
+    # se o response_model estiver bem definido e os laudos tiverem o .imovel carregado.
+    
+    # Mapeamento manual para garantir que o schema seja satisfeito
+    # (Embora `LaudoAprovadoItem.from_orm(laudo)` devesse funcionar,
+    # precisamos acessar laudo.imovel.*)
+    
+    response_items = []
+    for laudo in laudos:
+        if laudo.imovel: # Garante que o imóvel foi carregado
+            response_items.append(
+                LaudoAprovadoItem(
+                    id=laudo.id,
+                    created_at=laudo.created_at,
+                    cod_imovel=laudo.imovel.cod_imovel,
+                    endereco=laudo.imovel.endereco,
+                    aprovado=laudo.aprovado,
+                    file_path=laudo.file_path
+                )
+            )
+
+    return LaudoAprovadoResponse(laudos=response_items, total=total)

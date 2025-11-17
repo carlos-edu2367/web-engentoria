@@ -558,6 +558,7 @@ async def ver_laudo_agendamento(id_agendamento: str,
         "finalizado": laudo.finalizado,
         "aprovado": laudo.aprovado,
         "obs": laudo.obs_adm,
+        "documento": gerar_url_assinada(bucket="documentos", file_path=laudo.file_path),
         "categorias": [{
             "id": c.id,
             "titulo": c.titulo,
@@ -748,3 +749,77 @@ async def qtd_pendencias(session: Session = Depends(get_db),
     return {
         "qtd": laudos_pendentes
     }
+
+@router.post("/laudo/adicionar_laudo_pdf")
+async def add_laudo_pdf(id_laudo: str = Form(...),
+                               file: UploadFile = File(...),
+                               session: Session = Depends(get_db),
+                               current_user: models.Usuario = Depends(auth.get_current_active_vistoriador)):
+    
+    try:
+        laudo_id = UUID(id_laudo)
+    except:
+        raise HTTPException(status_code=400, detail="ID inválido")
+    
+    laudo = session.query(models.Laudo).filter(models.Laudo.id == laudo_id, models.Laudo.vistoriador_id == current_user.id).first()
+    if not laudo:
+        raise HTTPException(status_code=404, detail="Laudo não encontrado para o vistoriador")
+    
+    if laudo.file_path:
+        raise HTTPException(status_code=400, detail="Já existe um pdf anexado")
+    
+    if laudo.finalizado:
+        raise HTTPException(status_code=400, detail="O laudo está finalizado")
+    
+    nome, extensao = os.path.splitext(file.filename)
+    nome = sanitize_filename(nome)
+    nome_arquivo = f"LAUDO_VISTORIA_{nome}_pdf_{uuid.uuid4()}{extensao}"
+
+    if not extensao.lower() in [".pdf", ".docx"]:
+        raise HTTPException(status_code=400, detail="Tipo de arquivo inválido, somente arquivos pdf e docx")
+    
+    try:
+        conteudo = await file.read()
+        MAX_MB = 10
+
+        if len(conteudo) > MAX_MB * 1024 * 1024:
+            raise HTTPException(status_code=400, detail=f"Arquivo muito grande, limite de  {MAX_MB} MB")
+
+        res = supabase.storage.from_("documentos").upload(nome_arquivo, 
+                                                          conteudo,
+                                                          {"content-type": file.content_type})
+        if getattr(res, "error", None):
+                logger.error(f"Erro no Supabase: {res.error}")
+                raise HTTPException(status_code=400, detail="Erro ao enviar documento para o servidor")
+        
+        laudo.file_path = nome_arquivo
+        session.commit()
+        return
+    except Exception as e:
+        session.rollback()
+        logger.error(f"Erro ao add imagem: {e}")
+        raise HTTPException(status_code=500, detail="Erro ao adicionar imagem")
+    
+
+@router.delete("/laudo/pdf/{id_laudo}")
+async def deletar_pdf_laudo(id_laudo: str,
+                            session: Session = Depends(get_db),
+                            current_user: models.Usuario = Depends(auth.get_current_active_vistoriador)):
+    try:
+        laudo_id = UUID(id_laudo)
+    except:
+        raise HTTPException(status_code=400, detail="ID inválido")
+    
+    laudo = session.query(models.Laudo).filter(models.Laudo.id == laudo_id, models.Laudo.vistoriador_id == current_user.id).first()
+    if not laudo:
+        raise HTTPException(status_code=404, detail="Laudo não encontrado para o vistoriador")
+    
+    if not laudo.file_path:
+        raise HTTPException(status_code=400, detail="Não existe um pdf anexado")
+    
+    if deletar_arquivo_supabase(file_path=laudo.file_path, bucket="documentos"):
+        laudo.file_path = False
+        session.commit()
+        return
+    else:
+        raise HTTPException(status_code=500, detail="Erro ao deletar arquivo")

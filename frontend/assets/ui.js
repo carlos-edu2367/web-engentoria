@@ -57,12 +57,12 @@ export function hideModal() {
     modalContent.innerHTML = '';
 }
 
-// Adiciona um listener para fechar o modal ao clicar fora do conteúdo
-modal.addEventListener('click', (event) => {
-    if (event.target === modal) {
-        hideModal();
-    }
-});
+// // Adiciona um listener para fechar o modal ao clicar fora do conteúdo
+// modal.addEventListener('click', (event) => {
+//     if (event.target === modal) {
+//         hideModal();
+//     }
+// });
 
 /**
  * Exibe um alerta simples no topo da página.

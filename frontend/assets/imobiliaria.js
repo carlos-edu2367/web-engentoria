@@ -4,8 +4,16 @@ const isLocalImob = window.location.hostname === '127.0.0.1' || window.location.
 const API_BASE_URL_IMOB = isLocalImob ? 'http://127.0.0.1:8000/api/v1/imobiliaria' : '/api/v1/imobiliaria';
 
 let calendar; // Variável global para o calendário
+let currentLaudoPage = 1;
+const LAUDOS_PER_PAGE = 10;
+let laudoSearchTimer = null;
 
-// --- ETAPA 2: Novas Funções de API (Imobiliária - Vistoria) ---
+
+// =================================================================
+// --- Funções de API ---
+// =================================================================
+
+// --- API: Vistoria (Comentários, Documentos) ---
 
 /** Busca comentários de uma vistoria (Imobiliária) */
 async function imobFetchComentarios(agendaId) {
@@ -68,9 +76,8 @@ async function imobDeleteDocumento(documentoId) {
         throw new Error(err.detail || 'Falha ao deletar documento.');
     }
 }
-// --- FIM ETAPA 2: API ---
 
-// --- ETAPA 3: Novas Funções de API (Imobiliária - InfoMensal) ---
+// --- API: InfoMensal (Relatórios) ---
 
 /** Busca o status do InfoMensal (chat, documentos, status) */
 async function imobFetchInfoStatus(mes, ano) {
@@ -137,8 +144,61 @@ async function imobSetInfoStatus(infoId, aceito) {
     }
     return response.json();
 }
-// --- FIM ETAPA 3: API ---
 
+// --- API: Laudos (Novo) ---
+
+/** Busca a lista paginada de laudos aprovados (Novo) */
+async function imobFetchLaudos(search = '', page = 1) {
+    const limit = LAUDOS_PER_PAGE;
+    const skip = (page - 1) * limit;
+    
+    let url = `${API_BASE_URL_IMOB}/laudos?skip=${skip}&limit=${limit}`;
+    if (search) {
+        url += `&search=${encodeURIComponent(search)}`;
+    }
+    
+    const response = await fetch(url, {
+        headers: { 'Authorization': `Bearer ${getToken()}` }
+    });
+    
+    if (response.status === 401) logout();
+    if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.detail || 'Falha ao buscar laudos.');
+    }
+    return response.json();
+}
+
+/** Busca o detalhe de um laudo específico (Novo) */
+async function imobFetchLaudoDetalhe(laudoId) {
+    const response = await fetch(`${API_BASE_URL_IMOB}/laudo/${laudoId}`, {
+        headers: { 'Authorization': `Bearer ${getToken()}` }
+    });
+    if (response.status === 401) logout();
+    if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.detail || 'Falha ao buscar detalhes do laudo.');
+    }
+    return response.json();
+}
+
+/** Busca o detalhe de uma categoria de laudo (Novo) */
+async function imobFetchCategoriaDetalhe(categoriaId) {
+    const response = await fetch(`${API_BASE_URL_IMOB}/categoria/${categoriaId}`, {
+        headers: { 'Authorization': `Bearer ${getToken()}` }
+    });
+    if (response.status === 401) logout();
+    if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.detail || 'Falha ao buscar detalhes da categoria.');
+    }
+    return response.json();
+}
+
+
+// =================================================================
+// --- Inicialização e Roteamento ---
+// =================================================================
 
 document.addEventListener('DOMContentLoaded', () => {
     protectImobiliariaPage();
@@ -158,18 +218,7 @@ document.addEventListener('DOMContentLoaded', () => {
             activeLink.classList.remove('hover:bg-gray-700/50');
         }
 
-        pageContent.innerHTML = `
-            <div class="flex justify-center items-center h-64">
-                <div class="animate-pulse flex flex-col items-center">
-                    <div class="h-12 w-12 bg-cyan-400/20 rounded-full flex items-center justify-center mb-4">
-                        <svg class="h-6 w-6 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path>
-                        </svg>
-                    </div>
-                    <p class="text-cyan-400">Carregando...</p>
-                </div>
-            </div>
-        `;
+        pageContent.innerHTML = getLoadingSpinnerHTML();
         
         try {
             switch (pageId) {
@@ -182,16 +231,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 case 'relatorios':
                     await renderRelatorios();
                     break;
+                case 'laudos': // Rota Adicionada
+                    await renderLaudos();
+                    break;
                 default:
                     await renderOverview();
             }
         } catch (error) {
-            pageContent.innerHTML = `
-                <div class="bg-red-900/30 border border-red-800/50 rounded-lg p-4 text-center">
-                    <p class="text-red-400 font-medium">Erro ao carregar conteúdo:</p>
-                    <p class="text-gray-400 mt-1">${error.message}</p>
-                </div>
-            `;
+            pageContent.innerHTML = getErrorHTML("Erro ao carregar conteúdo:", error.message);
         }
     };
 
@@ -341,12 +388,7 @@ async function renderOverview() {
         });
 
     } catch (error) {
-        contentDiv.innerHTML = `
-            <div class="bg-red-900/30 border border-red-800/50 rounded-lg p-4 text-center">
-                <p class="text-red-400 font-medium">Erro ao carregar visão geral:</p>
-                <p class="text-gray-400 mt-1">${error.message}</p>
-            </div>
-        `;
+        contentDiv.innerHTML = getErrorHTML("Erro ao carregar visão geral:", error.message);
     }
 }
 
@@ -443,7 +485,7 @@ async function renderRelatorios() {
                     </button>
                 </div>
             </div>
-            <div id="report-content" class="bg-gray-800/50 border border-gray-700/50 rounded-xl p-6 neon-border"></div>
+            <div id="report-content" class="bg-gray-800/50 border border-gray-700/50 rounded-xl p-6 neon-border min-h-[200px]"></div>
         </div>
     `;
 
@@ -463,25 +505,13 @@ async function renderRelatorios() {
 
     const fetchAndDisplayReport = async () => {
         const reportContent = document.getElementById('report-content');
-        reportContent.innerHTML = `
-            <div class="flex justify-center items-center h-48">
-                <div class="animate-pulse flex flex-col items-center">
-                    <div class="h-12 w-12 bg-cyan-400/20 rounded-full flex items-center justify-center mb-4">
-                        <svg class="h-6 w-6 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path>
-                        </svg>
-                    </div>
-                    <p class="text-cyan-400">Gerando relatório...</p>
-                </div>
-            </div>
-        `;
+        reportContent.innerHTML = getLoadingSpinnerHTML('Gerando relatório...');
         
         const mes = monthSelect.value;
         const ano = yearSelect.value;
         
         try {
             const token = getToken();
-            // ETAPA 3: Buscar Relatório e Status da Info em paralelo
             const [data, infoStatus] = await Promise.all([
                 fetch(`${API_BASE_URL_IMOB}/relatorio-mensal?mes=${mes}&ano=${ano}`, {
                     headers: { 'Authorization': `Bearer ${token}` }
@@ -518,7 +548,6 @@ async function renderRelatorios() {
             
             const formatCurrency = (value) => (value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
             
-            // ETAPA 3: HTML para o card de InfoMensal
             let infoHTML = '';
             if (infoStatus) {
                 let statusText, statusColor;
@@ -526,7 +555,6 @@ async function renderRelatorios() {
                     statusText = "Relatório Aprovado";
                     statusColor = "text-emerald-400";
                 } else {
-                    // Se não foi aceito, verificamos se há mensagens do admin
                     const hasAdminMsg = infoStatus.mensagens.some(m => m.remetente === 'adm');
                     if (hasAdminMsg) {
                         statusText = "Ajustes Solicitados";
@@ -580,10 +608,8 @@ async function renderRelatorios() {
                 </div>
             `;
             
-            // ETAPA 3: Adiciona o infoHTML ANTES do resumoHTML
             reportContent.innerHTML = infoHTML + resumoHTML + relatorios.map(r => createReportHTML(r)).join('');
 
-            // ETAPA 3: Adicionar listener para o novo botão
             if (infoStatus) {
                 document.getElementById('analisar-info-btn').addEventListener('click', () => {
                     showInfoMensalModal(infoStatus, fetchAndDisplayReport);
@@ -591,12 +617,7 @@ async function renderRelatorios() {
             }
 
         } catch (error) {
-            reportContent.innerHTML = `
-                <div class="bg-red-900/30 border border-red-800/50 rounded-lg p-4 text-center">
-                    <p class="text-red-400 font-medium">Erro ao carregar relatório:</p>
-                    <p class="text-gray-400 mt-1">${error.message}</p>
-                </div>
-            `;
+            reportContent.innerHTML = getErrorHTML("Erro ao carregar relatório:", error.message);
         }
     };
 
@@ -607,8 +628,48 @@ async function renderRelatorios() {
     fetchAndDisplayReport();
 }
 
+/** (Nova) Renderiza a página de Laudos */
+async function renderLaudos() {
+    const contentDiv = document.getElementById('page-content');
+    contentDiv.innerHTML = `
+        <div class="fade-in">
+            <div class="flex justify-between items-center mb-6 flex-wrap gap-4">
+                <h1 class="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-cyan-300 to-emerald-300">Laudos Aprovados</h1>
+                <div class="relative w-full sm:w-72">
+                    <input type="text" id="laudo-search-input" placeholder="Buscar por Cód. Imóvel ou Endereço" class="w-full bg-gray-800/50 border border-gray-700/50 text-gray-200 rounded-lg p-2 pl-10 focus:outline-none focus:ring-2 focus:ring-cyan-500/50">
+                    <svg class="h-5 w-5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                    </svg>
+                </div>
+            </div>
+            
+            <div id="laudos-list" class="bg-gray-800/50 border border-gray-700/50 rounded-xl p-4 neon-border min-h-[300px]">
+                <!-- O conteúdo será carregado aqui -->
+            </div>
+            
+            <div id="laudos-pagination" class="flex justify-center items-center mt-6 space-x-2">
+                <!-- A paginação será carregada aqui -->
+            </div>
+        </div>
+    `;
+
+    // Listener para a busca com debounce
+    const searchInput = document.getElementById('laudo-search-input');
+    searchInput.addEventListener('keyup', () => {
+        clearTimeout(laudoSearchTimer);
+        laudoSearchTimer = setTimeout(() => {
+            currentLaudoPage = 1; // Reseta para a primeira página
+            fetchAndDisplayLaudos();
+        }, 500); // 500ms debounce
+    });
+
+    // Carrega a lista inicial (Página 1, sem busca)
+    currentLaudoPage = 1;
+    fetchAndDisplayLaudos();
+}
+
 // =================================================================
-// --- Funções Auxiliares e de Componentes ---
+// --- Funções de Renderização de Componentes e Modais ---
 // =================================================================
 
 function createKpiCard(id, title, bgColor, textColor, svgPath = '', isProjection = false) {
@@ -650,7 +711,6 @@ function createComparisonCard(title, value, change) {
     `;
 }
 
-// ETAPA 2: Nova função auxiliar para extrair o HTML de detalhes
 function getImobVistoriaDetalhesHTML(vistoria) {
     const { imovel, cliente, vistoriador } = vistoria;
     return `
@@ -709,7 +769,6 @@ function getImobVistoriaDetalhesHTML(vistoria) {
     `;
 }
 
-// ETAPA 2: Modificada a função showVistoriaModal
 function showVistoriaModal(vistoria) {
     const modalContent = document.getElementById('modal-content');
     const modal = document.getElementById('generic-modal');
@@ -778,8 +837,6 @@ function showVistoriaModal(vistoria) {
         }
     });
 }
-
-// ETAPA 2: Novas funções de renderização de Abas (Copiadas e adaptadas de main.js)
 
 /** Renderiza o conteúdo da aba Mural */
 async function renderMuralTab(agendaId, containerId, remetente) {
@@ -905,9 +962,6 @@ async function renderDocumentosTab(agendaId, containerId, remetente) {
 
     } catch (e) { container.innerHTML = `<p class="text-red-400">${e.message}</p>`; }
 }
-// --- FIM ETAPA 2 ---
-
-// --- INÍCIO ETAPA 3: Funções do Modal InfoMensal ---
 
 /** Renderiza o conteúdo da aba de Chat do InfoMensal */
 async function renderInfoMensalChat(infoStatus, containerId, remetente) {
@@ -1134,9 +1188,6 @@ function showInfoMensalModal(infoStatus, onActionCallback) {
     if (recusarBtn) recusarBtn.addEventListener('click', () => handleAction(false));
 }
 
-// --- FIM ETAPA 3 ---
-
-
 function createReportHTML(report) {
     const formatCurrency = (value) => (value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
     
@@ -1178,7 +1229,7 @@ function createReportHTML(report) {
 
             <!-- Detalhes das Vistorias -->
             <div class="p-6">
-                <details class="group bg-gray-900/30 rounded-lg overflow-hidden mb-4">
+                <details class="group laudo-details bg-gray-900/30 rounded-lg overflow-hidden mb-4">
                     <summary class="cursor-pointer p-4 flex justify-between items-center hover:bg-gray-700/50 transition">
                         <span class="font-semibold text-gray-200">
                             <svg class="h-5 w-5 inline mr-2 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1221,7 +1272,7 @@ function createReportHTML(report) {
                 </details>
 
                 <!-- Detalhes das Improdutivas -->
-                <details class="group bg-gray-900/30 rounded-lg overflow-hidden">
+                <details class="group laudo-details bg-gray-900/30 rounded-lg overflow-hidden">
                     <summary class="cursor-pointer p-4 flex justify-between items-center hover:bg-gray-700/50 transition">
                         <span class="font-semibold text-gray-200">
                             <svg class="h-5 w-5 inline mr-2 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1258,6 +1309,314 @@ function createReportHTML(report) {
                 </details>
             </div>
         </div>
+    `;
+}
+
+
+// =================================================================
+// --- (Novas) Funções Específicas de Laudos ---
+// =================================================================
+
+/** (Nova) Busca e exibe a lista de laudos e a paginação */
+async function fetchAndDisplayLaudos() {
+    const listDiv = document.getElementById('laudos-list');
+    const paginationDiv = document.getElementById('laudos-pagination');
+    const searchInput = document.getElementById('laudo-search-input');
+    
+    if (!listDiv || !paginationDiv) return;
+
+    listDiv.innerHTML = getLoadingSpinnerHTML('Buscando laudos...');
+    paginationDiv.innerHTML = '';
+    
+    const searchTerm = searchInput ? searchInput.value : '';
+
+    try {
+        const data = await imobFetchLaudos(searchTerm, currentLaudoPage);
+        const { laudos, total } = data;
+
+        if (total === 0) {
+            listDiv.innerHTML = `
+                <div class="text-center py-10">
+                    <svg class="h-12 w-12 mx-auto text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                    </svg>
+                    <p class="text-gray-400 mt-4">Nenhum laudo encontrado${searchTerm ? ' para "' + searchTerm + '"' : ''}.</p>
+                </div>
+            `;
+            return;
+        }
+
+        const laudosHTML = laudos.map(laudo => `
+            <div class="laudo-list-item flex justify-between items-center p-4 bg-gray-900/50 rounded-lg hover:bg-gray-700/50 transition-colors cursor-pointer" data-laudo-id="${laudo.id}">
+                <div>
+                    <p class="font-semibold text-cyan-300">Cód. Imóvel: ${laudo.cod_imovel}</p>
+                    <p class="text-sm text-gray-300 truncate max-w-xs sm:max-w-md" title="${laudo.endereco}">${laudo.endereco}</p>
+                    <p class="text-xs text-gray-500">Data: ${new Date(laudo.created_at).toLocaleDateString('pt-BR')}</p>
+                </div>
+                <svg class="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+                </svg>
+            </div>
+        `).join('<hr class="border-gray-700/50 my-2">');
+
+        listDiv.innerHTML = laudosHTML;
+
+        // Adiciona listeners aos itens
+        listDiv.querySelectorAll('.laudo-list-item').forEach(item => {
+            item.addEventListener('click', () => {
+                showLaudoDetalheModal(item.dataset.laudoId);
+            });
+        });
+
+        // Renderiza Paginação
+        const totalPages = Math.ceil(total / LAUDOS_PER_PAGE);
+        paginationDiv.innerHTML = createPagination(currentLaudoPage, totalPages);
+
+        // Adiciona listeners à paginação
+        paginationDiv.querySelectorAll('.page-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const page = parseInt(btn.dataset.page);
+                if (page && page !== currentLaudoPage) {
+                    currentLaudoPage = page;
+                    fetchAndDisplayLaudos();
+                }
+            });
+        });
+
+    } catch (error) {
+        listDiv.innerHTML = getErrorHTML('Erro ao buscar laudos:', error.message);
+    }
+}
+
+/** (Nova) Exibe o modal com detalhes de um laudo */
+async function showLaudoDetalheModal(laudoId) {
+    const modalContent = document.getElementById('modal-content');
+    const modal = document.getElementById('generic-modal');
+    
+    modalContent.innerHTML = getLoadingSpinnerHTML('Carregando laudo...');
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+
+    try {
+        const laudo = await imobFetchLaudoDetalhe(laudoId);
+
+        const dataFormatada = new Date(laudo.data_agendada + 'T00:00:00').toLocaleDateString('pt-BR');
+        
+        const categoriasHTML = laudo.categorias.map(cat => `
+            <details class="group laudo-details bg-gray-900/30 rounded-lg overflow-hidden" data-categoria-id="${cat.id}">
+                <summary class="cursor-pointer p-4 flex justify-between items-center hover:bg-gray-700/50 transition">
+                    <span class="font-semibold text-gray-200">${cat.titulo}</span>
+                    <svg class="h-5 w-5 text-gray-400 transform group-open:rotate-180 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                    </svg>
+                </summary>
+                <div class="laudo-categoria-content p-4 border-t border-gray-700/50">
+                    ${getLoadingSpinnerHTML('Carregando itens...')}
+                </div>
+            </details>
+        `).join('');
+
+        modalContent.innerHTML = `
+            <div class="flex justify-between items-start">
+                <h2 class="text-xl sm:text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-cyan-300 to-emerald-300 mb-2">
+                    Detalhes do Laudo
+                </h2>
+                <button id="close-modal-btn" class="p-1 rounded-full hover:bg-gray-700/50 text-gray-400 hover:text-white transition">
+                    <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+
+            <div class="space-y-4 mt-4 text-sm">
+                <!-- Dados Principais -->
+                <div class="bg-gray-700/30 p-4 rounded-lg neon-border grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <p><strong class="text-gray-300">Cód. Imóvel:</strong> <span class="text-gray-200">${laudo.codigo_imovel}</span></p>
+                    <p><strong class="text-gray-300">Data Vistoria:</strong> <span class="text-gray-200">${dataFormatada}</span></p>
+                    <p class="md:col-span-2"><strong class="text-gray-300">Endereço:</strong> <span class="text-gray-200">${laudo.endereco}</span></p>
+                    ${laudo.documento ? `
+                    <p class="md:col-span-2">
+                        <strong class="text-gray-300">Documento PDF:</strong> 
+                        <a href="${laudo.documento}" target="_blank" class="text-cyan-400 hover:underline">
+                            Visualizar PDF do Laudo
+                            <svg class="h-4 w-4 inline-block ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg>
+                        </a>
+                        <br><em class="text-xs text-gray-400">(Laudo externo aprovado)</em>
+                    </p>
+                    ` : ''}
+                </div>
+
+                <!-- Categorias (Accordion) -->
+                <h3 class="font-semibold text-lg text-gray-200 mt-6">Categorias do Laudo</h3>
+                <div class="space-y-2">
+                    ${laudo.categorias.length > 0 ? categoriasHTML : '<p class="text-gray-400">Nenhuma categoria encontrada para este laudo.</p>'}
+                </div>
+            </div>
+        `;
+
+        document.getElementById('close-modal-btn').addEventListener('click', () => {
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+        });
+
+        // Adiciona listeners para o accordion de categorias (lazy loading)
+        modalContent.querySelectorAll('details.laudo-details').forEach(details => {
+            details.addEventListener('toggle', async (event) => {
+                if (details.open) {
+                    const contentDiv = details.querySelector('.laudo-categoria-content');
+                    // Só carrega se o loading spinner estiver presente
+                    if (contentDiv.querySelector('.animate-pulse')) {
+                        const categoriaId = details.dataset.categoriaId;
+                        try {
+                            const categoria = await imobFetchCategoriaDetalhe(categoriaId);
+                            renderCategoriaDetalhe(contentDiv, categoria);
+                        } catch (e) {
+                            contentDiv.innerHTML = getErrorHTML('Erro ao carregar categoria.', e.message, false);
+                        }
+                    }
+                }
+            }, { once: false }); // 'once' false para permitir fechar e abrir
+        });
+
+    } catch (error) {
+        modalContent.innerHTML = `
+            <div class="flex justify-between items-start">
+                <h2 class="text-xl font-bold text-red-400 mb-4">Erro</h2>
+                <button id="close-modal-btn" class="p-1 rounded-full hover:bg-gray-700/50 text-gray-400 hover:text-white transition">
+                    <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+            ${getErrorHTML('Não foi possível carregar o laudo:', error.message, false)}
+        `;
+        document.getElementById('close-modal-btn').addEventListener('click', () => {
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+        });
+    }
+}
+
+/** (Nova) Renderiza o conteúdo de uma categoria dentro do modal */
+function renderCategoriaDetalhe(container, categoria) {
+    const itensHTML = categoria.itens.map(item => `
+        <li class="text-gray-300">${item.descricao}</li>
+    `).join('');
+
+    const imagensHTML = categoria.imagens.map(img => `
+        <a href="${img.link}" target="_blank" class="block rounded-lg overflow-hidden border-2 border-transparent hover:border-cyan-400 transition-colors">
+            <img src="${img.link}" alt="Imagem do laudo" class="w-full h-24 object-cover">
+        </a>
+    `).join('');
+
+    container.innerHTML = `
+        <div class="space-y-4">
+            <div>
+                <h4 class="font-semibold text-gray-300 mb-2">Itens</h4>
+                <ul class="list-disc list-inside space-y-1 pl-2">
+                    ${itensHTML || '<li class="text-gray-400">Nenhum item registrado.</li>'}
+                </ul>
+            </div>
+            ${categoria.imagens.length > 0 ? `
+            <div>
+                <h4 class="font-semibold text-gray-300 mb-2">Imagens</h4>
+                <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                    ${imagensHTML}
+                </div>
+            </div>
+            ` : ''}
+        </div>
+    `;
+}
+
+// =================================================================
+// --- Funções Auxiliares (Spinner, Erro, Paginação, etc.) ---
+// =================================================================
+
+function getLoadingSpinnerHTML(message = 'Carregando...') {
+    return `
+        <div class="flex justify-center items-center h-64">
+            <div class="animate-pulse flex flex-col items-center">
+                <div class="h-12 w-12 bg-cyan-400/20 rounded-full flex items-center justify-center mb-4">
+                    <svg class="h-6 w-6 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path>
+                    </svg>
+                </div>
+                <p class="text-cyan-400">${message}</p>
+            </div>
+        </div>
+    `;
+}
+
+function getErrorHTML(title, message, includeBorder = true) {
+    return `
+        <div class="${includeBorder ? 'bg-red-900/30 border border-red-800/50 rounded-lg p-4' : ''} text-center">
+            <p class="text-red-400 font-medium">${title}</p>
+            <p class="text-gray-400 mt-1">${message}</p>
+        </div>
+    `;
+}
+
+function createPagination(currentPage, totalPages) {
+    if (totalPages <= 1) return '';
+
+    let buttons = '';
+    const maxButtons = 5; // Máximo de botões (ex: 1 ... 4 5 6 ... 10)
+    
+    // Botão "Anterior"
+    buttons += `
+        <button class="page-btn p-2 rounded-lg ${currentPage === 1 ? 'bg-gray-700/50 text-gray-500 cursor-not-allowed' : 'bg-gray-700/50 hover:bg-gray-600'}" 
+                data-page="${currentPage - 1}" ${currentPage === 1 ? 'disabled' : ''}>
+            <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+        </button>
+    `;
+
+    // Lógica dos botões de página
+    if (totalPages <= maxButtons) {
+        for (let i = 1; i <= totalPages; i++) {
+            buttons += createPageButton(i, currentPage);
+        }
+    } else {
+        // Lógica para muitas páginas (com "...")
+        let start = Math.max(1, currentPage - 2);
+        let end = Math.min(totalPages, currentPage + 2);
+
+        if (currentPage < 3) {
+            end = maxButtons - 1;
+        }
+        if (currentPage > totalPages - 2) {
+            start = totalPages - (maxButtons - 2);
+        }
+        
+        if (start > 1) {
+            buttons += createPageButton(1, currentPage);
+            if (start > 2) buttons += `<span class="px-2 py-1 text-gray-400">...</span>`;
+        }
+
+        for (let i = start; i <= end; i++) {
+            buttons += createPageButton(i, currentPage);
+        }
+
+        if (end < totalPages) {
+            if (end < totalPages - 1) buttons += `<span class="px-2 py-1 text-gray-400">...</span>`;
+            buttons += createPageButton(totalPages, currentPage);
+        }
+    }
+
+    // Botão "Próximo"
+    buttons += `
+        <button class="page-btn p-2 rounded-lg ${currentPage === totalPages ? 'bg-gray-700/50 text-gray-500 cursor-not-allowed' : 'bg-gray-700/50 hover:bg-gray-600'}" 
+                data-page="${currentPage + 1}" ${currentPage === totalPages ? 'disabled' : ''}>
+            <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+        </button>
+    `;
+
+    return buttons;
+}
+
+function createPageButton(pageNumber, currentPage) {
+    const isActive = pageNumber === currentPage;
+    return `
+        <button class="page-btn px-4 py-2 rounded-lg ${isActive ? 'bg-cyan-600 text-white font-bold' : 'bg-gray-700/50 hover:bg-gray-600'}" 
+                data-page="${pageNumber}">
+            ${pageNumber}
+        </button>
     `;
 }
 
@@ -1321,9 +1680,8 @@ async function downloadReport(format) {
             const filenameMatch = contentDisposition.match(/filename="?([^"]+)"?/);
             if (filenameMatch && filenameMatch.length > 1) {
                 filename = filenameMatch[1].trim();
-                // Remover possíveis aspas ou underscores extras
                 filename = filename.replace(/["'_]+$/, "");
-}
+            }
         }
 
         const downloadUrl = window.URL.createObjectURL(blob);
@@ -1365,4 +1723,3 @@ async function downloadReport(format) {
         }
     }
 }
-

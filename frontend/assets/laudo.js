@@ -141,10 +141,9 @@ async function loadLaudoPage() {
         
         renderHeader(data);
         renderStatus(data);
-        renderCategorias(data.categorias);
         
+        // Renderiza observações
         const obsAdmContainer = document.getElementById('obs-adm-container');
-        
         if (data.obs) {
             document.getElementById('obs-adm-text').textContent = data.obs;
             obsAdmContainer.classList.remove('hidden');
@@ -152,6 +151,12 @@ async function loadLaudoPage() {
             obsAdmContainer.classList.add('hidden');
         }
 
+        // *** NOVO ***: Renderiza a seção de anexo PDF
+        renderLaudoPdfSection(data);
+
+        // Renderiza categorias
+        renderCategorias(data.categorias);
+        
         loader.classList.add('hidden');
 
     } catch (error) {
@@ -217,6 +222,78 @@ function renderStatus(data) {
         addCatBtn.disabled = true;
     }
 }
+
+/**
+ * *** NOVO ***
+ * Renderiza a seção de anexo de Laudo PDF.
+ */
+function renderLaudoPdfSection(data) {
+    let container = document.getElementById('laudo-pdf-container');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'laudo-pdf-container';
+        container.className = 'bg-gray-800/60 p-4 rounded-lg neon-border mb-6';
+        
+        // Insere depois do container de observações (se existir)
+        const obsContainer = document.getElementById('obs-adm-container');
+        obsContainer.parentNode.insertBefore(container, obsContainer.nextSibling);
+    }
+
+    let html = '';
+
+    if (data.documento) {
+        // Caso 1: PDF/DOCX já anexado
+        html = `
+            <h3 class="text-base font-bold text-white mb-3">Laudo PDF/DOCX Anexado</h3>
+            <div class="flex flex-col sm:flex-row gap-3">
+                <a href="${data.documento}" target="_blank" class="btn flex-1 py-2 px-4 rounded-lg font-bold bg-cyan-600 hover:bg-cyan-700 text-white shadow-md flex items-center justify-center">
+                    <svg class="h-5 w-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
+                    Visualizar Laudo
+                </a>
+                ${!data.finalizado ? `
+                <button id="delete-laudo-pdf-btn" class="btn flex-1 py-2 px-4 rounded-lg font-bold bg-red-600 hover:bg-red-700 text-white shadow-md flex items-center justify-center">
+                    <svg class="h-5 w-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                    Remover Anexo
+                </button>
+                ` : ''}
+            </div>
+        `;
+    } else if (!data.finalizado) {
+        // Caso 2: Não anexado e não finalizado (mostrar upload)
+        html = `
+            <h3 class="text-base font-bold text-white mb-3">Anexar Laudo (PDF/DOCX)</h3>
+            <p class="text-sm text-gray-400 mb-3">Anexe o laudo gerado (PDF ou DOCX). Este arquivo será enviado para análise.</p>
+            <div class="flex flex-col sm:flex-row gap-3">
+                <input type="file" id="laudo-pdf-input" class="w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-gray-700/50 file:text-gray-300 hover:file:bg-gray-600 transition-colors cursor-pointer" accept=".pdf,.docx">
+                <button id="upload-laudo-pdf-btn" class="btn py-2 px-4 rounded-lg font-bold bg-cyan-600 hover:bg-cyan-700 text-white shadow-md flex items-center justify-center shrink-0">
+                    <svg class="h-5 w-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                    Anexar
+                </button>
+            </div>
+            <div id="laudo-pdf-error" class="text-red-400 text-sm mt-2 hidden"></div>
+        `;
+    } else {
+        // Caso 3: Não anexado e finalizado
+        html = `
+            <h3 class="text-base font-bold text-white mb-2">Laudo PDF/DOCX</h3>
+            <p class="text-sm text-gray-400 text-center">Nenhum laudo (PDF/DOCX) foi anexado antes da finalização.</p>
+        `;
+    }
+
+    container.innerHTML = html;
+
+    // Adiciona listeners para os botões (se existirem)
+    const uploadBtn = document.getElementById('upload-laudo-pdf-btn');
+    if (uploadBtn) {
+        uploadBtn.addEventListener('click', handleUploadLaudoPdf);
+    }
+
+    const deleteBtn = document.getElementById('delete-laudo-pdf-btn');
+    if (deleteBtn) {
+        deleteBtn.addEventListener('click', handleDeleteLaudoPdf);
+    }
+}
+
 
 /**
  * Renderiza a lista de categorias (acordeões).
@@ -656,6 +733,81 @@ async function handleDeleteImage(imagemId, categoriaId) {
 }
 
 /**
+ * *** NOVO ***
+ * Lida com o upload do Laudo PDF/DOCX principal.
+ */
+async function handleUploadLaudoPdf() {
+    const input = document.getElementById('laudo-pdf-input');
+    const btn = document.getElementById('upload-laudo-pdf-btn');
+    const errorDiv = document.getElementById('laudo-pdf-error');
+    
+    if (!input.files || input.files.length === 0) {
+        errorDiv.textContent = 'Por favor, selecione um arquivo.';
+        errorDiv.classList.remove('hidden');
+        return;
+    }
+
+    const file = input.files[0];
+    const allowedTypes = ['.pdf', '.docx'];
+    const fileExt = '.' + file.name.split('.').pop().toLowerCase();
+
+    if (!allowedTypes.includes(fileExt)) {
+        errorDiv.textContent = 'Arquivo inválido. Por favor, envie .pdf ou .docx';
+        errorDiv.classList.remove('hidden');
+        return;
+    }
+
+    errorDiv.classList.add('hidden');
+    btn.disabled = true;
+    btn.innerHTML = `
+        <svg class="animate-spin h-5 w-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+        Enviando...
+    `;
+
+    const formData = new FormData();
+    formData.append('id_laudo', laudoId);
+    formData.append('file', file);
+
+    try {
+        // Usando o 'apiFetch' local com suporte a FormData
+        await apiFetch('/agenda/laudo/adicionar_laudo_pdf', 'POST', formData, true);
+        showToast('Laudo PDF anexado com sucesso!', 'success');
+        await loadLaudoPage(); // Recarrega toda a página
+    } catch (error) {
+        errorDiv.textContent = error.message;
+        errorDiv.classList.remove('hidden');
+        btn.disabled = false;
+        btn.innerHTML = `
+            <svg class="h-5 w-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+            Anexar
+        `;
+    }
+}
+
+/**
+ * *** NOVO ***
+ * Lida com a exclusão do Laudo PDF/DOCX principal.
+ */
+function handleDeleteLaudoPdf() {
+    showConfirmModal(
+        'Remover Anexo?',
+        'Tem certeza que deseja remover o laudo PDF/DOCX anexado?',
+        async () => {
+            try {
+                // Usando o 'apiFetch' local
+                await apiFetch(`/agenda/laudo/pdf/${laudoId}`, 'DELETE');
+                showToast('Anexo removido.', 'success');
+                await loadLaudoPage(); // Recarrega a página
+            } catch (error) {
+                showToast(error.message, 'error');
+                throw error; // Propaga o erro para o modal de confirmação
+            }
+        }
+    );
+}
+
+
+/**
  * Lida com o clique no botão Finalizar/Reabrir Laudo.
  */
 function handleToggleFinalizado() {
@@ -738,6 +890,7 @@ async function apiFetch(endpoint, method = 'GET', body = null, isFormData = fals
 
     if (body) {
         if (isFormData) {
+            // Não defina Content-Type para FormData, o navegador faz isso
             config.body = body;
         } else {
             headers.append('Content-Type', 'application/json');
