@@ -220,15 +220,32 @@ def read_imobiliaria_agenda(start_date: date, end_date: date, db: Session = Depe
 
 @router.get("/dashboard-stats", response_model=schemas.DashboardStatsImobiliaria)
 def get_dashboard_stats(db: Session = Depends(get_db), current_user: models.GrupoImobiliaria = Depends(auth.get_current_active_imobiliaria_group)):
-    imobiliaria_ids = get_imobiliaria_ids_from_group(current_user)
+    # Correção: Usar o mesmo filtro do relatório, pegando apenas imobiliárias NÃO deletadas.
+    # Antes usava 'get_imobiliaria_ids_from_group' que pegava todas da relação, inclusive deletadas se não houvesse filtro.
+    imobiliarias_do_grupo = db.query(models.Imobiliaria).filter(
+        models.Imobiliaria.grupo_id == current_user.id,
+        models.Imobiliaria.is_deleted == False
+    ).all()
+    imobiliaria_ids = [imob.id for imob in imobiliarias_do_grupo]
+
     today = date.today()
     start_current_30d = today - timedelta(days=29)
     start_previous_30d = start_current_30d - timedelta(days=30)
     end_previous_30d = start_current_30d - timedelta(days=1)
     
     def get_stats_for_period(start, end):
-        vistorias = db.query(func.count(models.Agenda.id)).join(models.Imovel).filter(models.Imovel.imobiliaria_id.in_(imobiliaria_ids), models.Agenda.data.between(start, end), models.Agenda.tipo.in_(['ENTRADA', 'SAIDA', 'CONFERENCIA', 'AVERIGUACAO', 'COMPLEMENTO_VISITA'])).scalar() or 0
-        improdutivas = db.query(func.count(models.VistoriaImprodutiva.id)).filter(models.VistoriaImprodutiva.imobiliaria_id.in_(imobiliaria_ids), models.VistoriaImprodutiva.data_vistoria_original.between(start, end)).scalar() or 0
+        vistorias = db.query(func.count(models.Agenda.id)).join(models.Imovel).filter(
+            models.Imovel.imobiliaria_id.in_(imobiliaria_ids),
+            models.Agenda.data.between(start, end),
+            models.Agenda.tipo.in_(['ENTRADA', 'SAIDA', 'CONFERENCIA', 'AVERIGUACAO', 'COMPLEMENTO_VISITA'])
+        ).scalar() or 0
+        
+        # Correção: Adicionado filtro is_deleted == False para improdutivas, seguindo o relatório
+        improdutivas = db.query(func.count(models.VistoriaImprodutiva.id)).filter(
+            models.VistoriaImprodutiva.imobiliaria_id.in_(imobiliaria_ids),
+            models.VistoriaImprodutiva.data_vistoria_original.between(start, end),
+            models.VistoriaImprodutiva.is_deleted == False 
+        ).scalar() or 0
         return vistorias, improdutivas
 
     vistorias_current_30d, improdutivas_current_30d = get_stats_for_period(start_current_30d, today)

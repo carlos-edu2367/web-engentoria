@@ -945,7 +945,7 @@ def schedule_vistoria(agendamento: schemas.AgendaCreate, db: Session = Depends(g
             )
             
         db_agenda_2.imovel_id = agendamento.imovel_id
-        db_agenda_2.tipo = agendamento.tipo.value
+        db_agenda_2.tipo = "FECHADO"
         db_agenda_2.disponivel = False
         db_agenda_2.valor_final_vistoria = 0
         db_agenda_2.valor_vistoriador = 0
