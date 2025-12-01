@@ -207,7 +207,8 @@ def read_imobiliaria_agenda(start_date: date, end_date: date, db: Session = Depe
         models.Imovel.imobiliaria_id.in_(imobiliaria_ids),
         models.Agenda.is_deleted == False,
         models.Agenda.data.between(start_date, end_date),
-        models.Agenda.imovel_id != None
+        models.Agenda.imovel_id != None,
+        models.Agenda.tipo != "FECHADO"
     )
     query = query.options(
         joinedload(models.Agenda.imovel).joinedload(models.Imovel.imobiliaria),
