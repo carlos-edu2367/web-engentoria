@@ -944,7 +944,6 @@ def schedule_vistoria(agendamento: schemas.AgendaCreate, db: Session = Depends(g
                 detail="Este imóvel necessita de 2 horários, mas não há um segundo slot disponível no mesmo dia."
             )
             
-        db_agenda_2.imovel_id = agendamento.imovel_id
         db_agenda_2.tipo = "FECHADO"
         db_agenda_2.disponivel = False
         db_agenda_2.valor_final_vistoria = 0
