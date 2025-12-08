@@ -2642,3 +2642,93 @@ async def enviar_relatorio_mensal_email(
     # 4. Retornar imediatamente
     return {"message": "Envio do relatório foi agendado com sucesso. Os e-mails serão disparados em segundo plano."}
 
+# =================================================================
+# --- Gestão de Vistorias Improdutivas (Admin) ---
+# =================================================================
+
+@router.get("/improdutivas/", response_model=List[schemas.VistoriaImprodutivaDetalhes], summary="Listar todas as vistorias improdutivas")
+def listar_improdutivas(
+    skip: int = 0, 
+    limit: int = 50, 
+    db: Session = Depends(get_db)
+):
+    """
+    Lista as vistorias improdutivas ordenadas da mais recente para a mais antiga.
+    """
+    improdutivas = db.query(models.VistoriaImprodutiva).options(
+        joinedload(models.VistoriaImprodutiva.imovel),
+        joinedload(models.VistoriaImprodutiva.imobiliaria)
+    ).filter(
+        models.VistoriaImprodutiva.is_deleted == False
+    ).order_by(
+        models.VistoriaImprodutiva.data_vistoria_original.desc(),
+        models.VistoriaImprodutiva.created_at.desc()
+    ).offset(skip).limit(limit).all()
+
+    # Formatação manual para garantir o mapeamento correto dos campos relacionados
+    resultado = []
+    for imp in improdutivas:
+        resultado.append(schemas.VistoriaImprodutivaDetalhes(
+            id=imp.id,
+            data_vistoria_original=imp.data_vistoria_original,
+            cod_imovel=imp.imovel.cod_imovel if imp.imovel else "N/A",
+            endereco=imp.imovel.endereco if imp.imovel else "Endereço não disponível",
+            imobiliaria_nome=imp.imobiliaria.nome if imp.imobiliaria else "N/A",
+            motivo_improdutividade=imp.motivo_improdutividade,
+            valor_cobranca=float(imp.valor_cobranca or 0),
+            valor_para_vistoriador=float(imp.valor_para_vistoriador or 0)
+        ))
+        
+    return resultado
+
+
+@router.put("/improdutivas/{improdutiva_id}", response_model=schemas.VistoriaImprodutivaDetalhes, summary="Atualizar vistoria improdutiva (Preço/Motivo)")
+def update_improdutiva(
+    improdutiva_id: UUID, 
+    update_data: schemas.VistoriaImprodutivaUpdate, 
+    db: Session = Depends(get_db)
+):
+    """
+    Permite ao admin atualizar o valor de cobrança, valor do vistoriador ou motivo de uma improdutiva.
+    """
+    db_improdutiva = db.query(models.VistoriaImprodutiva).options(
+        joinedload(models.VistoriaImprodutiva.imovel),
+        joinedload(models.VistoriaImprodutiva.imobiliaria)
+    ).filter(
+        models.VistoriaImprodutiva.id == improdutiva_id,
+        models.VistoriaImprodutiva.is_deleted == False
+    ).first()
+
+    if not db_improdutiva:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vistoria Improdutiva não encontrada.")
+
+    payload = update_data.model_dump(exclude_unset=True)
+
+    if "valor_cobranca" in payload:
+        db_improdutiva.valor_cobranca = payload["valor_cobranca"]
+    
+    if "motivo_improdutividade" in payload:
+        db_improdutiva.motivo_improdutividade = payload["motivo_improdutividade"]
+
+    if "valor_para_vistoriador" in payload:
+        db_improdutiva.valor_para_vistoriador = payload["valor_para_vistoriador"]
+
+    try:
+        db.commit()
+        db.refresh(db_improdutiva)
+        
+        # Retorna formatado
+        return schemas.VistoriaImprodutivaDetalhes(
+            id=db_improdutiva.id,
+            data_vistoria_original=db_improdutiva.data_vistoria_original,
+            cod_imovel=db_improdutiva.imovel.cod_imovel if db_improdutiva.imovel else "N/A",
+            endereco=db_improdutiva.imovel.endereco if db_improdutiva.imovel else "N/A",
+            imobiliaria_nome=db_improdutiva.imobiliaria.nome if db_improdutiva.imobiliaria else "N/A",
+            motivo_improdutividade=db_improdutiva.motivo_improdutividade,
+            valor_cobranca=float(db_improdutiva.valor_cobranca or 0),
+            valor_para_vistoriador=float(db_improdutiva.valor_para_vistoriador or 0)
+        )
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Erro ao atualizar improdutiva {improdutiva_id}: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Erro ao atualizar vistoria improdutiva.")

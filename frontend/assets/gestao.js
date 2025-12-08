@@ -14,6 +14,8 @@ import { initRelatorios } from './modules/relatorios.js';
 import { initConfiguracoes } from './modules/configuracoes.js';
 // NOVO MÓDULO DE LAUDOS
 import { initLaudos } from './modules/laudos.js';
+// NOVO MÓDULO DE IMPRODUTIVAS
+import { initImprodutivas } from './modules/improdutivas.js';
 
 // Estado global simples da aplicação (para caching)
 const AppState = {
@@ -28,14 +30,13 @@ const pageContent = document.getElementById('page-content');
 // Definição das rotas da aplicação
 const routes = {
     '#dashboard': initDashboard,
-    // INÍCIO DA PARTE 3: Alteração da rota
     '#grupos': initGrupos,
-    // FIM DA PARTE 3
     '#vistoriadores': initVistoriadores,
     '#clientes': initClientes,
     '#imoveis': initImoveis,
     '#agenda': initAgenda,
-    '#laudos': initLaudos, // NOVA ROTA
+    '#laudos': initLaudos,
+    '#improdutivas': initImprodutivas, // NOVA ROTA
     '#relatorios': initRelatorios,
     '#configuracoes': initConfiguracoes
 };

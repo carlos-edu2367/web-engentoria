@@ -248,11 +248,14 @@ export const api = {
     postInfoMensalDocumento: (formData) => apiFetchFormData(`/mensal/documento`, 'POST', formData),
     deleteInfoMensalDocumento: (docId) => apiFetch(`/deletar_doc_info/${docId}`, 'DELETE'),
     
-    // --- INÍCIO DAS NOVAS ROTAS DE LAUDO ---
+    // --- NOVAS ROTAS DE LAUDO ---
     getLaudosPendentes: () => apiFetch('/laudos/pendentes'),
     getLaudoDetails: (id_laudo) => apiFetch(`/laudo/${id_laudo}`),
     updateLaudoStatus: (data) => apiFetch('/laudo/status', 'PUT', data),
     getLaudoCategoriaDetails: (id_categoria) => apiFetch(`/laudos/categoria/${id_categoria}`),
-    getLaudoByAgendamento: (id_agendamento) => apiFetch(`/laudos/agendamento/${id_agendamento}`)
-    // --- FIM DAS NOVAS ROTAS DE LAUDO ---
+    getLaudoByAgendamento: (id_agendamento) => apiFetch(`/laudos/agendamento/${id_agendamento}`),
+    
+    // --- NOVAS ROTAS DE IMPRODUTIVAS (PARTE 5) ---
+    getImprodutivas: (skip = 0, limit = 50) => apiFetch(`/improdutivas/?skip=${skip}&limit=${limit}`),
+    updateImprodutiva: (id, data) => apiFetch(`/improdutivas/${id}`, 'PUT', data),
 };

@@ -511,3 +511,23 @@ class LaudoStatus(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+
+class VistoriaImprodutivaUpdate(BaseModel):
+    valor_cobranca: Optional[float] = None
+    motivo_improdutividade: Optional[str] = None
+    valor_para_vistoriador: Optional[float] = None
+
+class VistoriaImprodutivaDetalhes(BaseModel):
+    id: UUID
+    data_vistoria_original: date
+    cod_imovel: Optional[str]
+    endereco: Optional[str]
+    imobiliaria_nome: Optional[str]
+    motivo_improdutividade: Optional[str]
+    valor_cobranca: float
+    valor_para_vistoriador: float
+    
+    class Config:
+        from_attributes = True
