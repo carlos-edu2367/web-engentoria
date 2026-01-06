@@ -564,6 +564,7 @@ function handleMarcarImprodutiva(event) {
 function handleEditarVistoria(event) {
     const props = event.extendedProps;
     const imovel = props.imovel || {};
+    const imobiliaria = imovel.imobiliaria || {}; // Obtém imobiliária
 
     const modalHTML = `
         <h3 class="text-2xl font-bold text-cyan-300 mb-6">Editar Vistoria Completa</h3>
@@ -572,6 +573,12 @@ function handleEditarVistoria(event) {
             <fieldset class="border border-gray-600 p-4 rounded-lg">
                 <legend class="px-2 text-cyan-300">Dados do Imóvel</legend>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <!-- ADICIONADO: Campo de Imobiliária (ReadOnly) para confirmação visual -->
+                    <div class="md:col-span-2">
+                        <label class="block text-sm text-gray-400">Imobiliária Responsável</label>
+                        <input type="text" class="w-full bg-gray-800 border border-gray-600 text-gray-300 rounded px-3 py-2 mt-1 cursor-not-allowed" value="${sanitizeHTML(imobiliaria.nome || 'Não definida')}" disabled>
+                    </div>
+
                     <div>
                         <label for="cod_imovel" class="block text-sm">Cód. Imóvel</label>
                         <input type="text" id="cod_imovel" class="w-full bg-gray-700 rounded px-3 py-2 mt-1" value="${sanitizeHTML(imovel.cod_imovel || '')}">

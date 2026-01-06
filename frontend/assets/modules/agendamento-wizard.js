@@ -208,14 +208,35 @@ async function renderStep3() {
 }
 
 async function renderStep4() {
+    // CORREÇÃO DE SEGURANÇA: Verificar se o imóvel realmente pertence à imobiliária selecionada
     const imovel = cache.imoveis[wizardState.imobiliaria_id].find(i => i.id === wizardState.imovel_id);
+    
+    if (imovel && imovel.imobiliaria && imovel.imobiliaria.id !== wizardState.imobiliaria_id) {
+        console.warn(`Discrepância detectada: Imóvel pertence a ${imovel.imobiliaria.nome} mas wizard estava em ${wizardState.imobiliaria_nome}. Corrigindo...`);
+        // Atualiza o estado para refletir a verdadeira imobiliária do imóvel
+        wizardState.imobiliaria_id = imovel.imobiliaria.id;
+        wizardState.imobiliaria_nome = imovel.imobiliaria.nome;
+    }
+
     const necessitaHorarioDuplo = (imovel.tamanho >= 100 || imovel.mobiliado === 'mobiliado');
     
     const wizardHTML = `
         <div id="wizard-content">
             <h3 class="text-xl font-bold text-white mb-4">Passo 4 de 4: Confirmação</h3>
+            
+            <!-- ÁREA DE CONFIRMAÇÃO DE IMOBILIÁRIA (NOVO) -->
+            <div class="bg-gray-800 border border-cyan-700/50 p-3 rounded-lg mb-4">
+                <p class="text-xs text-gray-400 uppercase tracking-wide mb-1">Imobiliária Responsável</p>
+                <div class="flex items-center gap-3">
+                    <input type="checkbox" id="confirm-imobiliaria" class="w-5 h-5 rounded bg-gray-700 border-gray-500 text-cyan-600 focus:ring-cyan-500 cursor-pointer">
+                    <label for="confirm-imobiliaria" class="text-lg font-bold text-cyan-300 cursor-pointer select-none">
+                        ${sanitizeHTML(wizardState.imobiliaria_nome)}
+                    </label>
+                </div>
+                <p class="text-xs text-gray-500 mt-1 ml-8">Marque a caixa para confirmar a imobiliária correta.</p>
+            </div>
+
             <div class="space-y-2 p-4 bg-gray-900/50 rounded-lg">
-                <p><strong>Imobiliária:</strong> ${sanitizeHTML(wizardState.imobiliaria_nome)}</p>
                 <p><strong>Cliente:</strong> ${sanitizeHTML(wizardState.cliente_nome)}</p>
                 <p><strong>Imóvel:</strong> ${sanitizeHTML(wizardState.imovel_cod)}</p>
                 <p><strong>Horário:</strong> ${wizardState.horario_selecionado_str}</p>
@@ -237,33 +258,45 @@ async function renderStep4() {
                     <option value="COMPLEMENTO_VISITA">Complemento/Visita</option>
                 </select>
             </div>
-            <!-- INÍCIO DA MODIFICAÇÃO: Adicionado campo de observação -->
             <div class="mt-4">
                 <label for="observacao_vistoriador" class="block text-sm">Observação para Vistoriador (Opcional)</label>
                 <textarea id="observacao_vistoriador" class="w-full bg-gray-700 rounded px-3 py-2 mt-1 h-24" placeholder="Ex: Chave na portaria com Sr. João..."></textarea>
             </div>
-            <!-- FIM DA MODIFICAÇÃO -->
         </div>
         <div class="flex justify-between mt-6">
             <button id="back-wizard" class="px-4 py-2 bg-gray-600 hover:bg-gray-500 rounded-lg transition">Voltar</button>
-            <button id="confirm-agendamento" class="px-6 py-3 bg-green-600 hover:bg-green-500 rounded-lg transition font-bold">Confirmar Agendamento</button>
+            <button id="confirm-agendamento" class="px-6 py-3 bg-green-600 hover:bg-green-500 rounded-lg transition font-bold opacity-50 cursor-not-allowed" disabled>Confirmar Agendamento</button>
         </div>
     `;
     showModal(wizardHTML, 'max-w-lg');
     
+    // Lógica para habilitar o botão apenas após confirmação da imobiliária
+    const confirmCheckbox = document.getElementById('confirm-imobiliaria');
+    const confirmBtn = document.getElementById('confirm-agendamento');
+    
+    confirmCheckbox.addEventListener('change', (e) => {
+        if (e.target.checked) {
+            confirmBtn.disabled = false;
+            confirmBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+        } else {
+            confirmBtn.disabled = true;
+            confirmBtn.classList.add('opacity-50', 'cursor-not-allowed');
+        }
+    });
+
     document.getElementById('back-wizard').onclick = () => { wizardState.step = 3; renderWizard(); };
-    document.getElementById('confirm-agendamento').onclick = async () => {
-        // INÍCIO DA MODIFICAÇÃO: Captura o valor da observação
+    confirmBtn.onclick = async () => {
+        if (!confirmCheckbox.checked) return; // Segurança extra
+
         const observacao = document.getElementById('observacao_vistoriador').value;
         const data = {
             horario_id: wizardState.horario_id,
             imovel_id: wizardState.imovel_id,
-            imobiliaria_id: wizardState.imobiliaria_id,
+            imobiliaria_id: wizardState.imobiliaria_id, // Agora garantido de ser o correto
             tipo: document.getElementById('tipo_vistoria').value,
             force_single_slot: document.getElementById('force-single')?.checked || false,
-            observacao_vistoriador: observacao // Adiciona ao payload
+            observacao_vistoriador: observacao
         };
-        // FIM DA MODIFICAÇÃO
         try {
             await api.scheduleVistoria(data);
             showAlert('Vistoria agendada com sucesso!');
