@@ -289,7 +289,21 @@ def _calculate_valor_final_vistoria(imovel: models.Imovel, imobiliaria: models.I
     # Garante que o valor mínimo seja um float, tratando o caso de ser None
     valor_minimo_imob = float(imobiliaria.valor_minimo or 0)
 
-    if tipo_vistoria == 'AVERIGUACAO':
+    # --- NOVA REGRA PARA VISTORIAS DE ENTRADA ---
+    if tipo_vistoria == 'ENTRADA':
+        tamanho = float(imovel.tamanho)
+        
+        if imovel.mobiliado == 'mobiliado':
+            # Mobiliado: 1.25 reais por metro
+            valor_base_calculado = tamanho * 1.25
+        else:
+            # Sem mobília ou Semi-mobiliado: 1 real por metro
+            valor_base_calculado = tamanho * 1.00
+            
+        # Valor mínimo fixo de 50 reais para ENTRADA
+        valor_minimo_aplicavel = 50.00
+
+    elif tipo_vistoria == 'AVERIGUACAO':
         # Valor fixo para averiguação
         valor_base_calculado = 65.00
         # Averiguação é valor cheio, então o mínimo aplicável é o valor mínimo total
@@ -303,10 +317,10 @@ def _calculate_valor_final_vistoria(imovel: models.Imovel, imobiliaria: models.I
         valor_minimo_aplicavel = valor_minimo_imob * 0.5
     
     else: 
-        # Vistorias de valor "cheio" (ENTRADA, SAIDA, etc.)
+        # Vistorias de valor "cheio" (SAIDA, etc.) permanecem como estavam
         valor_base_imovel = float(imovel.valor)
         valor_base_calculado = valor_base_imovel
-        # Vistoria de valor cheio, o mínimo é o valor cheio
+        # Vistoria de valor cheio, o mínimo é o valor cheio da imobiliária
         valor_minimo_aplicavel = valor_minimo_imob
 
     # Compara o valor calculado com o mínimo aplicável para aquele tipo de vistoria
@@ -314,7 +328,6 @@ def _calculate_valor_final_vistoria(imovel: models.Imovel, imobiliaria: models.I
     valor_final = max(valor_base_calculado, valor_minimo_aplicavel)
     
     return round(valor_final, 2)
-
 def _calculate_valor_comissao_vistoriador(
     tamanho_m2: float, 
     mobiliado_status: str, 
