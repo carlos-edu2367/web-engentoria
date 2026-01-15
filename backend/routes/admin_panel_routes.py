@@ -833,34 +833,58 @@ def add_horario_avulso(horario: schemas.HorarioAvulsoCreate, db: Session = Depen
     db.refresh(db_agenda)
     return db_agenda
 
-@router.post("/agenda/gerar", summary="CORRIGIDO: Gerar agenda com base nos horários fixos")
+@router.post("/agenda/gerar", summary="Regerar agenda: Limpa livres e recria com base nos horários fixos")
 def generate_agenda(semanas: int = 4, db: Session = Depends(get_db)):
     """
-    Gera horários livres na agenda para as próximas semanas com base nos horários
-    de trabalho fixos cadastrados para cada vistoriador.
-    CORREÇÃO: Adicionado tratamento de erro e lógica de comparação de dias ajustada.
+    Regenera a agenda para as próximas semanas.
+    1. Remove todos os horários 'LIVRE' futuros no período estipulado.
+    2. Recria os horários baseando-se na lista atual de HorarioFixo.
+    Isso previne que horários fixos deletados continuem gerando "sujeira" na agenda.
     """
     today = date.today()
-    horarios_fixos = db.query(models.HorarioFixo).filter(models.HorarioFixo.is_deleted == False).all()
-    if not horarios_fixos:
-        return {"message": "Nenhum horário de trabalho fixo cadastrado. Nenhum horário foi gerado."}
+    days_to_generate = 7 * semanas
+    end_date = today + timedelta(days=days_to_generate)
 
-    novos_agendamentos = 0
     try:
-        for i in range(7 * semanas):
+        # 1. Limpeza: Deletar horários LIVRES existentes no período
+        # Isso garante que horários fixos removidos não deixem resquícios.
+        # Mantém intactos horários que já foram agendados (ENTRADA, SAIDA, etc) ou FECHADO manualmente.
+        deleted_count = db.query(models.Agenda).filter(
+            models.Agenda.data >= today,
+            models.Agenda.data < end_date,
+            models.Agenda.tipo == "LIVRE",
+            models.Agenda.disponivel == True
+        ).delete(synchronize_session=False)
+
+        # 2. Busca configurações de horários fixos ativos
+        horarios_fixos = db.query(models.HorarioFixo).filter(models.HorarioFixo.is_deleted == False).all()
+        
+        if not horarios_fixos:
+            db.commit()
+            return {
+                "message": f"Agenda limpa. {deleted_count} horários livres antigos foram removidos. Nenhum horário fixo configurado para geração."
+            }
+
+        novos_agendamentos = 0
+        
+        # 3. Recriação: Loop pelos dias e horários fixos
+        for i in range(days_to_generate):
             current_date = today + timedelta(days=i)
-            # weekday() retorna 0 para Segunda e 6 para Domingo. Convertemos para string.
+            # weekday() retorna 0 para Segunda e 6 para Domingo. Convertemos para string para bater com o model.
             dia_semana_str = str(current_date.weekday())
             
             for hf in horarios_fixos:
                 if hf.dia_semana == dia_semana_str:
-                    existe = db.query(models.Agenda).filter(
+                    # Checagem de Conflito:
+                    # Embora tenhamos limpado os 'LIVRES', ainda podem existir agendamentos reais 
+                    # ou bloqueios manuais ('FECHADO') nessa data/hora. Não podemos sobrescrever.
+                    existe_ocupado = db.query(models.Agenda).filter(
                         models.Agenda.vistoriador_id == hf.vistoriador_id,
                         models.Agenda.data == current_date,
                         models.Agenda.horario == hf.horario
                     ).first()
                     
-                    if not existe:
+                    if not existe_ocupado:
                         novo_agendamento = models.Agenda(
                             vistoriador_id=hf.vistoriador_id,
                             data=current_date,
@@ -871,14 +895,14 @@ def generate_agenda(semanas: int = 4, db: Session = Depends(get_db)):
                         db.add(novo_agendamento)
                         novos_agendamentos += 1
         
-        if novos_agendamentos > 0:
-            db.commit()
-            return {"message": f"Geração de agenda concluída. {novos_agendamentos} novos horários disponíveis foram criados."}
-        else:
-            return {"message": "Geração de agenda concluída. Nenhum novo horário precisou ser criado (possivelmente já existem)."}
+        db.commit()
+        return {
+            "message": f"Regeneração concluída. {deleted_count} horários livres limpos. {novos_agendamentos} novos horários gerados conforme configuração atual."
+        }
 
     except Exception as e:
         db.rollback()
+        logger.error(f"Erro ao gerar agenda: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Ocorreu um erro ao gerar a agenda: {str(e)}"

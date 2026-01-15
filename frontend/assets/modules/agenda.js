@@ -655,7 +655,7 @@ function handleEditarVistoria(event) {
         valorVistoriaInput.disabled = isChecked;
         valorVistoriadorInput.disabled = isChecked;
         if (isChecked) {
-            valorVistoriaInput.value = '';
+            valorVistoriaInput.value = ''; 
             valorVistoriadorInput.value = '';
             valorVistoriaInput.placeholder = 'Automático';
             valorVistoriadorInput.placeholder = 'Automático';
