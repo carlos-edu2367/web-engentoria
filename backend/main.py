@@ -1,6 +1,9 @@
 # backend/main.py
 import os
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
 from fastapi.staticfiles import StaticFiles
 from starlette.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,10 +15,27 @@ from .routes import vistoria_valores_routes # Rota para manipulação de valores
 from . import models
 from .config import engine
 
-# Cria as tabelas no banco de dados, se não existirem
+from backend.cron.clear import job_limpeza_diaria
+import logging
+
+logger = logging.getLogger(__name__)
+
+scheduler = AsyncIOScheduler()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Agenda o job
+    scheduler.add_job(job_limpeza_diaria, CronTrigger(hour=3, minute=0))
+    scheduler.start()
+    logger.info("Scheduler iniciado")
+    
+    yield # A aplicação roda aqui
+    
+    scheduler.shutdown()
 
 app = FastAPI(
     title="Engentoria - API Vistoriador & Gestão",
+    lifespan=lifespan,
     description="API para o portal web do vistoriador, painel da imobiliária e painel de gestão de TI.",
     version="2.0" # Versão atualizada para refletir as novas funcionalidades
 )

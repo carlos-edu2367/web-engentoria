@@ -58,3 +58,14 @@ def deletar_arquivo_supabase(file_path, bucket):
     except Exception as e:
             logger.error(f"Erro ao deletar imagem: {e}")
             raise e
+    
+async def deletar_arquivo_supabase_safe(file_path, bucket):
+    try:
+            resposta = await supabase.storage.from_(bucket).remove([file_path])
+            if resposta.count(["error"])>0:
+                return False
+            return True
+        
+    except Exception as e:
+            logger.error(f"Erro ao deletar imagem: {e}")
+            return False
