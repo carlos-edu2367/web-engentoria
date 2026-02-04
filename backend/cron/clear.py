@@ -13,7 +13,10 @@ from backend.models import DocumentosInfoMensal, DocumentoAgenda
 from backend.supabase_client import deletar_arquivo_supabase_safe
 
 logger = logging.getLogger(__name__)
-engine = create_async_engine(Settings.DATABASE_URL, echo=False)
+database_url = Settings.DATABASE_URL
+if database_url.startswith("postgresql://"):
+    database_url = database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+engine = create_async_engine(database_url, echo=False)
 AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 async def limpar_tabela_especifica(session: AsyncSession, Model, bucket_name: str, cutoff_date: datetime):
