@@ -7,6 +7,10 @@ import { startAgendamentoWizard } from './agendamento-wizard.js';
 let calendar; // Manter a referência do calendário
 let reagendamentoState = { active: false, event: null }; // Controla o modo de reagendamento
 
+// --- VARIÁVEIS PARA O FILTRO DE VISTORIADOR ---
+let currentVistoriadorFilter = 'all'; // 'all' ou o ID do vistoriador
+let knownVistoriadores = new Map(); // Armazena {id: nome} para popular o select
+
 // --- SISTEMA DE CACHE IA ---
 // Armazena { message: string, timestamp: number }
 let iaAnalysisCache = null;
@@ -775,11 +779,49 @@ function showIAModal(message) {
     document.getElementById('btn-close-ia').onclick = hideModal;
 }
 
+/**
+ * Atualiza as opções do select de filtro de vistoriadores.
+ * Adiciona novos vistoriadores encontrados nos eventos sem duplicar.
+ * @param {Array} events - Lista de eventos carregados.
+ */
+function updateVistoriadorSelect(events) {
+    const select = document.getElementById('filter-vistoriador');
+    if (!select) return;
+
+    let hasNew = false;
+    events.forEach(e => {
+        if (e.vistoriador && e.vistoriador.id && e.vistoriador.nome) {
+            if (!knownVistoriadores.has(e.vistoriador.id)) {
+                knownVistoriadores.set(e.vistoriador.id, e.vistoriador.nome);
+                hasNew = true;
+            }
+        }
+    });
+
+    if (hasNew) {
+        // Reconstrói as opções mantendo a seleção atual
+        const currentVal = select.value;
+        let options = '<option value="all">Todos os Vistoriadores</option>';
+        
+        knownVistoriadores.forEach((nome, id) => {
+            options += `<option value="${id}">${sanitizeHTML(nome)}</option>`;
+        });
+
+        select.innerHTML = options;
+        select.value = currentVal; // Restaura seleção
+    }
+}
+
 export async function initAgenda() {
     const pageHTML = `
         <div class="flex flex-col sm:flex-row justify-between items-center mb-8 flex-wrap gap-4">
             <h1 class="text-3xl font-bold text-cyan-300">Agenda de Vistorias</h1>
-            <div class="flex flex-wrap gap-3 w-full sm:w-auto justify-end">
+            <div class="flex flex-wrap gap-3 w-full sm:w-auto justify-end items-center">
+                <!-- Filtro de Vistoriador -->
+                <select id="filter-vistoriador" class="w-full sm:w-auto bg-gray-700 text-white border border-gray-600 rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-cyan-500 text-sm">
+                    <option value="all">Todos os Vistoriadores</option>
+                </select>
+
                 <button id="btn-analise-ia" class="w-full sm:w-auto bg-purple-600 hover:bg-purple-500 text-white font-bold py-2 px-4 rounded-lg transition flex items-center justify-center gap-2">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
                     Análise IA
@@ -795,6 +837,14 @@ export async function initAgenda() {
         </div>
     `;
     renderPageContent(pageHTML);
+
+    // Listener para o filtro
+    document.getElementById('filter-vistoriador').addEventListener('change', (e) => {
+        currentVistoriadorFilter = e.target.value;
+        if (calendar) {
+            calendar.refetchEvents();
+        }
+    });
 
     document.getElementById('btn-analise-ia').addEventListener('click', async (e) => {
         const btn = e.currentTarget;
@@ -902,8 +952,19 @@ export async function initAgenda() {
             try {
                 const start = fetchInfo.startStr.split('T')[0];
                 const end = fetchInfo.endStr.split('T')[0];
-                const events = await api.getAgendaEvents(start, end);
-                successCallback(events.map(e => ({
+                const rawEvents = await api.getAgendaEvents(start, end);
+                
+                // Atualiza as opções do filtro com base nos dados recebidos
+                updateVistoriadorSelect(rawEvents);
+
+                // Aplica o filtro selecionado pelo usuário
+                const filteredEvents = rawEvents.filter(e => {
+                    if (currentVistoriadorFilter === 'all') return true;
+                    // Verifica se o evento tem vistoriador e se o ID bate (convertendo para string por segurança)
+                    return e.vistoriador && String(e.vistoriador.id) === String(currentVistoriadorFilter);
+                });
+
+                successCallback(filteredEvents.map(e => ({
                     id: e.id,
                     title: e.tipo === 'LIVRE' ? 'Livre' : (e.imovel?.cod_imovel || e.tipo),
                     start: `${e.data}T${e.horario}`,
