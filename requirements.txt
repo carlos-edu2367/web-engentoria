@@ -19,3 +19,4 @@ sendgrid
 supabase>=2.0.0
 requests
 apscheduler
+google-generativeai
