@@ -7,6 +7,11 @@ import { startAgendamentoWizard } from './agendamento-wizard.js';
 let calendar; // Manter a referência do calendário
 let reagendamentoState = { active: false, event: null }; // Controla o modo de reagendamento
 
+// --- SISTEMA DE CACHE IA ---
+// Armazena { message: string, timestamp: number }
+let iaAnalysisCache = null;
+const IA_CACHE_DURATION = 2 * 60 * 60 * 1000; // 2 horas em milissegundos
+
 // --- INÍCIO DA PARTE 2: Helpers de Abas (Mural e Documentos) ---
 
 /**
@@ -746,20 +751,94 @@ function handleReagendamentoSelect(targetEvent) {
     };
 }
 
+/**
+ * Exibe o modal com o resultado da análise da IA.
+ * @param {string} message - A mensagem retornada pela IA.
+ */
+function showIAModal(message) {
+    showModal(`
+        <div class="text-left">
+            <h3 class="text-xl font-bold text-purple-400 mb-4 flex items-center gap-2">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                Análise Operacional IA
+            </h3>
+            <div class="bg-gray-700/50 p-4 rounded-lg border-l-4 border-purple-500">
+                <p class="text-gray-200 whitespace-pre-wrap leading-relaxed">${sanitizeHTML(message)}</p>
+            </div>
+            <div class="mt-4 flex justify-between items-center text-xs text-gray-500">
+                 <span>Resultados em cache por 2 horas.</span>
+                 <button id="btn-close-ia" class="px-4 py-2 bg-gray-600 hover:bg-gray-500 rounded-lg text-white transition">Fechar</button>
+            </div>
+        </div>
+    `, 'max-w-2xl');
+    
+    document.getElementById('btn-close-ia').onclick = hideModal;
+}
+
 export async function initAgenda() {
     const pageHTML = `
         <div class="flex flex-col sm:flex-row justify-between items-center mb-8 flex-wrap gap-4">
             <h1 class="text-3xl font-bold text-cyan-300">Agenda de Vistorias</h1>
-            <button id="btn-gerar-agenda" class="w-full sm:w-auto bg-green-600 hover:bg-green-500 text-white font-bold py-2 px-4 rounded-lg transition flex items-center justify-center gap-2">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
-                Gerar Agenda (4 Semanas)
-            </button>
+            <div class="flex flex-wrap gap-3 w-full sm:w-auto justify-end">
+                <button id="btn-analise-ia" class="w-full sm:w-auto bg-purple-600 hover:bg-purple-500 text-white font-bold py-2 px-4 rounded-lg transition flex items-center justify-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                    Análise IA
+                </button>
+                <button id="btn-gerar-agenda" class="w-full sm:w-auto bg-green-600 hover:bg-green-500 text-white font-bold py-2 px-4 rounded-lg transition flex items-center justify-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                    Gerar Agenda (4 Semanas)
+                </button>
+            </div>
         </div>
         <div id="calendar-container" class="bg-gray-800/50 rounded-xl neon-border p-2 sm:p-4 relative">
             <div id="calendar"></div>
         </div>
     `;
     renderPageContent(pageHTML);
+
+    document.getElementById('btn-analise-ia').addEventListener('click', async (e) => {
+        const btn = e.currentTarget;
+
+        // VERIFICAÇÃO DE CACHE
+        const now = Date.now();
+        if (iaAnalysisCache && (now - iaAnalysisCache.timestamp < IA_CACHE_DURATION)) {
+            console.log("Usando cache da análise IA");
+            showIAModal(iaAnalysisCache.message);
+            return;
+        }
+
+        const originalContent = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = `
+            <svg class="animate-spin h-5 w-5 mr-3" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            Analisando...
+        `;
+
+        try {
+            // Nota: Certifique-se de que o método 'analyzeScheduleWithAI' existe no seu api.js
+            const result = await api.analyzeScheduleWithAI();
+            
+            // ATUALIZA O CACHE
+            iaAnalysisCache = {
+                message: result.message,
+                timestamp: Date.now()
+            };
+
+            showIAModal(result.message);
+
+        } catch (error) {
+            const errorMsg = error.message && error.message.includes('not a function') 
+                ? 'Erro: Método api.analyzeScheduleWithAI não encontrado. Atualize o arquivo api.js.' 
+                : (error.message || 'Erro ao consultar IA.');
+            showAlert(errorMsg, 'error');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = originalContent;
+        }
+    });
 
     document.getElementById('btn-gerar-agenda').addEventListener('click', async (e) => {
         const btn = e.currentTarget;

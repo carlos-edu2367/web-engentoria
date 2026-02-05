@@ -165,6 +165,7 @@ export const api = {
     getDashboardStats: () => apiFetch('/dashboard/stats'),
     getDashboardFinancialStats: () => apiFetch('/dashboard/financial-stats'),
     getVistoriasChartData: () => apiFetch('/dashboard/vistorias-chart'),
+    analyzeScheduleWithAI: () => apiFetch('/dashboard/analise-ia'),
 
     // ==================================================================
     // AQUI ESTÁ A CORREÇÃO

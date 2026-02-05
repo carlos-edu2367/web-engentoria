@@ -11,6 +11,9 @@ from decimal import Decimal
 from dateutil.relativedelta import relativedelta
 from typing import Optional
 import io
+import google.generativeai as genai
+import os
+from dotenv import load_dotenv
 import logging, os, uuid, unicodedata, re
 from reportlab.lib.units import inch
 import base64
@@ -22,7 +25,7 @@ from sendgrid.helpers.mail import (
 
 from ..supabase_client import deletar_arquivo_supabase, supabase, gerar_url_assinada
 
-
+load_dotenv()
 from .. import models, schemas, auth
 
 # Imports para geração de relatórios
@@ -2777,3 +2780,101 @@ def update_improdutiva(
         db.rollback()
         logger.error(f"Erro ao atualizar improdutiva {improdutiva_id}: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Erro ao atualizar vistoria improdutiva.")
+
+@router.get("/dashboard/analise-ia", summary="Analise de agenda dos próximos 3 dias com IA")
+def analyze_schedule_with_ai(db: Session = Depends(get_db)):
+    """
+    Levanta a agenda dos próximos 3 dias, aplica regras de negócio e solicita
+    ao Gemini uma análise crítica operacional.
+    """
+    
+    # 1. Configuração da API do Gemini
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=500, detail="GEMINI_API_KEY não configurada no ambiente.")
+    
+    genai.configure(api_key=api_key)
+    
+    # Tenta usar o modelo solicitado, com fallback para versões estáveis caso a preview não exista
+    model_name = "gemini-3-flash-preview"
+    # Nota: Se o modelo 'gemini-3...' não estiver disponível publicamente, 
+    # a biblioteca pode lançar erro. Recomenda-se usar 'gemini-2.0-flash-exp' ou 'gemini-1.5-flash'.
+    
+    try:
+        model = genai.GenerativeModel(model_name)
+    except Exception:
+        # Fallback silencioso para garantir funcionamento se o nome do modelo mudar
+        model = genai.GenerativeModel("gemini-1.5-flash")
+
+    # 2. Levantamento de Dados (Próximos 3 dias)
+    today = date.today()
+    end_date = today + timedelta(days=3)
+
+    agendamentos = db.query(models.Agenda).options(
+        joinedload(models.Agenda.imovel),
+        joinedload(models.Agenda.vistoriador)
+    ).filter(
+        models.Agenda.data >= today,
+        models.Agenda.data <= end_date,
+        models.Agenda.tipo.notin_(['LIVRE', 'FECHADO']), # Apenas vistorias reais
+        models.Agenda.is_deleted == False
+    ).order_by(models.Agenda.data, models.Agenda.horario).all()
+
+    if not agendamentos:
+        return {"message": "A agenda está vazia para os próximos 3 dias. Nenhuma análise necessária."}
+
+    # 3. Formatação dos Dados para o Prompt
+    dados_agenda = []
+    for ag in agendamentos:
+        imovel_info = "N/A"
+        tamanho = "N/A"
+        mobilia = "N/A"
+        endereco = "N/A"
+        cod_imovel = "N/A"
+
+        if ag.imovel:
+            tamanho = float(ag.imovel.tamanho)
+            mobilia = ag.imovel.mobiliado
+            endereco = ag.imovel.endereco
+            cod_imovel = ag.imovel.cod_imovel
+            imovel_info = f"Cód: {cod_imovel} | Tamanho: {tamanho}m² | Mobília: {mobilia} | End: {endereco}"
+        
+        vistoriador_nome = ag.vistoriador.nome if ag.vistoriador else "Desconhecido"
+        
+        linha = (
+            f"- Data: {ag.data.strftime('%d/%m/%Y')} | Horário: {ag.horario} | "
+            f"Vistoriador: {vistoriador_nome} | Tipo: {ag.tipo} | {imovel_info}"
+        )
+        dados_agenda.append(linha)
+    
+    texto_agenda = "\n".join(dados_agenda)
+
+    # 4. Definição das Regras e Prompt
+    prompt = f"""
+    Você é um gerente operacional experiente de uma empresa de vistorias imobiliárias.
+    Analise a agenda dos próximos 3 dias abaixo e identifique possíveis problemas logísticos ou quebra de regras.
+
+    DADOS DA AGENDA:
+    {texto_agenda}
+
+    REGRAS DE NEGÓCIO:
+    1. Regra de Horário Duplo: Vistorias do tipo 'ENTRADA' ou 'SAIDA' em imóveis com tamanho >= 100m² OU que sejam 'mobiliado' são complexas e demoradas. Idealmente, elas não devem ter outra vistoria agendada imediatamente na sequência para o mesmo vistoriador sem uma folga, ou devem ocupar dois horários.
+    2. Logística: Verifique se o mesmo vistoriador tem vistorias em endereços diferentes em horários muito próximos (ex: 09:00 e 10:00), o que pode causar atrasos.
+    3. Carga de Trabalho: Identifique se algum vistoriador está sobrecarregado no mesmo dia (muitas vistorias grandes).
+
+    INSTRUÇÃO DE RESPOSTA:
+    - Retorne APENAS a mensagem final para o usuário (gestor).
+    - Se houver problemas críticos, seja direto e cite os códigos dos imóveis e vistoriadores. Ex: "Atenção: O vistoriador X tem uma sequência inviável no dia Y..."
+    - Se estiver tudo aparentemente bem, diga: "A agenda dos próximos 3 dias parece equilibrada, sem conflitos críticos detectados."
+    - Não use formatação markdown excessiva, apenas texto corrido.
+    """
+
+    # 5. Envio para o Gemini
+    try:
+        response = model.generate_content(prompt)
+        mensagem_analise = response.text.strip()
+    except Exception as e:
+        logger.error(f"Erro ao consultar Gemini: {str(e)}")
+        raise HTTPException(status_code=500, detail="Erro ao processar análise inteligente.")
+
+    return {"message": mensagem_analise}
