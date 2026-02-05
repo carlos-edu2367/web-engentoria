@@ -8,7 +8,7 @@ from passlib.exc import UnknownHashError
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 import secrets
-import sendgrid
+from .email_utils import send_email
 from sendgrid.helpers.mail import Mail
 
 from . import models, schemas
@@ -55,33 +55,115 @@ def generate_reset_token():
     return secrets.token_hex(32)
 
 def send_password_reset_email(email_to: str, token: str):
-    """Envia o e-mail de redefinição de senha."""
+    """Envia o e-mail de redefinição de senha usando Mailgun."""
     reset_link = f"{settings.FRONTEND_URL}/redefinir-senha.html?token={token}"
-    
-    # Se a chave da API não estiver configurada, imprime o link no console para desenvolvimento
-    if not settings.SENDGRID_API_KEY:
+
+    # Modo desenvolvimento (sem Mailgun configurado)
+    if not settings.MAILGUN_API_KEY:
         print("--- MODO DE DESENVOLVIMENTO ---")
         print(f"Link para redefinição de senha para {email_to}:")
         print(reset_link)
         print("-------------------------------")
         return
 
-    message = Mail(
-        from_email=settings.EMAIL_FROM,
-        to_emails=email_to,
-        subject='Recuperação de Senha',
-        html_content=f"""
-            <p>Olá,</p>
-            <p>Você solicitou a redefinição da sua senha. Clique no link abaixo para criar uma nova senha:</p>
-            <p><a href="{reset_link}">Redefinir Minha Senha</a></p>
-            <p>Este link irá expirar em 15 minutos.</p>
-            <p>Se você não solicitou esta alteração, por favor, ignore este e-mail.</p>
-        """
-    )
+    html = f"""
+    <!DOCTYPE html>
+    <html lang="pt-BR">
+    <head>
+        <meta charset="UTF-8" />
+        <title>Recuperação de Senha</title>
+    </head>
+    <body style="
+        margin: 0;
+        padding: 0;
+        background-color: #0f172a;
+        font-family: Arial, Helvetica, sans-serif;
+        color: #e5e7eb;
+    ">
+        <table width="100%" cellpadding="0" cellspacing="0">
+            <tr>
+                <td align="center" style="padding: 40px 0;">
+                    <table width="600" cellpadding="0" cellspacing="0" style="
+                        background-color: #020617;
+                        border-radius: 12px;
+                        overflow: hidden;
+                        box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+                    ">
+                        <tr>
+                            <td style="
+                                background: linear-gradient(135deg, #22d3ee, #22c55e);
+                                padding: 24px;
+                                text-align: center;
+                                color: #022c22;
+                                font-size: 22px;
+                                font-weight: bold;
+                            ">
+                                ENGENTORIA
+                            </td>
+                        </tr>
+
+                        <tr>
+                            <td style="padding: 32px;">
+                                <p style="font-size: 16px; margin-bottom: 16px;">
+                                    Olá,
+                                </p>
+
+                                <p style="font-size: 16px; line-height: 1.6; margin-bottom: 24px;">
+                                    Recebemos uma solicitação para redefinir a senha da sua conta.
+                                    Para continuar, clique no botão abaixo:
+                                </p>
+
+                                <div style="text-align: center; margin: 32px 0;">
+                                    <a href="{reset_link}"
+                                       style="
+                                            background: linear-gradient(135deg, #22d3ee, #22c55e);
+                                            color: #022c22;
+                                            padding: 14px 28px;
+                                            text-decoration: none;
+                                            border-radius: 8px;
+                                            font-weight: bold;
+                                            display: inline-block;
+                                       ">
+                                        Redefinir minha senha
+                                    </a>
+                                </div>
+
+                                <p style="font-size: 14px; color: #94a3b8; line-height: 1.6;">
+                                    ⏱️ Este link expira em <strong>15 minutos</strong>.
+                                </p>
+
+                                <p style="font-size: 14px; color: #94a3b8; line-height: 1.6; margin-top: 16px;">
+                                    Se você não solicitou essa alteração, pode ignorar este e-mail com segurança.
+                                </p>
+                            </td>
+                        </tr>
+
+                        <tr>
+                            <td style="
+                                background-color: #020617;
+                                padding: 20px;
+                                text-align: center;
+                                font-size: 12px;
+                                color: #64748b;
+                            ">
+                                © {settings.APP_NAME} • Todos os direitos reservados
+                            </td>
+                        </tr>
+                    </table>
+                </td>
+            </tr>
+        </table>
+    </body>
+    </html>
+    """
+
     try:
-        sg = sendgrid.SendGridAPIClient(settings.SENDGRID_API_KEY)
-        response = sg.send(message)
-        print(f"E-mail de recuperação enviado para {email_to}, Status: {response.status_code}")
+        send_email(
+            to=email_to,
+            subject="Recuperação de Senha",
+            html=html
+        )
+        print(f"E-mail de recuperação enviado para {email_to}")
     except Exception as e:
         print(f"Erro ao enviar e-mail de recuperação para {email_to}: {e}")
 

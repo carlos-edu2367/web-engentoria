@@ -40,6 +40,8 @@ class Settings:
     PASSWORD_RECOVERY_URL: str = os.getenv("PASSWORD_RECOVERY_URL", "http://localhost:8081/reset-password")
     FRONTEND_URL: str = "https://web-engentoria-production.up.railway.app"
     EMAIL_REPORTS_TO: str = os.getenv("EMAIL_REPORTS_TO", "brmoura96@outlook.com")
+    MAILGUN_API_KEY: str = os.getenv("MAILGUN_API_KEY")
+    APP_NAME = "ENGENTORIA"
 
 # Crio uma instância única das configurações para usar no resto da aplicação.
 settings = Settings()
