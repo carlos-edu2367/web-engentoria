@@ -13,7 +13,7 @@ def inject_neectify_footer(html: str) -> str:
     <div style="margin-top:32px; padding-top:16px; border-top:1px solid #e5e7eb; text-align:center;">
         <p style="margin:0; font-size:11px; color:#9ca3af; font-family: Arial, Helvetica, sans-serif;">
             Este sistema foi desenvolvido pela
-            <a href="https://neectify.com"
+            <a href="https://www.neectify.com"
                target="_blank"
                style="color:#6b7280; text-decoration:none; font-weight:bold;">
                 Neectify
