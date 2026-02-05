@@ -18,10 +18,7 @@ import logging, os, uuid, unicodedata, re
 from reportlab.lib.units import inch
 import base64
 from pydantic import BaseModel, EmailStr
-from sendgrid.helpers.mail import (
-    Mail, Attachment, FileContent, FileName, 
-    FileType, Disposition, Cc
-)
+
 
 from ..supabase_client import deletar_arquivo_supabase, supabase, gerar_url_assinada
 
@@ -51,6 +48,7 @@ from sendgrid.helpers.mail import Mail
 # Importa a função para obter a sessão do banco e a função de hash de senha
 from ..config import get_db, settings
 from ..auth import get_password_hash, get_current_admin_user
+from ..email_utils import send_email
 
 # Cria um novo roteador para o painel de administração
 # Todas as rotas aqui serão protegidas pela dependência 'get_current_admin_user'
@@ -72,87 +70,128 @@ def _send_report_email_task(
     grupo_id: UUID,
     mes: int,
     ano: int,
-    recipient_emails: List[str]
+    recipient_emails: list[str]
 ):
     """
     Tarefa em background para gerar e enviar o relatório por e-mail.
     """
-    logger.info(f"Iniciando tarefa de envio de e-mail para InfoMensal ID: {info_id}")
-    
+    logger.info(f"Iniciando envio de relatório (Mailgun) | InfoMensal ID: {info_id}")
+
     try:
-        # 1. Obter os dados do relatório (reaproveitando sua função existente)
-        # Note: get_report_data precisa de um db.Session, passamos o objeto db.
-        report_data_full = get_report_data(mes=mes, ano=ano, db=db, id_grupo=grupo_id)
+        # 1. Buscar dados do relatório
+        report_data_full = get_report_data(
+            mes=mes,
+            ano=ano,
+            db=db,
+            id_grupo=grupo_id
+        )
         report_list = report_data_full.get("relatorios")
 
         if not report_list:
-            logger.warning(f"Nenhum dado de relatório encontrado para InfoMensal ID: {info_id}. Abortando envio.")
+            logger.warning(
+                f"Nenhum relatório encontrado | InfoMensal ID: {info_id}"
+            )
             return
 
-        # 2. Gerar o PDF em memória (reaproveitando sua função existente)
-        # _create_pdf_report espera a LISTA de relatórios
-        pdf_stream = _create_pdf_report(report_list) 
+        # 2. Gerar PDF em memória
+        pdf_stream = _create_pdf_report(report_list)
         pdf_content = pdf_stream.read()
         pdf_stream.close()
 
-        # 3. Codificar o PDF para Base64
-        pdf_base64 = base64.b64encode(pdf_content).decode()
+        # 3. Nome do grupo
+        grupo = (
+            db.query(models.GrupoImobiliaria)
+            .filter(models.GrupoImobiliaria.id == grupo_id)
+            .first()
+        )
+        nome_grupo = grupo.nome if grupo else f"Grupo {grupo_id}"
 
-        # 4. Montar o e-mail do SendGrid
-        
-        # Obter o nome do grupo para o título do e-mail
-        grupo = db.query(models.GrupoImobiliaria).filter(models.GrupoImobiliaria.id == grupo_id).first()
-        nome_grupo = grupo.nome if grupo else f"Grupo ID {grupo_id}"
-        
         assunto = f"Relatório de Vistorias - {nome_grupo} - {mes:02d}/{ano}"
-        nome_arquivo = f"relatorio_{nome_grupo.lower().replace(' ', '_')}_{mes:02d}_{ano}.pdf"
+        nome_arquivo = (
+            f"relatorio_{nome_grupo.lower().replace(' ', '_')}_{mes:02d}_{ano}.pdf"
+        )
 
-        html_content = f"""
-        <html>
-        <body>
-            <p>Olá,</p>
-            <p>Segue em anexo o relatório de vistorias consolidado para <strong>{nome_grupo}</strong> referente ao período de <strong>{mes:02d}/{ano}</strong>.</p>
-            <p>Este relatório foi aprovado e enviado pelo painel de administração.</p>
-            <br>
-            <p>Atenciosamente,<br>Equipe Engentoria</p>
+        # 4. HTML do e-mail
+        html = f"""
+        <!DOCTYPE html>
+        <html lang="pt-BR">
+        <body style="margin:0;padding:0;background:#0f172a;font-family:Arial;color:#e5e7eb;">
+            <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                    <td align="center" style="padding:40px 0;">
+                        <table width="600" style="background:#020617;border-radius:12px;">
+                            <tr>
+                                <td style="
+                                    background:linear-gradient(135deg,#22d3ee,#22c55e);
+                                    padding:20px;
+                                    text-align:center;
+                                    font-weight:bold;
+                                    color:#022c22;
+                                    font-size:20px;
+                                ">
+                                    Engentoria
+                                </td>
+                            </tr>
+
+                            <tr>
+                                <td style="padding:28px;">
+                                    <p>Olá,</p>
+
+                                    <p style="line-height:1.6;">
+                                        Segue em anexo o <strong>relatório de vistorias</strong>
+                                        do grupo <strong>{nome_grupo}</strong>,
+                                        referente ao período <strong>{mes:02d}/{ano}</strong>.
+                                    </p>
+
+                                    <p style="line-height:1.6;">
+                                        Este relatório foi aprovado e enviado pelo painel administrativo.
+                                    </p>
+
+                                    <p style="margin-top:32px;">
+                                        Atenciosamente,<br>
+                                        <strong>Equipe Engentoria</strong>
+                                    </p>
+                                </td>
+                            </tr>
+
+                            <tr>
+                                <td style="
+                                    padding:16px;
+                                    text-align:center;
+                                    font-size:12px;
+                                    color:#64748b;
+                                ">
+                                    © Engentoria • Relatório automático
+                                </td>
+                            </tr>
+                        </table>
+                    </td>
+                </tr>
+            </table>
         </body>
         </html>
         """
 
-        message = Mail(
-            from_email=settings.EMAIL_FROM,
-            to_emails=recipient_emails, # Lista de e-mails principal
+        # 5. Enviar e-mail com anexo
+        send_email(
+            to=recipient_emails,
             subject=assunto,
-            html_content=html_content
+            html=html,
+            cc=["engentoria@outlook.com"],
+            attachments=[
+                (nome_arquivo, pdf_content, "application/pdf")
+            ]
         )
 
-        # 5. Adicionar a Cópia (CC)
-        message.add_cc(Cc('engentoria@outlook.com', 'Engentoria Cópia'))
-
-        # 6. Criar e Anexar o PDF
-        attached_pdf = Attachment(
-            file_content=FileContent(pdf_base64),
-            file_name=FileName(nome_arquivo),
-            file_type=FileType('application/pdf'),
-            disposition=Disposition('attachment')
+        logger.info(
+            f"Relatório enviado com sucesso | InfoMensal ID: {info_id}"
         )
-        message.attachment = attached_pdf
-
-        # 7. Enviar o e-mail
-        sg = SendGridAPIClient(settings.SENDGRID_API_KEY)
-        response = sg.send(message)
-        
-        logger.info(f"E-mail de relatório para InfoMensal ID: {info_id} enviado com sucesso. Status: {response.status_code}")
 
     except Exception as e:
-        # É CRUCIAL logar o erro, pois a tarefa em background não 
-        # reportará o erro de volta para a API.
-        logger.error(f"Falha ao enviar e-mail de relatório para InfoMensal ID: {info_id}. Erro: {str(e)}")
-    finally:
-        # Importante: Fechar a sessão do DB se você criou uma nova para esta tarefa.
-        # Se você passou a sessão da requisição, não a feche aqui.
-        # No exemplo do endpoint abaixo, passamos a sessão, então não fechamos.
-        pass
+        logger.error(
+            f"Falha ao enviar relatório | InfoMensal ID: {info_id} | Erro: {str(e)}",
+            exc_info=True
+        )
 
 
 
@@ -411,22 +450,7 @@ def _calculate_valor_comissao_vistoriador(
         
     return round(valor_final, 2)
 
-def _send_report_email(subject: str, html_content: str):
-    """
-    Função auxiliar para enviar e-mails usando SendGrid.
-    """
-    message = Mail(
-        from_email=settings.EMAIL_FROM,
-        to_emails=settings.EMAIL_REPORTS_TO,
-        subject=subject,
-        html_content=html_content
-    )
-    try:
-        sg = SendGridAPIClient(settings.SENDGRID_API_KEY)
-        response = sg.send(message)
-        logger.info(f"E-mail de relatório enviado com sucesso para {settings.EMAIL_REPORTS_TO}, Status: {response.status_code}")
-    except Exception as e:
-        logger.error(f"Falha ao enviar e-mail de relatório: {e}")
+
 
 
 # =================================================================
@@ -2035,6 +2059,26 @@ def download_relatorio(
 # --- Relatório Mensal por E-mail ---
 # =================================================================
 
+def _send_valores_totais_email(
+    subject: str,
+    html: str,
+    recipients: list[str],
+):
+    try:
+        send_email(
+            to=recipients,
+            subject=subject,
+            html=html,
+            cc=["engentoria@outlook.com"]
+        )
+        logger.info("Relatório mensal de ganhos enviado com sucesso.")
+    except Exception as e:
+        logger.error(
+            f"Erro ao enviar relatório mensal de ganhos: {str(e)}",
+            exc_info=True
+        )
+
+
 @router.get("/valores_totais_email/{ano}/{mes}", status_code=status.HTTP_200_OK, summary="Calcula e envia o relatório de valores totais por e-mail")
 def get_valores_totais_email(
     ano: int,
@@ -2043,106 +2087,194 @@ def get_valores_totais_email(
     db: Session = Depends(get_db)
 ):
     """
-    Calcula os valores totais faturados por grupo de imobiliárias e as comissões
-    totais por vistoriador para um determinado ano e mês, e envia um relatório por e-mail.
+    Calcula os valores totais faturados por grupo de imobiliárias e
+    as comissões por vistoriador, e envia um relatório por e-mail.
     """
     if not (1 <= mes <= 12):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Mês inválido. Forneça um valor entre 1 e 12.")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Mês inválido. Forneça um valor entre 1 e 12."
+        )
 
-    # --- Cálculo por Grupo de Imobiliária ---
-    grupos = db.query(models.GrupoImobiliaria).options(
-        joinedload(models.GrupoImobiliaria.imobiliarias)
-    ).filter(models.GrupoImobiliaria.is_deleted == False).all()
+    # --- Cálculo por Grupo ---
+    grupos = (
+        db.query(models.GrupoImobiliaria)
+        .options(joinedload(models.GrupoImobiliaria.imobiliarias))
+        .filter(models.GrupoImobiliaria.is_deleted == False)
+        .all()
+    )
 
     report_grupos = {}
     for grupo in grupos:
-        imobiliaria_ids = [imob.id for imob in grupo.imobiliarias if not imob.is_deleted]
+        imobiliaria_ids = [
+            imob.id for imob in grupo.imobiliarias if not imob.is_deleted
+        ]
+
         if not imobiliaria_ids:
             report_grupos[grupo.nome] = 0.0
             continue
 
-        total_agenda = db.query(func.sum(models.Agenda.valor_final_vistoria)).join(models.Imovel).filter(
-            models.Imovel.imobiliaria_id.in_(imobiliaria_ids),
-            extract('year', models.Agenda.data) == ano,
-            extract('month', models.Agenda.data) == mes
-        ).scalar() or Decimal(0)
+        total_agenda = (
+            db.query(func.sum(models.Agenda.valor_final_vistoria))
+            .join(models.Imovel)
+            .filter(
+                models.Imovel.imobiliaria_id.in_(imobiliaria_ids),
+                extract("year", models.Agenda.data) == ano,
+                extract("month", models.Agenda.data) == mes
+            )
+            .scalar()
+            or Decimal(0)
+        )
 
-        total_improdutiva = db.query(func.sum(models.VistoriaImprodutiva.valor_cobranca)).filter(
-            models.VistoriaImprodutiva.imobiliaria_id.in_(imobiliaria_ids),
-            extract('year', models.VistoriaImprodutiva.data_vistoria_original) == ano,
-            extract('month', models.VistoriaImprodutiva.data_vistoria_original) == mes
-        ).scalar() or Decimal(0)
+        total_improdutiva = (
+            db.query(func.sum(models.VistoriaImprodutiva.valor_cobranca))
+            .filter(
+                models.VistoriaImprodutiva.imobiliaria_id.in_(imobiliaria_ids),
+                extract("year", models.VistoriaImprodutiva.data_vistoria_original) == ano,
+                extract("month", models.VistoriaImprodutiva.data_vistoria_original) == mes
+            )
+            .scalar()
+            or Decimal(0)
+        )
 
         report_grupos[grupo.nome] = float(total_agenda + total_improdutiva)
 
     # --- Cálculo por Vistoriador ---
-    vistoriadores = db.query(models.Usuario).filter(
-        models.Usuario.tipo == 'vistoriador', 
-        models.Usuario.is_deleted == False
-    ).all()
+    vistoriadores = (
+        db.query(models.Usuario)
+        .filter(
+            models.Usuario.tipo == "vistoriador",
+            models.Usuario.is_deleted == False
+        )
+        .all()
+    )
 
     report_vistoriadores = {}
     for vistoriador in vistoriadores:
-        comissao_agenda = db.query(func.sum(models.Agenda.valor_vistoriador)).filter(
-            models.Agenda.vistoriador_id == vistoriador.id,
-            extract('year', models.Agenda.data) == ano,
-            extract('month', models.Agenda.data) == mes
-        ).scalar() or Decimal(0)
+        comissao_agenda = (
+            db.query(func.sum(models.Agenda.valor_vistoriador))
+            .filter(
+                models.Agenda.vistoriador_id == vistoriador.id,
+                extract("year", models.Agenda.data) == ano,
+                extract("month", models.Agenda.data) == mes
+            )
+            .scalar()
+            or Decimal(0)
+        )
 
-        comissao_improdutiva = db.query(func.sum(models.VistoriaImprodutiva.valor_para_vistoriador)).join(
-            models.Agenda, models.VistoriaImprodutiva.agenda_id_original == models.Agenda.id
-        ).filter(
-            models.Agenda.vistoriador_id == vistoriador.id,
-            extract('year', models.VistoriaImprodutiva.data_vistoria_original) == ano,
-            extract('month', models.VistoriaImprodutiva.data_vistoria_original) == mes
-        ).scalar() or Decimal(0)
+        comissao_improdutiva = (
+            db.query(func.sum(models.VistoriaImprodutiva.valor_para_vistoriador))
+            .join(
+                models.Agenda,
+                models.VistoriaImprodutiva.agenda_id_original == models.Agenda.id
+            )
+            .filter(
+                models.Agenda.vistoriador_id == vistoriador.id,
+                extract("year", models.VistoriaImprodutiva.data_vistoria_original) == ano,
+                extract("month", models.VistoriaImprodutiva.data_vistoria_original) == mes
+            )
+            .scalar()
+            or Decimal(0)
+        )
 
-        report_vistoriadores[vistoriador.nome] = float(comissao_agenda + comissao_improdutiva)
+        report_vistoriadores[vistoriador.nome] = float(
+            comissao_agenda + comissao_improdutiva
+        )
 
-    # --- Montagem e Envio do E-mail ---
-    meses_pt = {1: "Janeiro", 2: "Fevereiro", 3: "Março", 4: "Abril", 5: "Maio", 6: "Junho", 7: "Julho", 8: "Agosto", 9: "Setembro", 10: "Outubro", 11: "Novembro", 12: "Dezembro"}
-    nome_mes = meses_pt.get(mes, "Mês Inválido")
+    # --- Montagem do E-mail ---
+    meses_pt = {
+        1: "Janeiro", 2: "Fevereiro", 3: "Março", 4: "Abril",
+        5: "Maio", 6: "Junho", 7: "Julho", 8: "Agosto",
+        9: "Setembro", 10: "Outubro", 11: "Novembro", 12: "Dezembro"
+    }
+    nome_mes = meses_pt[mes]
 
     subject = f"Relatório Mensal de Ganhos - {nome_mes}/{ano}"
 
-    # Formata os dados para o HTML
-    grupos_html = "".join([f"<li><strong>{nome}:</strong> R$ {valor:,.2f}</li>" for nome, valor in report_grupos.items()])
-    comissoes_html = "".join([f"<li><strong>{nome}:</strong> R$ {valor:,.2f}</li>" for nome, valor in report_vistoriadores.items()])
+    grupos_html = "".join(
+        f"<tr><td>{nome}</td><td>R$ {valor:,.2f}</td></tr>"
+        for nome, valor in report_grupos.items()
+    )
 
-    html_content = f"""
-    <html>
-    <head>
-        <style>
-            body {{ font-family: Arial, sans-serif; line-height: 1.6; }}
-            h2 {{ color: #2E6B98; }}
-            ul {{ list-style-type: none; padding-left: 0; }}
-            li {{ margin-bottom: 8px; }}
-            strong {{ color: #333; }}
-        </style>
-    </head>
-    <body>
-        <p>Boa tarde!</p>
-        <p>Aqui está o relatório de ganhos totais do mês de <strong>{nome_mes} de {ano}</strong>.</p>
-        
-        <h2>📊 Grupos de Imobiliárias:</h2>
-        <ul>
-            {grupos_html}
-        </ul>
-        
-        <h2>💼 Comissões de Vistoriadores:</h2>
-        <ul>
-            {comissoes_html}
-        </ul>
-        
-        <p>Atenciosamente,<br>Sistema Engentoria.</p>
+    vistoriadores_html = "".join(
+        f"<tr><td>{nome}</td><td>R$ {valor:,.2f}</td></tr>"
+        for nome, valor in report_vistoriadores.items()
+    )
+
+    html = f"""
+    <!DOCTYPE html>
+    <html lang="pt-BR">
+    <body style="margin:0;padding:0;background:#0f172a;font-family:Arial;color:#e5e7eb;">
+        <table width="100%" cellpadding="0" cellspacing="0">
+            <tr>
+                <td align="center" style="padding:40px 0;">
+                    <table width="650" style="background:#020617;border-radius:12px;">
+                        <tr>
+                            <td style="
+                                background:linear-gradient(135deg,#22d3ee,#22c55e);
+                                padding:20px;
+                                text-align:center;
+                                font-weight:bold;
+                                color:#022c22;
+                                font-size:20px;
+                            ">
+                                Relatório Mensal – {nome_mes}/{ano}
+                            </td>
+                        </tr>
+
+                        <tr>
+                            <td style="padding:28px;">
+                                <h3>📊 Grupos de Imobiliárias</h3>
+                                <table width="100%" style="margin-bottom:24px;">
+                                    {grupos_html}
+                                </table>
+
+                                <h3>💼 Comissões de Vistoriadores</h3>
+                                <table width="100%">
+                                    {vistoriadores_html}
+                                </table>
+
+                                <p style="margin-top:32px;">
+                                    Atenciosamente,<br>
+                                    <strong>Sistema Engentoria</strong>
+                                </p>
+                            </td>
+                        </tr>
+
+                        <tr>
+                            <td style="
+                                padding:16px;
+                                text-align:center;
+                                font-size:12px;
+                                color:#64748b;
+                            ">
+                                © Engentoria • Relatório automático
+                            </td>
+                        </tr>
+                    </table>
+                </td>
+            </tr>
+        </table>
     </body>
     </html>
     """
-    
-    # Envia o e-mail em segundo plano
-    background_tasks.add_task(_send_report_email, subject, html_content)
-    
-    return {"message": f"O relatório de {nome_mes}/{ano} está sendo processado e será enviado em breve para o e-mail configurado."}
+
+    # --- Envio em background ---
+    recipients = settings.RELATORIO_EMAIL_RECIPIENTS  # lista de e-mails
+
+    background_tasks.add_task(
+        _send_valores_totais_email,
+        subject,
+        html,
+        recipients
+    )
+
+    return {
+        "message": (
+            f"O relatório de {nome_mes}/{ano} está sendo processado "
+            "e será enviado por e-mail."
+        )
+    }
 
 
 @router.get("/agenda/{id_agendamento}/comentarios")
@@ -2651,32 +2783,43 @@ async def ver_laudo_agendamento(id_agendamento: str,
 @router.post("/mensal/{info_id}/enviar-relatorio", status_code=status.HTTP_202_ACCEPTED)
 async def enviar_relatorio_mensal_email(
     info_id: str,
-    data: EnvioRelatorioEmailSchema, # O schema que definimos na Etapa 2
+    data: EnvioRelatorioEmailSchema,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
     """
-    Envia o relatório mensal aceito (InfoMensal) por e-mail para 
-    os destinatários especificados.
+    Envia o relatório mensal aceito (InfoMensal) por e-mail
+    para os destinatários especificados.
     """
     try:
         info_uuid = UUID(info_id)
     except ValueError:
-        raise HTTPException(status_code=400, detail="ID da InfoMensal inválido.")
+        raise HTTPException(
+            status_code=400,
+            detail="ID da InfoMensal inválido."
+        )
 
-    # 1. Buscar e Validar o InfoMensal
-    info = db.query(models.InfoMensal).filter(models.InfoMensal.id == info_uuid).first()
+    # 1. Buscar InfoMensal
+    info = (
+        db.query(models.InfoMensal)
+        .filter(models.InfoMensal.id == info_uuid)
+        .first()
+    )
+
     if not info:
-        raise HTTPException(status_code=404, detail="InfoMensal não encontrada.")
+        raise HTTPException(
+            status_code=404,
+            detail="InfoMensal não encontrada."
+        )
 
-    # 2. Validação de Negócio CRÍTICA
-    if info.accepted != True:
-        raise HTTPException(status_code=400, detail="Este relatório ainda não foi aceito pela imobiliária. O envio não é permitido.")
+    # 2. Regra de negócio CRÍTICA
+    if info.accepted is not True:
+        raise HTTPException(
+            status_code=400,
+            detail="Este relatório ainda não foi aceito pela imobiliária. O envio não é permitido."
+        )
 
-    # 3. Adicionar a tarefa em background
-    # Passamos os dados necessários para a função, pois o objeto 'db'
-    # pode não ser seguro de usar diretamente em outro thread (depende da config).
-    # Passar os dados brutos é mais seguro.
+    # 3. Dispara a task em background (Mailgun)
     background_tasks.add_task(
         _send_report_email_task,
         db=db,
@@ -2684,12 +2827,16 @@ async def enviar_relatorio_mensal_email(
         grupo_id=info.grupo_id,
         mes=info.month,
         ano=info.year,
-        recipient_emails=[email for email in data.emails] # Converte EmailStr para str
+        recipient_emails=[str(email) for email in data.emails]
     )
 
-    # 4. Retornar imediatamente
-    return {"message": "Envio do relatório foi agendado com sucesso. Os e-mails serão disparados em segundo plano."}
-
+    # 4. Retorno imediato
+    return {
+        "message": (
+            "Envio do relatório foi agendado com sucesso. "
+            "Os e-mails serão enviados em segundo plano."
+        )
+    }
 # =================================================================
 # --- Gestão de Vistorias Improdutivas (Admin) ---
 # =================================================================
