@@ -54,7 +54,7 @@ function redirectToDashboard() {
     } else if (dashboard === 'imobiliaria') {
         window.location.href = 'imobiliaria-dashboard.html';
     } else { // 'vistoriador'
-        window.location.href = 'agenda.html';
+        window.location.href = 'dashboard-vistoriador.html';
     }
 }
 

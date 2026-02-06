@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Portal do Vistoriador</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- FullCalendar CSS -->
+    <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.10/index.global.min.js"></script>
+    
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #0f172a; color: #e2e8f0; -webkit-tap-highlight-color: transparent; }
+        
+        /* Utilitários Visuais */
+        .neon-border { box-shadow: 0 0 10px rgba(20, 184, 166, 0.1); border: 1px solid rgba(20, 184, 166, 0.2); }
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #1e293b; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #0d9488; border-radius: 2px; }
+        .fade-in { animation: fadeIn 0.3s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+        
+        /* Sidebar Active State */
+        .nav-link.active { background: rgba(13, 148, 136, 0.15); color: #2dd4bf; border-right: 3px solid #2dd4bf; }
+        
+        /* Mobile Overlay Transition */
+        #sidebar-overlay { transition: opacity 0.3s ease-in-out; }
+        #mobile-sidebar { transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+    </style>
+</head>
+<body class="overflow-hidden h-screen flex bg-slate-900">
+
+    <!-- Mobile Header -->
+    <header class="md:hidden fixed top-0 left-0 right-0 h-16 bg-slate-900/95 backdrop-blur border-b border-slate-800 flex items-center justify-between px-4 z-30">
+        <div class="flex items-center gap-3">
+            <button id="mobile-menu-btn" class="p-2 -ml-2 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white active:scale-95 transition-transform">
+                <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+            </button>
+            <h1 class="text-lg font-bold text-teal-400 tracking-tight">Engentoria</h1>
+        </div>
+        <!-- Badge de Pendências no Header Mobile -->
+        <button data-view="pendencias" class="nav-link-mobile relative p-2 text-slate-300">
+            <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
+            <span id="header-badge" class="hidden absolute top-1 right-1 h-2.5 w-2.5 bg-red-500 rounded-full border-2 border-slate-900"></span>
+        </button>
+    </header>
+
+    <!-- Sidebar Overlay (Mobile) -->
+    <div id="sidebar-overlay" class="fixed inset-0 bg-black/60 z-40 hidden opacity-0"></div>
+
+    <!-- Sidebar (Desktop & Mobile Drawer) -->
+    <aside id="mobile-sidebar" class="fixed md:static inset-y-0 left-0 w-72 md:w-64 bg-slate-900 border-r border-slate-800 flex flex-col z-50 transform -translate-x-full md:translate-x-0 shadow-2xl md:shadow-none">
+        
+        <div class="h-16 flex items-center px-6 border-b border-slate-800">
+            <h1 class="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-teal-400 to-cyan-400 hidden md:block">Engentoria</h1>
+            <span class="md:hidden text-lg font-bold text-white">Menu</span>
+            <button id="close-sidebar-btn" class="md:hidden ml-auto p-2 text-slate-400 hover:text-white">
+                <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+            </button>
+        </div>
+
+        <!-- User Info (Mobile Friendly) -->
+        <div class="p-4 border-b border-slate-800/50 bg-slate-800/20">
+            <div class="flex items-center gap-3">
+                <div class="h-10 w-10 rounded-full bg-teal-900/50 flex items-center justify-center text-teal-400 font-bold border border-teal-500/30">
+                    <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
+                </div>
+                <div class="overflow-hidden">
+                    <p id="user-name" class="text-sm font-medium text-white truncate">Vistoriador</p>
+                    <p class="text-xs text-slate-400">Online</p>
+                </div>
+            </div>
+        </div>
+
+        <nav class="flex-1 py-4 space-y-1 px-3 overflow-y-auto">
+            <button data-view="agenda" class="nav-link w-full flex items-center px-4 py-3.5 text-sm font-medium rounded-xl text-slate-300 hover:bg-slate-800 hover:text-white transition-all active:scale-[0.98]">
+                <svg class="mr-3 h-5 w-5 text-slate-400 group-hover:text-teal-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                Minha Agenda
+            </button>
+
+            <button data-view="pendencias" class="nav-link w-full flex items-center px-4 py-3.5 text-sm font-medium rounded-xl text-slate-300 hover:bg-slate-800 hover:text-white transition-all active:scale-[0.98]">
+                <div class="relative mr-3">
+                    <svg class="h-5 w-5 text-slate-400 group-hover:text-teal-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+                    <span id="sidebar-badge" class="hidden absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[9px] font-bold px-1 py-px rounded-full border-2 border-slate-900 min-w-[16px] text-center">0</span>
+                </div>
+                Pendências
+            </button>
+
+            <button data-view="relatorios" class="nav-link w-full flex items-center px-4 py-3.5 text-sm font-medium rounded-xl text-slate-300 hover:bg-slate-800 hover:text-white transition-all active:scale-[0.98]">
+                <svg class="mr-3 h-5 w-5 text-slate-400 group-hover:text-teal-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                Relatórios
+            </button>
+        </nav>
+
+        <div class="p-4 border-t border-slate-800 bg-slate-900">
+            <button id="btn-logout" class="flex items-center justify-center w-full px-4 py-3 text-sm font-bold text-red-400 bg-red-900/10 hover:bg-red-900/20 rounded-xl transition-colors border border-red-900/20 active:scale-95">
+                <svg class="mr-2 h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+                Sair do Sistema
+            </button>
+        </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <div class="flex-1 flex flex-col h-screen overflow-hidden bg-slate-900 pt-16 md:pt-0">
+        <main id="app-content" class="flex-1 overflow-y-auto custom-scrollbar p-4 md:p-8 relative">
+            <!-- Conteúdo injetado via JS -->
+        </main>
+    </div>
+
+    <!-- Modais Globais -->
+    <div id="generic-modal" class="fixed inset-0 bg-black/90 z-[60] hidden items-end md:items-center justify-center p-0 md:p-4 backdrop-blur-sm transition-opacity duration-300">
+        <!-- Conteúdo injetado via JS -->
+    </div>
+
+    <!-- Container de Notificações (Toast) -->
+    <div id="toast-container" class="fixed top-4 left-4 right-4 md:left-auto md:right-5 md:w-96 z-[70] flex flex-col gap-2 pointer-events-none"></div>
+
+    <!-- Scripts -->
+    <script src="./assets/auth.js"></script>
+    <script type="module" src="./assets/vistoriador_modules/main.js"></script>
+</body>
+</html>
