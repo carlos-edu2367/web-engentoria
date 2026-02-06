@@ -2,7 +2,7 @@
 
 from sqlalchemy import (Boolean, Column, ForeignKey, String, DateTime,
                         Date, Numeric, Text, Integer)
-from sqlalchemy.dialects.postgresql import UUID, TIMESTAMP, TEXT
+from sqlalchemy.dialects.postgresql import UUID, TIMESTAMP, TEXT, JSON
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 import uuid
@@ -72,6 +72,8 @@ class Cliente(Base):
     # Relacionamentos
     imoveis = relationship("Imovel", back_populates="cliente")
     vistorias_improdutivas = relationship("VistoriaImprodutiva", back_populates="cliente")
+    # Novo relacionamento com solicitações
+    solicitacoes_agendamento = relationship("SolicitacaoAgendamento", back_populates="cliente")
 
 # --- Modelo para a tabela de Imobiliárias ---
 class Imobiliaria(Base):
@@ -126,7 +128,6 @@ class Agenda(Base):
     disponivel = Column(Boolean, default=True)
     tipo = Column(TEXT, nullable=True, index=True)
     observacao_privada = Column(Text, nullable=True)
-    # ALTERAÇÃO: Campo renomeado para maior clareza.
     observacao_vistoriador = Column(Text, nullable=True)
     valor_final_vistoria = Column(Numeric(10, 2), nullable=True)
     valor_vistoriador = Column(Numeric(10, 2), nullable=True)
@@ -141,6 +142,41 @@ class Agenda(Base):
     documentos = relationship("DocumentoAgenda", back_populates="agenda", cascade="all, delete-orphan")
     comentarios = relationship("ComentarioVistoria", back_populates="agenda", cascade="all, delete-orphan")
     laudos = relationship("Laudo", back_populates="agenda", cascade="all, delete-orphan")
+    
+    # Novo relacionamento reverso para saber de onde veio o agendamento
+    solicitacao_origem = relationship("SolicitacaoAgendamento", back_populates="agenda_resultante", uselist=False)
+
+# --- NOVA TABELA: Solicitações de Agendamento (Links Externos) ---
+class SolicitacaoAgendamento(Base):
+    __tablename__ = "solicitacoes_agendamento"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    token = Column(String, unique=True, index=True, nullable=False) # Hash único para a URL
+    
+    # Dados vinculados
+    imovel_id = Column(UUID(as_uuid=True), ForeignKey("imoveis.id"), nullable=False)
+    cliente_id = Column(UUID(as_uuid=True), ForeignKey("clientes.id"), nullable=False)
+    imobiliaria_id = Column(UUID(as_uuid=True), ForeignKey("imobiliarias.id"), nullable=False)
+    
+    # Configuração do Agendamento
+    tipo_vistoria = Column(String, nullable=False) # ENTRADA, SAIDA, etc.
+    vistoriadores_permitidos = Column(JSON, nullable=True) # Lista de IDs [uuid1, uuid2] ou NULL para todos
+    
+    # Controle de Estado
+    status = Column(String, default="PENDENTE", nullable=False) # PENDENTE, AGENDADO, EXPIRADO, CANCELADO
+    expires_at = Column(DateTime, nullable=True) # Data limite para usar o link
+    
+    # Resultado (quando o cliente agendar, preenchemos aqui)
+    agenda_id = Column(UUID(as_uuid=True), ForeignKey("agenda.id"), nullable=True)
+    
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+    updated_at = Column(TIMESTAMP(timezone=True), default=func.now(), onupdate=func.now())
+    
+    # Relacionamentos
+    imovel = relationship("Imovel")
+    cliente = relationship("Cliente", back_populates="solicitacoes_agendamento")
+    imobiliaria = relationship("Imobiliaria")
+    agenda_resultante = relationship("Agenda", back_populates="solicitacao_origem")
+
 
 # --- Modelo para a tabela de Horários Fixos ---
 class HorarioFixo(Base):

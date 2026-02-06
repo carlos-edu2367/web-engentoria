@@ -1203,3 +1203,49 @@ async def listar_laudos_aprovados(
             )
 
     return LaudoAprovadoResponse(laudos=response_items, total=total)
+
+
+@router.get("/imoveis", response_model=List[schemas.ImovelDisplay])
+def search_imoveis(
+    search: str = "",
+    db: Session = Depends(get_db),
+    current_user: models.GrupoImobiliaria = Depends(auth.get_current_active_imobiliaria_group)
+):
+    """Busca imóveis pertencentes ao grupo por código ou endereço."""
+    if len(search) < 3:
+        return []
+    
+    # Filtra apenas imóveis das imobiliárias deste grupo
+    imob_ids = [i.id for i in current_user.imobiliarias]
+    
+    if not imob_ids:
+        return []
+
+    return db.query(models.Imovel).filter(
+        models.Imovel.imobiliaria_id.in_(imob_ids),
+        or_(models.Imovel.cod_imovel.ilike(f"%{search}%"), models.Imovel.endereco.ilike(f"%{search}%")),
+        models.Imovel.is_deleted == False
+    ).limit(20).all()
+
+@router.get("/sub-imobiliarias", response_model=List[schemas.ImobiliariaDisplay])
+def get_sub_imobiliarias(
+    current_user: models.GrupoImobiliaria = Depends(auth.get_current_active_imobiliaria_group)
+):
+    """Retorna a lista de imobiliárias vinculadas ao grupo logado."""
+    return current_user.imobiliarias
+
+@router.get("/clientes", response_model=List[schemas.ClienteDisplay])
+def search_clientes(
+    search: str = "",
+    db: Session = Depends(get_db),
+    current_user: models.GrupoImobiliaria = Depends(auth.get_current_active_imobiliaria_group)
+):
+    """Busca clientes por nome ou email (para autocomplete)."""
+    if len(search) < 3:
+        return []
+    
+    # Busca global de clientes ativos para facilitar o vínculo
+    return db.query(models.Cliente).filter(
+        or_(models.Cliente.nome.ilike(f"%{search}%"), models.Cliente.email.ilike(f"%{search}%")),
+        models.Cliente.is_deleted == False
+    ).limit(10).all()

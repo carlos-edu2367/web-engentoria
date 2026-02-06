@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agendamento de Vistoria | Engentoria</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Google Fonts (Inter) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0f172a;
+            color: #f8fafc;
+            overflow-x: hidden;
+        }
+
+        /* Background animado sutil */
+        .bg-gradient-animated {
+            background: radial-gradient(circle at top left, #1e293b, #0f172a);
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: -1;
+        }
+        
+        .blob {
+            position: absolute;
+            filter: blur(80px);
+            z-index: -1;
+            opacity: 0.4;
+            animation: float 10s infinite ease-in-out;
+        }
+        .blob-1 { top: -10%; left: -10%; width: 500px; height: 500px; background: #4f46e5; animation-delay: 0s; }
+        .blob-2 { bottom: -10%; right: -10%; width: 400px; height: 400px; background: #0ea5e9; animation-delay: 5s; }
+
+        @keyframes float {
+            0% { transform: translate(0, 0) scale(1); }
+            50% { transform: translate(20px, 40px) scale(1.1); }
+            100% { transform: translate(0, 0) scale(1); }
+        }
+
+        /* Utilitários de Animação */
+        .fade-in { animation: fadeIn 0.5s ease-out forwards; }
+        .slide-up { animation: slideUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+        
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* Custom Scrollbar */
+        .custom-scroll::-webkit-scrollbar { height: 6px; width: 6px; }
+        .custom-scroll::-webkit-scrollbar-track { background: transparent; }
+        .custom-scroll::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+        
+        /* Glass Card */
+        .glass-card {
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+    </style>
+</head>
+<body class="flex flex-col min-h-screen">
+
+    <!-- Background Elements -->
+    <div class="bg-gradient-animated"></div>
+    <div class="blob blob-1"></div>
+    <div class="blob blob-2"></div>
+
+    <!-- Header Simples -->
+    <header class="w-full py-6 flex justify-center fade-in">
+        <div class="flex items-center gap-2">
+            <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-cyan-500 flex items-center justify-center shadow-lg shadow-indigo-500/20 text-white font-bold">E</div>
+            <span class="text-xl font-bold tracking-tight text-white">Engentoria</span>
+        </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <main class="flex-1 flex flex-col items-center justify-center p-4 w-full max-w-lg mx-auto relative">
+        
+        <!-- Loading State -->
+        <div id="loading-state" class="absolute inset-0 flex flex-col items-center justify-center bg-slate-900/80 backdrop-blur-sm z-50 rounded-2xl hidden">
+            <svg class="animate-spin h-10 w-10 text-indigo-500 mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <p class="text-slate-300 font-medium animate-pulse">Carregando informações...</p>
+        </div>
+
+        <!-- Passo 1: Informações do Imóvel (Welcome) -->
+        <div id="step-welcome" class="w-full hidden">
+            <div class="glass-card rounded-3xl p-8 shadow-2xl shadow-black/20 slide-up">
+                <div class="mb-6">
+                    <span class="px-3 py-1 bg-indigo-500/10 text-indigo-400 text-xs font-bold uppercase tracking-wider rounded-full border border-indigo-500/20">Agendamento Online</span>
+                    <h1 class="text-3xl font-bold mt-4 mb-2 text-white">Olá, <span id="client-name" class="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-cyan-400">Cliente</span>.</h1>
+                    <p class="text-slate-400 text-sm leading-relaxed">Recebemos uma solicitação da imobiliária <strong id="imob-name" class="text-slate-200">...</strong> para realizar uma vistoria no imóvel abaixo.</p>
+                </div>
+
+                <!-- Card Imóvel -->
+                <div class="bg-slate-800/50 rounded-xl p-5 border border-slate-700/50 mb-8 relative overflow-hidden group">
+                    <div class="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
+                        <i data-lucide="home" class="w-24 h-24 text-white"></i>
+                    </div>
+                    
+                    <div class="relative z-10">
+                        <div class="flex items-start justify-between mb-2">
+                            <span id="imovel-cod" class="text-xs font-mono text-slate-500 bg-slate-900 px-2 py-1 rounded">COD: ---</span>
+                            <span id="vistoria-type" class="text-xs font-bold text-emerald-400 uppercase">---</span>
+                        </div>
+                        <h3 id="imovel-address" class="text-lg font-semibold text-white mb-1">---</h3>
+                        <div class="flex gap-4 mt-3 text-sm text-slate-400">
+                            <div class="flex items-center gap-1.5">
+                                <i data-lucide="maximize" class="w-4 h-4"></i>
+                                <span id="imovel-size">-- m²</span>
+                            </div>
+                            <div class="flex items-center gap-1.5">
+                                <i data-lucide="sofa" class="w-4 h-4"></i>
+                                <span id="imovel-furnished">--</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <button id="btn-start" class="w-full py-4 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white font-bold rounded-xl shadow-lg shadow-indigo-900/20 transform transition-all active:scale-95 flex items-center justify-center gap-2">
+                    Escolher Melhor Horário
+                    <i data-lucide="arrow-right" class="w-5 h-5"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- Passo 2: Calendário e Slots -->
+        <div id="step-calendar" class="w-full hidden">
+            <div class="glass-card rounded-3xl p-6 shadow-2xl slide-up">
+                <div class="flex items-center justify-between mb-6">
+                    <button id="btn-back" class="p-2 text-slate-400 hover:text-white hover:bg-slate-700/50 rounded-full transition-colors">
+                        <i data-lucide="arrow-left" class="w-5 h-5"></i>
+                    </button>
+                    <h2 class="text-lg font-semibold text-white">Selecione o Horário</h2>
+                    <div class="w-9"></div> <!-- Spacer para centralizar -->
+                </div>
+
+                <!-- Seletor de Datas (Horizontal Scroll) -->
+                <div class="mb-6">
+                    <p class="text-xs text-slate-500 font-bold uppercase mb-3 ml-1">Dias Disponíveis</p>
+                    <div id="dates-container" class="flex gap-3 overflow-x-auto custom-scroll pb-2 snap-x">
+                        <!-- Datas injetadas via JS -->
+                    </div>
+                </div>
+
+                <!-- Grid de Horários -->
+                <div class="mb-8">
+                    <p id="slots-label" class="text-xs text-slate-500 font-bold uppercase mb-3 ml-1">Horários para <span id="selected-date-label">...</span></p>
+                    <div id="slots-grid" class="grid grid-cols-3 sm:grid-cols-4 gap-3">
+                        <!-- Slots injetados via JS -->
+                        <div class="col-span-full text-center py-8 text-slate-500 text-sm hidden" id="no-slots-msg">
+                            Nenhum horário disponível nesta data.
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Resumo da Seleção -->
+                <div id="selection-summary" class="bg-indigo-900/20 border border-indigo-500/30 rounded-xl p-4 mb-6 hidden animate-pulse">
+                    <div class="flex items-center gap-3">
+                        <div class="p-2 bg-indigo-500 rounded-lg text-white">
+                            <i data-lucide="calendar-check" class="w-5 h-5"></i>
+                        </div>
+                        <div>
+                            <p class="text-xs text-indigo-300 uppercase font-bold">Selecionado</p>
+                            <p id="summary-text" class="text-white font-medium text-sm">--</p>
+                        </div>
+                    </div>
+                </div>
+
+                <button id="btn-confirm" disabled class="w-full py-4 bg-slate-700 text-slate-400 font-bold rounded-xl transition-all cursor-not-allowed flex items-center justify-center gap-2">
+                    Confirmar Agendamento
+                </button>
+            </div>
+        </div>
+
+        <!-- Passo 3: Sucesso -->
+        <div id="step-success" class="w-full hidden text-center">
+            <div class="glass-card rounded-3xl p-10 shadow-2xl slide-up flex flex-col items-center">
+                <div class="w-20 h-20 bg-emerald-500/20 rounded-full flex items-center justify-center mb-6">
+                    <i data-lucide="check" class="w-10 h-10 text-emerald-400"></i>
+                </div>
+                
+                <h2 class="text-3xl font-bold text-white mb-2">Agendado!</h2>
+                <p class="text-slate-400 mb-8 max-w-xs mx-auto">Sua vistoria foi confirmada com sucesso. Enviamos os detalhes para o seu e-mail.</p>
+                
+                <div class="bg-slate-800/50 p-4 rounded-xl border border-slate-700 w-full mb-8 text-left">
+                    <div class="flex justify-between items-center border-b border-slate-700 pb-3 mb-3">
+                        <span class="text-xs text-slate-500">Data</span>
+                        <span id="success-date" class="text-sm font-medium text-white">--</span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="text-xs text-slate-500">Horário</span>
+                        <span id="success-time" class="text-sm font-medium text-white">--</span>
+                    </div>
+                </div>
+
+                <button onclick="window.close()" class="px-6 py-2 text-slate-400 hover:text-white text-sm transition-colors">
+                    Fechar Janela
+                </button>
+            </div>
+        </div>
+
+        <!-- Estado de Erro -->
+        <div id="step-error" class="w-full hidden text-center">
+            <div class="glass-card rounded-3xl p-10 shadow-2xl slide-up">
+                <i data-lucide="alert-circle" class="w-16 h-16 text-red-400 mx-auto mb-4"></i>
+                <h2 class="text-2xl font-bold text-white mb-2">Link Inválido ou Expirado</h2>
+                <p id="error-msg" class="text-slate-400 mb-6">Não foi possível carregar as informações. Entre em contato com a imobiliária.</p>
+            </div>
+        </div>
+
+    </main>
+
+    <footer class="py-8 text-center text-slate-500 text-xs fade-in">
+    <p class="mb-2">
+        Desenvolvido por 
+        <a 
+            href="https://www.neectify.com" 
+            target="_blank" 
+            rel="noopener noreferrer"
+            class="font-medium text-slate-600 hover:text-slate-800 transition"
+        >
+            Neectify
+        </a>
+    </p>
+
+    <p class="mb-2">
+        Gostou do sistema?
+        <a 
+            href="https://www.neectify.com/contato" 
+            target="_blank" 
+            rel="noopener noreferrer"
+            class="font-medium text-indigo-500 hover:text-indigo-600 transition"
+        >
+            Solicite um orçamento
+        </a>
+    </p>
+
+    <p class="text-slate-400">
+        &copy; 2025 Engentoria. Todos os direitos reservados.
+    </p>
+</footer>
+
+    <!-- Lógica JS -->
+    <script type="module" src="assets/public-scheduling.js"></script>
+    <script>
+        // Inicializa ícones
+        lucide.createIcons();
+    </script>
+</body>
+</html>

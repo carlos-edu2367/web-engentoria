@@ -182,7 +182,7 @@ class AgendaCreate(BaseModel):
     imovel_id: UUID
     imobiliaria_id: UUID
     tipo: TipoVistoriaEnum # Validação com Enum
-    observacao_vistoriador: Optional[str] = None # <-- NOVO CAMPO
+    observacao_vistoriador: Optional[str] = None
     force_single_slot: Optional[bool] = False
 
 class AgendaUpdate(BaseModel):
@@ -196,7 +196,7 @@ class AgendaUpdate(BaseModel):
     valor_final_vistoria: Optional[float] = None
     valor_vistoriador: Optional[float] = None
     observacao_privada: Optional[str] = None
-    observacao_vistoriador: Optional[str] = None # <-- NOVO CAMPO
+    observacao_vistoriador: Optional[str] = None
 
 class AgendaObservacaoUpdate(BaseModel):
     observacao_privada: str
@@ -250,6 +250,50 @@ class VistoriaImprodutivaCreate(BaseModel):
     horario_vistoria_original: str
     motivo_improdutividade: str
     valor_cobranca: float
+
+# =================================================================
+# --- Schemas de Link de Agendamento (Self-Service) ---
+# =================================================================
+
+# Payload para gerar o link (Admin/Imobiliaria -> Backend)
+class SolicitacaoLinkCreate(BaseModel):
+    imovel_id: UUID
+    cliente_id: UUID
+    tipo_vistoria: TipoVistoriaEnum
+    # Lista de IDs permitidos. Se vazio ou None, todos os vistoriadores são considerados.
+    vistoriadores_ids: Optional[List[UUID]] = None
+    
+# Resposta ao gerar o link
+class SolicitacaoLinkResponse(BaseModel):
+    token: str
+    link_completo: str # URL montada para facilitar
+    expires_at: Optional[datetime]
+
+# O que o cliente vê ao abrir o link (Header da página bonita)
+class PublicAgendamentoInfo(BaseModel):
+    cliente_nome: str
+    imovel_cod: str
+    imovel_endereco: str
+    imovel_tamanho: float
+    imovel_mobiliado: str
+    tipo_vistoria: str
+    imobiliaria_nome: str
+    status: str # PENDENTE, AGENDADO...
+
+class SlotPublico(BaseModel):
+    agenda_id: UUID
+    data: date
+    horario: str
+    vistoriador_nome: str # Apenas primeiro nome para não expor muito
+    
+class SlotsResponse(BaseModel):
+    slots_por_dia: Dict[str, List[SlotPublico]]
+    necessita_horario_duplo: bool
+
+# Payload para o cliente confirmar o agendamento
+class ConfirmacaoAgendamento(BaseModel):
+    # O cliente escolhe um slot (Agenda ID) que estava livre
+    agenda_id: UUID 
 
 # =================================================================
 # --- Schemas de Relatórios e Dashboards ---
@@ -336,7 +380,7 @@ class RelatorioVistoriaItem(BaseModel):
     valor: float
     comissao_vistoriador: float
     observacao_privada: Optional[str] = None
-    observacao_vistoriador: Optional[str] = None # <-- NOVO CAMPO
+    observacao_vistoriador: Optional[str] = None
 
 class RelatorioImprodutivaItem(BaseModel):
     data_vistoria_original: date

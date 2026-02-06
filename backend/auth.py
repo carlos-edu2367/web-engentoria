@@ -234,3 +234,18 @@ def get_current_gestor_user(current_user: models.UsuarioTI = Depends(get_current
          raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Acesso negado: Requer privilégios de Gestor de TI.")
     return current_user
 
+def get_current_active_user_or_imobiliaria(current_user = Depends(get_current_user)):
+    """
+    Permite acesso se for um usuário ativo (Vistoriador/Admin) OU um Grupo de Imobiliária.
+    Usado para funcionalidades compartilhadas como gerar links de agendamento.
+    """
+    if isinstance(current_user, models.GrupoImobiliaria):
+        return current_user
+    
+    if isinstance(current_user, models.Usuario):
+        return current_user
+        
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN, 
+        detail="Acesso negado: Requer login de Imobiliária ou Usuário do sistema."
+    )

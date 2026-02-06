@@ -3,12 +3,17 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, desc, case
-from typing import List, Optional
+from typing import List, Optional, Any, Dict
 from uuid import UUID
-from datetime import datetime, date
+from datetime import datetime, date, timedelta, timezone
 
 from .. import models, schemas, auth
 from ..config import get_db
+from ..supabase_client import deletar_arquivo_supabase, supabase
+
+from logging import getLogger
+
+logger = getLogger(__name__)
 
 
 # Roteador para o painel de gestão, protegido para acesso de gestores (TI).
@@ -765,4 +770,185 @@ def update_app_version(version_data: schemas.AppVersionUpdate, db: Session = Dep
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Ocorreu um erro ao atualizar a versão: {e}"
         )
+    # Função auxiliar para listar todos os arquivos com paginação
+def get_all_storage_files(bucket: str, batch_size: int = 100) -> List[Any]:
+    """
+    Itera sobre o bucket para buscar TODOS os arquivos, superando o limite padrão de paginação do Supabase.
+    """
+    all_files = []
+    offset = 0
+    
+    while True:
+        # Busca um lote de arquivos ordenados por data de criação para facilitar
+        # options: limit, offset, sortBy
+        try:
+            batch = supabase.storage.from_(bucket).list(
+                path="", 
+                options={
+                    "limit": batch_size, 
+                    "offset": offset, 
+                    "sortBy": {"column": "created_at", "order": "asc"}
+                }
+            )
+            
+            # Se não retornar nada, acabou
+            if not batch:
+                break
+                
+            all_files.extend(batch)
+            offset += len(batch)
+            
+            # Se o lote retornado for menor que o tamanho do lote, é a última página
+            if len(batch) < batch_size:
+                break
+                
+        except Exception as e:
+            logger.error(f"Erro na paginação do bucket {bucket} offset {offset}: {e}")
+            break
+            
+    return all_files
+
+@router.delete(
+    "/maintenance/cleanup-old-documents",
+    summary="Remove documentos antigos (40+ dias) do Storage e Banco"
+)
+def cleanup_old_documents(db: Session = Depends(get_db)):
+    """
+    Remove arquivos de DocumentosInfoMensal e DocumentoAgenda anteriores a 40 dias.
+    Apaga do Supabase e do Banco de Dados.
+    Se não encontrar nada no banco, faz uma varredura direta no bucket do Supabase (com paginação).
+    """
+    logger.info("--- INICIANDO LIMPEZA MANUAL DE DOCUMENTOS ANTIGOS (40 DIAS) ---")
+    
+    # Define a data de corte (40 dias atrás)
+    cutoff_date = datetime.now(timezone.utc) - timedelta(days=40)
+    # Versão ingênua para banco que não usa timezone
+    cutoff_date_naive = datetime.utcnow() - timedelta(days=40)
+    
+    total_deleted = 0
+    erros = 0
+    
+    # Variável para controlar se encontramos algo no banco
+    found_in_db = False
+    
+    # Lista de modelos e buckets para limpeza
+    # Tupla: (Model, bucket_name)
+    targets = [
+        (models.DocumentosInfoMensal, "documentos"),
+        (models.DocumentoAgenda, "documentos")
+    ]
+    
+    for Model, bucket in targets:
+        # Busca registros criados antes da data de corte
+        old_docs = db.query(Model).filter(Model.created_at < cutoff_date_naive).all()
+        
+        if old_docs:
+            found_in_db = True
+        
+        for doc in old_docs:
+            try:
+                # 1. Tenta apagar do Supabase
+                if doc.file_path:
+                    sucesso_storage = deletar_arquivo_supabase(file_path=doc.file_path, bucket=bucket)
+                    if not sucesso_storage:
+                        logger.warning(f"Falha ao deletar arquivo {doc.file_path} do bucket {bucket}, mas removendo do banco.")
+                
+                # 2. Apaga do banco de dados
+                db.delete(doc)
+                total_deleted += 1
+            except Exception as e:
+                logger.error(f"Erro crítico ao processar documento {doc.id} de {Model.__tablename__}: {e}")
+                erros += 1
+    
+    # --- Lógica de Varredura de Órfãos (Storage Direto com Paginação) ---
+    if not found_in_db:
+        logger.info("Nenhum registro antigo encontrado no banco. Iniciando varredura direta no Storage (Orphan Cleanup) com paginação...")
+        bucket_target = "documentos" 
+        try:
+            # Usa a função auxiliar que implementa o loop de paginação
+            files = get_all_storage_files(bucket_target, batch_size=100)
+            logger.info(f"Total de arquivos listados no bucket: {len(files)}")
+            
+            for file_obj in files:
+                try:
+                    # Supabase retorna created_at em ISO 8601 string com timezone
+                    created_at_str = file_obj.get('created_at')
+                    file_name = file_obj.get('name')
+                    
+                    if created_at_str and file_name:
+                        # Converte string ISO para datetime com timezone
+                        # replace('Z', '+00:00') é um fix para python < 3.11
+                        file_date = datetime.fromisoformat(created_at_str.replace('Z', '+00:00'))
+                        
+                        if file_date < cutoff_date:
+                            logger.info(f"Arquivo órfão encontrado: {file_name} ({file_date}). Deletando...")
+                            sucesso = deletar_arquivo_supabase(file_path=file_name, bucket=bucket_target)
+                            if sucesso:
+                                total_deleted += 1
+                            else:
+                                erros += 1
+                except Exception as ex_parse:
+                    logger.warning(f"Erro ao processar arquivo {file_obj.get('name')}: {ex_parse}")
+                    
+        except Exception as e_storage:
+            logger.error(f"Erro ao listar arquivos do bucket para limpeza de órfãos: {e_storage}")
+            erros += 1
+
+    try:
+        db.commit()
+        return {
+            "message": "Limpeza de documentos antigos finalizada.",
+            "total_deleted": total_deleted,
+            "errors": erros,
+            "cutoff_date": cutoff_date_naive.strftime("%Y-%m-%d %H:%M:%S"),
+            "orphaned_cleanup_executed": not found_in_db
+        }
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Erro ao commitar limpeza de documentos: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+            detail=f"Erro ao finalizar a limpeza no banco de dados: {str(e)}"
+        )
+
+# --- NOVO ENDPOINT: INSPEÇÃO DE STORAGE (Paginado) ---
+@router.get("/maintenance/storage/{bucket_name}")
+def list_bucket_files(bucket_name: str, folder: Optional[str] = None, db: Session = Depends(get_db)):
+    """
+    Lista arquivos de um bucket do Supabase, retornando seus metadados.
+    Agora utiliza o loop de paginação para tentar trazer até 1000 arquivos (limite de segurança da view).
+    """
+    try:
+        # Reuse a função auxiliar com um limite maior de paginação interna, 
+        # mas cuidado para não estourar a memória se tiver milhões de arquivos.
+        # Aqui limitamos o loop para pegar no máximo ~1000 itens para a UI.
+        
+        all_files = []
+        offset = 0
+        batch_size = 100
+        max_items = 1000 # Limite duro para a UI não travar
+        
+        path = folder if folder else ""
+        
+        while len(all_files) < max_items:
+            batch = supabase.storage.from_(bucket_name).list(
+                path=path, 
+                options={
+                    "limit": batch_size, 
+                    "offset": offset, 
+                    "sortBy": {"column": "created_at", "order": "desc"} # Mais recentes primeiro na UI
+                }
+            )
+            if not batch: break
+            
+            all_files.extend(batch)
+            offset += len(batch)
+            
+            if len(batch) < batch_size: break
+            
+        return all_files[:max_items] # Garante corte exato
+        
+    except Exception as e:
+        logger.error(f"Erro ao listar bucket {bucket_name}: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro ao acessar Supabase: {str(e)}")
 

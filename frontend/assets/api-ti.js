@@ -32,43 +32,39 @@ async function apiFetch(endpoint, method = 'GET', body = null) {
 
         if (response.status === 401 || response.status === 403) {
             logout();
-            throw new Error("Acesso não autorizado.");
+            throw new Error("Sessão expirada ou sem permissão.");
         }
 
-        const responseBody = await response.text();
+        // Para respostas sem conteúdo (204 No Content)
+        if (response.status === 204) {
+            return null;
+        }
+
+        const data = await response.json();
 
         if (!response.ok) {
-            try {
-                const errorData = JSON.parse(responseBody);
-                throw new Error(errorData.detail || `Erro HTTP: ${response.status}`);
-            } catch (e) {
-                throw new Error(responseBody || `Erro HTTP: ${response.status}`);
-            }
-        }
-        
-        if (response.status === 204 || !responseBody) {
-            return { success: true };
+            throw new Error(data.detail || "Erro na requisição à API.");
         }
 
-        return JSON.parse(responseBody);
+        return data;
     } catch (error) {
-        console.error(`Erro na chamada da API para ${endpoint}:`, error);
+        console.error(`Erro na API (${endpoint}):`, error);
         throw error;
     }
 }
 
-export const api = {
-    // Dashboard
+// Objeto exportado com todas as funções da API
+const api = {
     getDashboardStats: () => apiFetch('/dashboard/stats'),
-    getFeedbackChartData: () => apiFetch('/dashboard/feedback-chart'),
-
-    // Users
-    getAllUsers: () => apiFetch('/users'),
+    getFeedbackChart: () => apiFetch('/dashboard/feedback-chart'),
+    
+    // Usuários
+    getUsers: () => apiFetch('/users'),
     createUser: (data) => apiFetch('/users', 'POST', data),
     updateUser: (table, id, data) => apiFetch(`/users/${table}/${id}`, 'PUT', data),
     deleteUser: (table, id) => apiFetch(`/users/${table}/${id}`, 'DELETE'),
 
-    // Imobiliarias & Grupos
+    // Imobiliárias e Grupos
     getGrupos: () => apiFetch('/grupos-imobiliarias'),
     createGrupo: (data) => apiFetch('/grupos-imobiliarias', 'POST', data),
     updateGrupo: (id, data) => apiFetch(`/grupos-imobiliarias/${id}`, 'PUT', data),
@@ -94,5 +90,11 @@ export const api = {
     getCleanupPreview: () => apiFetch('/maintenance/cleanup-preview'),
     executeCleanup: () => apiFetch('/maintenance/cleanup-execute', 'DELETE'),
     updateAppVersion: (data) => apiFetch('/maintenance/app-version', 'POST', data),
+
+    // Storage
+    cleanupOldDocuments: () => apiFetch('/maintenance/cleanup-old-documents', 'DELETE'),
+    // NOVO: Listar arquivos do bucket
+    listBucketFiles: (bucket) => apiFetch(`/maintenance/storage/${bucket}`),
 };
 
+export { api };

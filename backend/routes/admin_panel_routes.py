@@ -310,148 +310,176 @@ def sanitize_filename(filename):
 
 def _calculate_valor_base_imovel(imobiliaria: models.Imobiliaria, tamanho: float, mobiliado: str) -> float:
     """Calcula o valor BASE da vistoria com base nas regras da imobiliária."""
-    tamanho = float(tamanho)
-    if mobiliado == "mobiliado":
+    tamanho = float(tamanho or 0)
+    
+    # Tratamento de string para garantir match correto
+    mobiliado_str = str(mobiliado).lower() if mobiliado else "sem_mobilia"
+
+    if mobiliado_str == "mobiliado":
         valor_m2 = imobiliaria.valor_mobiliado
-    elif mobiliado == "semi_mobiliado":
+    elif mobiliado_str == "semi_mobiliado":
         valor_m2 = imobiliaria.valor_semi_mobiliado
-    else: # sem_mobilia
+    else: # sem_mobilia ou outros
         valor_m2 = imobiliaria.valor_sem_mobilia
     
-    return round(tamanho * float(valor_m2), 2)
+    return round(tamanho * float(valor_m2 or 0), 2)
 
-def _calculate_valor_final_vistoria(imovel: models.Imovel, imobiliaria: models.Imobiliaria, tipo_vistoria: str) -> float:
+def _calculate_valor_final_vistoria(
+    imovel: models.Imovel, 
+    imobiliaria: models.Imobiliaria, 
+    tipo_vistoria: str,
+    valor_base_externo: float = 0.0
+) -> float:
     """
-    Calcula o valor FINAL (cobrado) da vistoria com base no tipo
-    e no valor mínimo da imobiliária.
+    Calcula o valor FINAL (cobrado) da vistoria.
+    CORREÇÃO: Prioriza o 'valor_base_externo' se o imovel.valor estiver zerado.
     """
-    
     valor_base_calculado = 0.0
-    valor_minimo_aplicavel = 0.0
-    # Garante que o valor mínimo seja um float, tratando o caso de ser None
     valor_minimo_imob = float(imobiliaria.valor_minimo or 0)
+    valor_minimo_aplicavel = 0.0
 
-    # --- NOVA REGRA PARA VISTORIAS DE ENTRADA ---
+    # Determina qual valor base usar (o do banco ou o recém calculado)
+    valor_base_imovel = float(imovel.valor or 0)
+    if valor_base_imovel <= 0 and valor_base_externo > 0:
+        valor_base_imovel = valor_base_externo
+
+    # --- REGRAS DE TIPO ---
     if tipo_vistoria == 'ENTRADA':
-        tamanho = float(imovel.tamanho)
+        # Entrada tem regra específica de preço por m², ignorando o valor base do imóvel
+        tamanho = float(imovel.tamanho or 0)
+        mobilia = str(imovel.mobiliado).lower() if imovel.mobiliado else "sem_mobilia"
         
-        if imovel.mobiliado == 'mobiliado':
-            # Mobiliado: 1.25 reais por metro
+        if mobilia == 'mobiliado':
             valor_base_calculado = tamanho * 1.25
         else:
-            # Sem mobília ou Semi-mobiliado: 1 real por metro
             valor_base_calculado = tamanho * 1.00
             
-        # Valor mínimo fixo de 50 reais para ENTRADA
         valor_minimo_aplicavel = 50.00
 
     elif tipo_vistoria == 'AVERIGUACAO':
-        # Valor fixo para averiguação
         valor_base_calculado = 65.00
-        # Averiguação é valor cheio, então o mínimo aplicável é o valor mínimo total
         valor_minimo_aplicavel = valor_minimo_imob
     
     elif tipo_vistoria in ['CONFERENCIA', 'COMPLEMENTO_VISITA']:
-        # Vistorias com 50% do valor
-        valor_base_imovel = float(imovel.valor)
+        # 50% do valor base do imóvel
         valor_base_calculado = valor_base_imovel * 0.5
-        # Regra: Se for 50%, o mínimo também é 50%
         valor_minimo_aplicavel = valor_minimo_imob * 0.5
     
     else: 
-        # Vistorias de valor "cheio" (SAIDA, etc.) permanecem como estavam
-        valor_base_imovel = float(imovel.valor)
+        # SAIDA, etc. (Valor Cheio do imóvel)
         valor_base_calculado = valor_base_imovel
-        # Vistoria de valor cheio, o mínimo é o valor cheio da imobiliária
         valor_minimo_aplicavel = valor_minimo_imob
 
-    # Compara o valor calculado com o mínimo aplicável para aquele tipo de vistoria
-    # O valor final é o maior dos dois (nunca será menor que o mínimo)
+    # Aplica o mínimo
     valor_final = max(valor_base_calculado, valor_minimo_aplicavel)
     
     return round(valor_final, 2)
+
 def _calculate_valor_comissao_vistoriador(
     tamanho_m2: float, 
     mobiliado_status: str, 
     tipo_vistoria_agenda: str,
-    vistoriador: models.Usuario # Novo parâmetro para lidar com a "Regra Adicional"
+    vistoriador: models.Usuario
 ) -> float:
     """
-    Calcula o valor da COMISSÃO do vistoriador com base nas novas regras
-    de Entrada/Saída e na regra de "preco_unico".
+    Calcula a COMISSÃO do vistoriador.
     """
-    tamanho_m2 = float(tamanho_m2)
+    tamanho_m2 = float(tamanho_m2 or 0)
+    mobiliado_status = str(mobiliado_status).lower() if mobiliado_status else "sem_mobilia"
     
-    # 1. Lida com tipos especiais primeiro (regra parece inalterada)
     if tipo_vistoria_agenda == 'AVERIGUACAO':
         return 65.00
 
     valor_base = 0.0
     
-    # 2. Determina qual conjunto de regras usar (Entrada ou Saída)
-    # Regra Adicional:
-    # Se a vistoria for de ENTRADA, OU se o vistoriador for antigo (preco_unico == True),
-    # usamos as regras de ENTRADA.
-    # Caso contrário (é SAIDA, CONFERENCIA, etc. E preco_unico == False), usamos as regras de SAÍDA.
-    
+    # Define se usa tabela de ENTRADA ou SAIDA
     usa_regras_entrada = False
     if tipo_vistoria_agenda == 'ENTRADA':
         usa_regras_entrada = True
     elif vistoriador and vistoriador.preco_unico == True:
-        # Se for vistoriador antigo, TODAS as vistorias (Saída, Conf, etc.)
-        # são calculadas pela tabela de ENTRADA.
+        # Vistoriador antigo recebe sempre pela tabela de ENTRADA
         usa_regras_entrada = True
          
-    # 3. Calcula o valor_base com base no conjunto de regras determinado
     if usa_regras_entrada:
-        # --- REGRAS DE ENTRADA ---
+        # --- TABELA ENTRADA ---
         if mobiliado_status == 'mobiliado':
-            # Entrada - Com Mobília
             if tamanho_m2 < 50: valor_base = 65.00
             elif 50 <= tamanho_m2 < 100: valor_base = tamanho_m2 * 1.25
             elif 100 <= tamanho_m2 <= 125: valor_base = 125.00
-            else: valor_base = tamanho_m2 * 1.00 # Acima de 125
-        elif mobiliado_status in ['sem_mobilia', 'semi_mobiliado']:
-            # Entrada - Sem Mobília
+            else: valor_base = tamanho_m2 * 1.00
+        else: # sem ou semi
             if tamanho_m2 < 50: valor_base = 50.00
             elif 50 <= tamanho_m2 < 100: valor_base = tamanho_m2 * 1.00
             elif 100 <= tamanho_m2 <= 120: valor_base = 100.00
-            else: valor_base = tamanho_m2 * 0.85 # Acima de 120
-        else:
-            valor_base = 0.0 # Status de mobília desconhecido
+            else: valor_base = tamanho_m2 * 0.85
     else:
-        # --- REGRAS DE SAÍDA ---
-        # (Aplica-se a SAIDA, CONFERENCIA, COMPLEMENTO, etc.
-        #  somente se vistoriador.preco_unico == False)
+        # --- TABELA SAÍDA ---
         if mobiliado_status == 'mobiliado':
-            # Saída - Com Mobília
             if tamanho_m2 < 50: valor_base = 65.00
             elif 50 <= tamanho_m2 < 100: valor_base = tamanho_m2 * 1.25
             elif 100 <= tamanho_m2 <= 140: valor_base = 125.00
-            else: valor_base = tamanho_m2 * 0.90 # Acima de 140
-        elif mobiliado_status in ['sem_mobilia', 'semi_mobiliado']:
-            # Saída - Sem Mobília
+            else: valor_base = tamanho_m2 * 0.90
+        else: # sem ou semi
             if tamanho_m2 < 50: valor_base = 50.00
             elif 50 <= tamanho_m2 < 100: valor_base = tamanho_m2 * 1.00
             elif 100 <= tamanho_m2 <= 135: valor_base = 100.00
-            else: valor_base = tamanho_m2 * 0.75 # Acima de 135
-        else:
-            valor_base = 0.0 # Status de mobília desconhecido
+            else: valor_base = tamanho_m2 * 0.75
 
-    # 4. Aplica o multiplicador de 50% para tipos de vistoria fracionados
+    # Regras de redução para conferência/complemento
     valor_final = valor_base
     if tipo_vistoria_agenda in ['CONFERENCIA', 'COMPLEMENTO_VISITA']:
         valor_final = valor_base * 0.5
         if valor_final < 45.00:
             valor_final = 45.00
     else:
-        if valor_final < 50:
-            valor_final = 50
+        # Piso mínimo geral para vistorias completas
+        if valor_final < 50.00:
+            valor_final = 50.00
         
     return round(valor_final, 2)
 
-
-
+def calcular_valores_vistoria(
+    imovel: models.Imovel, 
+    imobiliaria: models.Imobiliaria, 
+    tipo_vistoria: str, 
+    vistoriador: models.Usuario
+) -> dict:
+    """
+    Orquestrador de cálculo.
+    Garante que se o imóvel não tiver valor base, ele é calculado aqui e passado adiante.
+    """
+    try:
+        tamanho = float(imovel.tamanho or 0)
+        mobilia = str(imovel.mobiliado).lower() if imovel.mobiliado else "sem_mobilia"
+        
+        # 1. Calcula o valor BASE de referência (Tabela Imobiliária)
+        # Fundamental para imóveis novos que ainda tem imovel.valor = 0
+        valor_base_ref = _calculate_valor_base_imovel(imobiliaria, tamanho, mobilia)
+        
+        # 2. Calcula o valor FINAL (Cobrança)
+        # Passamos o valor_base_ref para usar caso o imovel.valor esteja zerado
+        valor_final_vistoria = _calculate_valor_final_vistoria(
+            imovel, imobiliaria, tipo_vistoria, valor_base_externo=valor_base_ref
+        )
+        
+        # 3. Calcula a comissão do vistoriador
+        valor_vistoriador = _calculate_valor_comissao_vistoriador(
+            tamanho, mobilia, tipo_vistoria, vistoriador
+        )
+        
+        return {
+            "valor_final_vistoria": valor_final_vistoria,
+            "valor_vistoriador": valor_vistoriador,
+            "valor_base_ref": valor_base_ref
+        }
+    except Exception as e:
+        print(f"Erro ao calcular valores da vistoria: {e}")
+        # Retorna valores seguros em caso de erro crítico para não travar a API
+        return {
+            "valor_final_vistoria": 0.0, 
+            "valor_vistoriador": 0.0, 
+            "valor_base_ref": 0.0
+        }
 
 # =================================================================
 # --- Dashboard ---
@@ -861,10 +889,14 @@ def add_horario_avulso(horario: schemas.HorarioAvulsoCreate, db: Session = Depen
     return db_agenda
 
 @router.post("/agenda/gerar", summary="Regerar agenda: Limpa livres e recria com base nos horários fixos")
-def generate_agenda(semanas: int = 4, db: Session = Depends(get_db)):
+def generate_agenda(
+    semanas: int = 4,
+    db: Session = Depends(get_db),
+    current_user = Depends(auth.get_current_admin_user)
+):
     """
     Regenera a agenda para as próximas semanas.
-    1. Remove documentos vinculados a horários 'LIVRE' (limpeza de dependências).
+    1. Remove solicitações e documentos vinculados a horários 'LIVRE'.
     2. Remove todos os horários 'LIVRE' futuros no período estipulado.
     3. Recria os horários baseando-se na lista atual de HorarioFixo.
     """
@@ -873,7 +905,7 @@ def generate_agenda(semanas: int = 4, db: Session = Depends(get_db)):
     end_date = today + timedelta(days=days_to_generate)
 
     try:
-        # Filtro base para identificar os horários que queremos resetar
+        # Critério base dos slots LIVRES futuros
         criteria_agenda_livre = and_(
             models.Agenda.data >= today,
             models.Agenda.data < end_date,
@@ -881,69 +913,83 @@ def generate_agenda(semanas: int = 4, db: Session = Depends(get_db)):
             models.Agenda.disponivel == True
         )
 
-        # 1. Limpeza de Dependências: Deletar registros em 'documentos_agenda'
-        # Primeiro, buscamos os IDs das agendas que serão apagadas
-        subquery_ids = db.query(models.Agenda.id).filter(criteria_agenda_livre)
-        
-        # Deletamos os documentos que apontam para essas agendas
-        db.query(models.DocumentoAgenda).filter(
-            models.DocumentoAgenda.agenda_id.in_(subquery_ids)
+        # Subquery com os IDs das agendas que serão removidas
+        agenda_ids_subquery = (
+            db.query(models.Agenda.id)
+            .filter(criteria_agenda_livre)
+            .subquery()
+        )
+
+        # 1. Remove SOLICITAÇÕES vinculadas às agendas LIVRES
+        db.query(models.SolicitacaoAgendamento).filter(
+            models.SolicitacaoAgendamento.agenda_id.in_(agenda_ids_subquery)
         ).delete(synchronize_session=False)
 
-        # 2. Limpeza Principal: Deletar horários LIVRES
-        # Agora podemos deletar sem violar a Foreign Key
-        deleted_count = db.query(models.Agenda).filter(criteria_agenda_livre).delete(synchronize_session=False)
+        # 2. Remove DOCUMENTOS vinculados às agendas LIVRES
+        db.query(models.DocumentoAgenda).filter(
+            models.DocumentoAgenda.agenda_id.in_(agenda_ids_subquery)
+        ).delete(synchronize_session=False)
 
-        # 3. Busca configurações de horários fixos ativos
-        horarios_fixos = db.query(models.HorarioFixo).filter(models.HorarioFixo.is_deleted == False).all()
-        
+        # 3. Remove as agendas LIVRES
+        deleted_count = db.query(models.Agenda).filter(
+            criteria_agenda_livre
+        ).delete(synchronize_session=False)
+
+        # 4. Busca horários fixos ativos
+        horarios_fixos = (
+            db.query(models.HorarioFixo)
+            .filter(models.HorarioFixo.is_deleted == False)
+            .all()
+        )
+
         if not horarios_fixos:
             db.commit()
             return {
-                "message": f"Agenda limpa. {deleted_count} horários livres antigos foram removidos. Nenhum horário fixo configurado para geração."
+                "message": f"Agenda limpa. {deleted_count} horários livres antigos foram removidos."
             }
 
         novos_agendamentos = 0
-        
-        # 4. Recriação: Loop pelos dias e horários fixos
+
+        # 5. Recriação da agenda
         for i in range(days_to_generate):
             current_date = today + timedelta(days=i)
             dia_semana_str = str(current_date.weekday())
-            
+
             for hf in horarios_fixos:
-                if hf.dia_semana == dia_semana_str:
-                    # Verifica se já existe algo (Agendado, Fechado, ou recém criado)
-                    existe_ocupado = db.query(models.Agenda).filter(
+                if str(hf.dia_semana) == dia_semana_str:
+                    existe = db.query(models.Agenda).filter(
                         models.Agenda.vistoriador_id == hf.vistoriador_id,
                         models.Agenda.data == current_date,
                         models.Agenda.horario == hf.horario
                     ).first()
-                    
-                    if not existe_ocupado:
-                        novo_agendamento = models.Agenda(
+
+                    if not existe:
+                        db.add(models.Agenda(
                             vistoriador_id=hf.vistoriador_id,
                             data=current_date,
                             horario=hf.horario,
                             disponivel=True,
                             tipo="LIVRE"
-                        )
-                        db.add(novo_agendamento)
+                        ))
                         novos_agendamentos += 1
-        
+
         db.commit()
         return {
-            "message": f"Regeneração concluída. {deleted_count} horários livres antigos (e seus docs residuais) foram limpos. {novos_agendamentos} novos horários gerados."
+            "message": (
+                f"Regeneração concluída. "
+                f"{deleted_count} horários livres removidos. "
+                f"{novos_agendamentos} novos horários gerados."
+            )
         }
 
     except Exception as e:
         db.rollback()
-        logger.error(f"Erro ao gerar agenda: {str(e)}")
-        # É útil logar o erro completo para debug se o problema persistir
+        logging.exception("Erro ao gerar agenda")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Ocorreu um erro ao gerar a agenda: {str(e)}"
         )
-
+   
 # =================================================================
 # --- Gestão de Vistorias ---
 # =================================================================

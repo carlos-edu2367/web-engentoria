@@ -9,7 +9,7 @@ from starlette.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 # Importo os roteadores que criei
-from .routes import auth_routes, agenda_routes, suporte_routes, admin_routes, imobiliaria_routes, laudo_pdf_routes
+from .routes import auth_routes, agenda_routes, suporte_routes, admin_routes, imobiliaria_routes, laudo_pdf_routes, agendamento_externo_routes
 from .routes import admin_panel_routes # Rota para o novo painel de admin
 from .routes import vistoria_valores_routes # Rota para manipulação de valores de vistorias
 from . import models
@@ -61,6 +61,8 @@ app.include_router(imobiliaria_routes.router, prefix=api_prefix)
 app.include_router(admin_panel_routes.router, prefix=api_prefix) # Novo painel de administração
 app.include_router(vistoria_valores_routes.router, prefix=api_prefix) # Rota para manipulação de valores
 app.include_router(laudo_pdf_routes.router, prefix=api_prefix)
+app.include_router(agendamento_externo_routes.router_protected, prefix=api_prefix)
+app.include_router(agendamento_externo_routes.router_public, prefix=api_prefix)
 
 # --- SERVINDO O FRONTEND (Opcional, para desenvolvimento) ---
 # Monta a pasta 'assets' do frontend

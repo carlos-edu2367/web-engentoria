@@ -42,7 +42,7 @@ async def limpar_tabela_especifica(session: AsyncSession, Model, bucket_name: st
 
         # 2. Deleta do Storage um por um (necessário pois cada path é único)
         for reg_id, file_path in registros:
-            if deletar_arquivo_supabase_safe(file_path, bucket_name):
+            if await deletar_arquivo_supabase_safe(file_path, bucket_name):
                 ids_para_remover.append(reg_id)
         
         # 3. Batch Delete no Banco (Extremamente rápido)
