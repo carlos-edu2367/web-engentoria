@@ -355,133 +355,367 @@ function renderConfirmReabrirModal(agendaId, event) {
  * @param {object} event - O evento do FullCalendar.
  */
 async function showAdminVistoriaModal(event) {
-    const props = event.extendedProps;
+    // 1. Extração Segura de Dados
+    // Garante que não quebre se vier de um clique no calendário (extendedProps) ou direto (event)
+    const props = event.extendedProps || event; 
     const imovel = props.imovel || {};
     const cliente = imovel.cliente || {};
     const imobiliaria = imovel.imobiliaria || {};
+    const agendamentoId = event.id || props.id;
 
-    const detailsTabHTML = `
-        <div class="space-y-3 text-gray-300 mb-4 text-sm sm:text-base">
-            <p><strong>Cód. Imóvel:</strong> ${sanitizeHTML(imovel.cod_imovel || 'N/A')}</p>
-            <p><strong>Tipo de Vistoria:</strong> <span class="text-cyan-400 font-semibold">${sanitizeHTML(props.tipo || 'N/A')}</span></p>
-            <p><strong>Vistoriador:</strong> ${sanitizeHTML(props.vistoriador?.nome || 'N/A')}</p>
-            <p><strong>Cliente:</strong> ${sanitizeHTML(cliente.nome || 'N/A')}</p>
-            <p><strong>Imobiliária:</strong> ${sanitizeHTML(imobiliaria.nome || 'N/A')}</p>
-            <p><strong>Endereço:</strong> ${sanitizeHTML(imovel.endereco || 'N/A')}</p>
-            <p><strong>Tamanho:</strong> ${sanitizeHTML(imovel.tamanho ? imovel.tamanho + ' m²' : 'N/A')}</p>
-            <p><strong>Valor Vistoria:</strong> R$ ${props.valor_final_vistoria?.toFixed(2) || '0.00'}</p>
-            <p><strong>Valor Vistoriador:</strong> R$ ${props.valor_vistoriador?.toFixed(2) || '0.00'}</p>
-        </div>
+    // --- Helpers Visuais ---
 
-        <div id="laudo-admin-container" class="mt-4 p-4 bg-gray-900/50 rounded-lg">
-            <p class="text-sm text-gray-400 text-center">Verificando status do laudo...</p>
-        </div>
+    // Sanitização básica contra XSS
+    const sanitizeHTML = (str) => {
+        if (!str) return '';
+        return String(str).replace(/[&<>"']/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[m]);
+    };
 
-        <div class="border-t border-gray-700 mt-4 pt-4 space-y-3">
-            <div>
-                <h4 class="font-semibold text-amber-300 text-sm">Observação para Vistoriador:</h4>
-                <p class="text-gray-300 whitespace-pre-wrap pl-2 border-l-2 border-amber-300/50 mt-1 text-sm sm:text-base">${sanitizeHTML(props.observacao_vistoriador || 'Nenhuma')}</p>
+    // Card de Informação (Grid System)
+    const createInfoCard = (label, value, iconPath, extraClasses = "") => `
+        <div class="group relative flex items-center gap-3 rounded-xl border border-slate-700/50 bg-slate-800/30 p-3 transition-all duration-300 hover:border-cyan-500/30 hover:bg-slate-800/60 hover:shadow-[0_0_15px_rgba(34,211,238,0.05)] ${extraClasses}">
+            <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-900 text-cyan-500 shadow-inner group-hover:scale-110 group-hover:text-cyan-400 transition-transform">
+                <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                    ${iconPath}
+                </svg>
             </div>
-            <div>
-                <h4 class="font-semibold text-gray-400 text-sm">Observação Privada (Admin):</h4>
-                <p class="text-gray-300 whitespace-pre-wrap pl-2 border-l-2 border-gray-400/50 mt-1 text-sm sm:text-base">${sanitizeHTML(props.observacao_privada || 'Nenhuma')}</p>
+            <div class="overflow-hidden">
+                <p class="text-[10px] uppercase tracking-wider text-slate-500 font-bold">${label}</p>
+                <p class="truncate text-sm font-medium text-slate-200 group-hover:text-white transition-colors" title="${String(value).replace(/"/g, '&quot;')}">
+                    ${value}
+                </p>
             </div>
-        </div>
-
-        <div id="vistoria-actions" class="border-t border-gray-700 mt-6 pt-6 flex flex-wrap justify-center gap-3">
-            <button data-action="comprovante" class="action-btn bg-teal-600 hover:bg-teal-500 text-white flex items-center gap-2">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
-                Gerar Comprovante
-            </button>
-            <button data-action="edit" class="action-btn bg-blue-600 hover:bg-blue-500">Editar</button>
-            <button data-action="reschedule" class="action-btn bg-purple-600 hover:bg-purple-500">Reagendar</button>
-            <button data-action="unproductive" class="action-btn bg-yellow-500 hover:bg-yellow-400 text-black">Marcar Improdutiva</button>
-            <button data-action="cancel" class="action-btn bg-red-600 hover:bg-red-500">Cancelar</button>
         </div>
     `;
 
+    // --- Construção do Layout (HTML Strings) ---
+
+    const detailsTabHTML = `
+        <div class="anim-slide-up space-y-6">
+            
+            <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                ${createInfoCard("Cód. Imóvel", sanitizeHTML(imovel.cod_imovel || 'N/A'), '<path stroke-linecap="round" stroke-linejoin="round" d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14" />')}
+                ${createInfoCard("Tipo Vistoria", sanitizeHTML(props.tipo || 'N/A'), '<path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />', "border-cyan-500/20 bg-cyan-900/10")}
+                ${createInfoCard("Vistoriador", sanitizeHTML(props.vistoriador?.nome || 'N/A'), '<path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />')}
+                ${createInfoCard("Cliente", sanitizeHTML(cliente.nome || 'N/A'), '<path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />')}
+                ${createInfoCard("Imobiliária", sanitizeHTML(imobiliaria.nome || 'N/A'), '<path stroke-linecap="round" stroke-linejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />')}
+                ${createInfoCard("Tamanho", sanitizeHTML(imovel.tamanho ? imovel.tamanho + ' m²' : 'N/A'), '<path stroke-linecap="round" stroke-linejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />')}
+            </div>
+
+            <div class="relative flex items-start gap-3 rounded-xl border border-slate-700/50 bg-slate-800/30 p-3">
+                <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-900 text-cyan-500">
+                    <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                </div>
+                <div>
+                    <p class="text-[10px] uppercase tracking-wider text-slate-500 font-bold">Endereço Completo</p>
+                    <p class="text-sm text-slate-300 leading-snug">${sanitizeHTML(imovel.endereco || 'N/A')}</p>
+                    <div class="mt-1 flex items-center gap-2">
+                        <span class="inline-flex items-center rounded-md bg-slate-700/50 px-2 py-1 text-xs font-medium text-slate-400 ring-1 ring-inset ring-slate-600/20">
+                            ${sanitizeHTML(imovel.mobiliado || 'N/A')}
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="rounded-xl border border-emerald-500/20 bg-gradient-to-br from-slate-900 to-emerald-950/20 p-4">
+                <h4 class="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-emerald-400">
+                    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                    Financeiro
+                </h4>
+                <div class="flex divide-x divide-emerald-500/20">
+                    <div class="flex-1 px-2 text-center">
+                        <p class="text-xs text-slate-500">Valor Vistoria</p>
+                        <p class="text-lg font-bold text-emerald-400">R$ ${props.valor_final_vistoria?.toFixed(2) || '0.00'}</p>
+                    </div>
+                    <div class="flex-1 px-2 text-center">
+                        <p class="text-xs text-slate-500">Repasse Vistoriador</p>
+                        <p class="text-lg font-bold text-slate-200">R$ ${props.valor_vistoriador?.toFixed(2) || '0.00'}</p>
+                    </div>
+                </div>
+            </div>
+
+            <div id="laudo-admin-container" class="animate-pulse rounded-lg border border-dashed border-slate-700 bg-slate-900/50 p-3 text-center transition-all duration-300">
+                <p class="flex items-center justify-center gap-2 text-xs text-slate-400">
+                    <svg class="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                    Sincronizando status do laudo...
+                </p>
+            </div>
+
+            <div class="grid gap-4 sm:grid-cols-2">
+                <div class="relative overflow-hidden rounded-lg border border-amber-500/20 bg-amber-950/10 p-4">
+                    <div class="absolute left-0 top-0 h-full w-1 bg-amber-500"></div>
+                    <h4 class="mb-2 flex items-center gap-2 text-xs font-bold uppercase text-amber-400">
+                        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" /></svg>
+                        Msg. Vistoriador
+                    </h4>
+                    <p class="text-sm italic text-slate-300/90">${sanitizeHTML(props.observacao_vistoriador || 'Nenhuma')}</p>
+                </div>
+
+                <div class="relative overflow-hidden rounded-lg border border-slate-600/30 bg-slate-800/30 p-4">
+                    <div class="absolute left-0 top-0 h-full w-1 bg-slate-500"></div>
+                    <h4 class="mb-2 flex items-center gap-2 text-xs font-bold uppercase text-slate-400">
+                        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+                        Privado (Admin)
+                    </h4>
+                    <p class="text-sm text-slate-400">${sanitizeHTML(props.observacao_privada || 'Nenhuma')}</p>
+                </div>
+            </div>
+
+            <div id="vistoria-actions" class="mt-4 flex flex-wrap items-center justify-end gap-3 border-t border-slate-700/50 pt-6">
+                <button data-action="comprovante" class="group flex items-center gap-2 rounded-lg bg-emerald-600/10 px-4 py-2 text-sm font-medium text-emerald-400 ring-1 ring-inset ring-emerald-600/20 transition hover:bg-emerald-600 hover:text-white">
+                    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                    Comprovante
+                </button>
+
+                <button data-action="edit" class="flex items-center gap-2 rounded-lg bg-slate-700 px-4 py-2 text-sm font-medium text-white hover:bg-slate-600 hover:shadow-lg transition-all">
+                    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
+                    Editar
+                </button>
+
+                <button data-action="reschedule" class="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 hover:shadow-[0_0_15px_rgba(99,102,241,0.4)] transition-all">
+                    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                    Reagendar
+                </button>
+
+                <div class="h-6 w-px bg-slate-700 mx-1"></div>
+
+                <button data-action="unproductive" class="flex items-center gap-2 rounded-lg border border-amber-500/30 px-4 py-2 text-sm font-medium text-amber-500 hover:bg-amber-500 hover:text-white transition-colors">
+                    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    Improdutiva
+                </button>
+
+                <button data-action="cancel" class="flex items-center gap-2 rounded-lg bg-red-500/10 px-4 py-2 text-sm font-medium text-red-400 ring-1 ring-inset ring-red-500/20 hover:bg-red-500 hover:text-white hover:shadow-[0_0_15px_rgba(239,68,68,0.4)] transition-all">
+                    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                    Cancelar
+                </button>
+            </div>
+        </div>
+    `;
+
+    // Wrapper do Modal (Header + Tabs + Content)
     const modalHTML = `
-        <div class="flex justify-between items-start mb-4">
-            <h2 class="text-xl sm:text-2xl font-bold text-cyan-300">
-                Detalhes: CT ${sanitizeHTML(imovel.cod_imovel || 'Vistoria')}
-            </h2>
-            <button id="close-modal-btn" class="p-1 rounded-full hover:bg-gray-700/50 text-gray-400 hover:text-white transition">
-                <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+        <div class="sticky top-0 z-50 mb-6 flex items-center justify-between border-b border-slate-700/60 bg-slate-900/80 pb-4 backdrop-blur-md">
+            <div class="flex items-center gap-3">
+                <div class="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 shadow-[0_0_15px_rgba(6,182,212,0.4)]">
+                    <svg class="h-6 w-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path></svg>
+                </div>
+                <div>
+                    <h2 class="text-xl font-bold tracking-tight text-white">
+                        Vistoria <span class="text-cyan-400">#${sanitizeHTML(imovel.cod_imovel || '---')}</span>
+                    </h2>
+                    <p class="text-xs text-slate-400">Gerenciamento de ordem de serviço</p>
+                </div>
+            </div>
+            <button id="close-modal-btn" class="group relative rounded-full p-2 text-slate-400 transition-colors hover:bg-slate-800 hover:text-white">
+                <div class="absolute inset-0 rounded-full bg-slate-700 opacity-0 transition-opacity group-hover:opacity-100"></div>
+                <svg class="relative z-10 h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
             </button>
         </div>
 
-        <div class="border-b border-gray-700/50 mb-4 overflow-x-auto">
-            <nav class="flex space-x-2 sm:space-x-4 -mb-px" id="modal-tabs" role="tablist">
-                <button data-tab="detalhes" class="tab-btn active" role="tab" aria-selected="true">Detalhes</button>
-                <button data-tab="mural" class="tab-btn" role="tab" aria-selected="false">Mural</button>
-                <button data-tab="documentos" class="tab-btn" role="tab" aria-selected="false">Documentos</button>
+        <div class="mb-6">
+            <nav class="flex space-x-1 rounded-xl bg-slate-950/50 p-1 shadow-inner" id="modal-tabs" role="tablist">
+                <button data-tab="detalhes" class="tab-btn flex-1 rounded-lg py-2 text-sm font-medium transition-all duration-200 focus:outline-none active bg-slate-800 text-white shadow shadow-black/20" role="tab" aria-selected="true">
+                    Detalhes
+                </button>
+                <button data-tab="mural" class="tab-btn flex-1 rounded-lg py-2 text-sm font-medium text-slate-400 transition-all duration-200 hover:text-slate-200 focus:outline-none" role="tab" aria-selected="false">
+                    Mural
+                </button>
+                <button data-tab="documentos" class="tab-btn flex-1 rounded-lg py-2 text-sm font-medium text-slate-400 transition-all duration-200 hover:text-slate-200 focus:outline-none" role="tab" aria-selected="false">
+                    Documentos
+                </button>
             </nav>
         </div>
 
-        <div id="tab-content-detalhes" class="tab-content" role="tabpanel">${detailsTabHTML}</div>
-        <div id="tab-content-mural" class="tab-content hidden" role="tabpanel"><p class="text-center text-gray-400">Carregando...</p></div>
-        <div id="tab-content-documentos" class="tab-content hidden" role="tabpanel"><p class="text-center text-gray-400">Carregando...</p></div>
+        <div class="relative min-h-[300px]">
+            <div id="tab-content-detalhes" class="tab-content" role="tabpanel">
+                ${detailsTabHTML}
+            </div>
+            
+            <div id="tab-content-mural" class="tab-content hidden anim-slide-up" role="tabpanel">
+                <div class="flex flex-col items-center justify-center py-12 text-slate-500">
+                    <svg class="mb-4 h-12 w-12 opacity-20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"></path></svg>
+                    <p>Carregando mural...</p>
+                </div>
+            </div>
+            
+            <div id="tab-content-documentos" class="tab-content hidden anim-slide-up" role="tabpanel">
+                <div class="flex flex-col items-center justify-center py-12 text-slate-500">
+                    <svg class="mb-4 h-12 w-12 opacity-20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                    <p>Carregando documentos...</p>
+                </div>
+            </div>
+        </div>
     `;
 
+    // 2. Renderização
     showModal(modalHTML, 'max-w-3xl');
 
+    // 3. Event Listeners (A lógica "Brain" do Modal)
+
+    // Fechar Modal
+    document.getElementById('close-modal-btn').addEventListener('click', hideModal);
+
+    // Delegação de Eventos para os Botões de Ação
     document.getElementById('vistoria-actions').addEventListener('click', (e) => {
         const target = e.target.closest('button');
         if (!target) return;
         const action = target.dataset.action;
+        
         switch (action) {
-            case 'comprovante': handleGerarComprovante(event); break;
-            case 'edit': handleEditarVistoria(event); break;
-            case 'reschedule': enterReagendamentoMode(event); break;
-            case 'unproductive': handleMarcarImprodutiva(event); break;
-            case 'cancel': handleCancelarAgendamento(event); break;
+            case 'comprovante': if(typeof handleGerarComprovante === 'function') handleGerarComprovante(event); break;
+            case 'edit': if(typeof handleEditarVistoria === 'function') handleEditarVistoria(event); break;
+            case 'reschedule': if(typeof enterReagendamentoMode === 'function') enterReagendamentoMode(event); break;
+            case 'unproductive': if(typeof handleMarcarImprodutiva === 'function') handleMarcarImprodutiva(event); break;
+            case 'cancel': if(typeof handleCancelarAgendamento === 'function') handleCancelarAgendamento(event); break;
         }
     });
-
-    document.getElementById('close-modal-btn').addEventListener('click', hideModal);
     
-    // Listeners de Abas e Laudo (mantidos simplificados aqui para brevidade)
-    document.getElementById('modal-tabs').addEventListener('click', (e) => {
+    // Lógica Avançada das Abas (Toggle Visual e Lazy Load)
+    document.getElementById('modal-tabs').addEventListener('click', async (e) => { // Adicionado async
         const target = e.target.closest('.tab-btn');
         if (!target) return;
+        
+        e.preventDefault();
         const tabId = target.dataset.tab;
+
+        // 1. Atualização Visual das Abas
+        const activeClasses = ['bg-slate-800', 'text-white', 'shadow', 'shadow-black/20'];
+        const inactiveClasses = ['text-slate-400', 'hover:text-slate-200'];
+
         document.querySelectorAll('.tab-btn').forEach(btn => {
-            btn.classList.remove('active');
+            btn.classList.remove(...activeClasses);
+            btn.classList.add(...inactiveClasses);
             btn.setAttribute('aria-selected', 'false');
         });
-        target.classList.add('active');
+
+        target.classList.remove(...inactiveClasses);
+        target.classList.add(...activeClasses);
         target.setAttribute('aria-selected', 'true');
+
+        // 2. Troca de Conteúdo
         document.querySelectorAll('.tab-content').forEach(content => content.classList.add('hidden'));
         const contentDiv = document.getElementById(`tab-content-${tabId}`);
-        contentDiv.classList.remove('hidden');
-        if (contentDiv.innerHTML.includes('Carregando...')) {
-            if (tabId === 'mural') renderAdminMuralTab(event.id, 'tab-content-mural');
-            if (tabId === 'documentos') renderAdminDocumentosTab(event.id, 'tab-content-documentos');
+        
+        if (contentDiv) {
+            contentDiv.classList.remove('hidden');
+
+            // 3. Lógica de Carregamento (Lazy Load) corrigida
+            // Verifica se já carregou usando um atributo data-loaded em vez de verificar texto
+            if (!contentDiv.hasAttribute('data-loaded')) {
+                
+                try {
+                    console.log(`Tentando carregar aba: ${tabId} para ID: ${agendamentoId}`);
+
+                    if (tabId === 'mural') {
+                        // Verifica explicitamente se a função existe
+                        if (typeof renderAdminMuralTab !== 'undefined') {
+                            await renderAdminMuralTab(agendamentoId, 'tab-content-mural');
+                            contentDiv.setAttribute('data-loaded', 'true'); // Marca como carregado
+                        } else {
+                            throw new Error('Função renderAdminMuralTab não encontrada (verifique os imports).');
+                        }
+                    } 
+                    
+                    else if (tabId === 'documentos') {
+                        if (typeof renderAdminDocumentosTab !== 'undefined') {
+                            await renderAdminDocumentosTab(agendamentoId, 'tab-content-documentos');
+                            contentDiv.setAttribute('data-loaded', 'true');
+                        } else {
+                            throw new Error('Função renderAdminDocumentosTab não encontrada (verifique os imports).');
+                        }
+                    }
+
+                } catch (err) {
+                    console.error("Erro ao carregar aba:", err);
+                    // Mostra o erro na UI em vez de ficar carregando infinito
+                    contentDiv.innerHTML = `
+                        <div class="flex flex-col items-center justify-center py-8 text-center">
+                            <div class="rounded-full bg-red-500/10 p-3 text-red-400 mb-3">
+                                <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                            </div>
+                            <p class="text-sm text-red-300">Erro ao carregar conteúdo.</p>
+                            <p class="text-xs text-slate-500 mt-1 max-w-xs">${err.message}</p>
+                        </div>
+                    `;
+                }
+            }
         }
     });
-    
+    // 4. Busca Assíncrona do Laudo (Skeleton -> Resultado)
     try {
-        const laudo = await api.getLaudoByAgendamento(event.id);
+        // Usa agendamentoId extraído no início
+        const laudo = await api.getLaudoByAgendamento(agendamentoId);
         const laudoContainer = document.getElementById('laudo-admin-container');
-        const statusClass = laudo.aprovado ? 'bg-green-600/50 text-green-300' : 'bg-yellow-600/50 text-yellow-300';
-        const statusText = laudo.aprovado ? 'Laudo Aprovado' : 'Pendente de Análise';
-        laudoContainer.innerHTML = `
-            <div class="flex flex-col sm:flex-row justify-between items-center gap-2">
-                <div><p class="font-semibold text-white">Status do Laudo</p><span class="text-xs font-bold px-2 py-0.5 rounded ${statusClass}">${statusText}</span></div>
-                <button id="view-laudo-btn" data-laudo-id="${laudo.id}" class="w-full sm:w-auto action-btn bg-cyan-600 hover:bg-cyan-500 text-sm">Ver Laudo para Análise</button>
-            </div>`;
-        document.getElementById('view-laudo-btn').onclick = (e) => {
-            const laudoId = e.currentTarget.dataset.laudoId;
-            hideModal();
-            window.location.hash = `#laudos?view=${laudoId}`;
-        };
+        
+        if (laudoContainer) {
+            const isApproved = laudo.aprovado; 
+            
+            // Definição de estilos baseada no status
+            const containerClass = isApproved 
+                ? 'border-emerald-500/30 bg-emerald-900/10' 
+                : 'border-yellow-500/30 bg-yellow-900/10';
+            
+            const badgeClass = isApproved
+                ? 'bg-emerald-500/20 text-emerald-300 ring-emerald-500/40'
+                : 'bg-yellow-500/20 text-yellow-300 ring-yellow-500/40';
+
+            const statusText = isApproved ? 'Laudo Aprovado' : 'Pendente de Análise';
+
+            // Remove pulse e atualiza UI
+            laudoContainer.classList.remove('animate-pulse', 'border-dashed');
+            laudoContainer.className = `rounded-lg border ${containerClass} p-4 transition-all duration-500`;
+            
+            laudoContainer.innerHTML = `
+                <div class="flex flex-col items-center justify-between gap-4 sm:flex-row">
+                    <div class="flex items-center gap-3">
+                        <div class="flex h-10 w-10 items-center justify-center rounded-full ${isApproved ? 'bg-emerald-500/20 text-emerald-400' : 'bg-yellow-500/20 text-yellow-400'}">
+                            ${isApproved 
+                                ? '<svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>'
+                                : '<svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>'
+                            }
+                        </div>
+                        <div class="text-left">
+                            <p class="text-xs font-bold uppercase tracking-wider text-slate-500">Status Atual</p>
+                            <span class="mt-1 inline-block rounded-md px-2 py-1 text-xs font-bold ring-1 ring-inset ${badgeClass}">
+                                ${statusText}
+                            </span>
+                        </div>
+                    </div>
+                    <button id="view-laudo-btn" data-laudo-id="${laudo.id}" class="w-full rounded-lg bg-cyan-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-cyan-500 hover:shadow-lg hover:shadow-cyan-500/20 sm:w-auto">
+                        Visualizar Laudo
+                    </button>
+                </div>`;
+
+            // Ação do Botão Ver Laudo
+            const btnLaudo = document.getElementById('view-laudo-btn');
+            if(btnLaudo) {
+                btnLaudo.onclick = (e) => {
+                    const id = e.currentTarget.dataset.laudoId;
+                    hideModal();
+                    window.location.hash = `#laudos?view=${id}`;
+                };
+            }
+        }
     } catch (error) {
-        document.getElementById('laudo-admin-container').innerHTML = error.message.includes('404') ? 
-            '<p class="text-sm text-gray-500 text-center">Laudo ainda não finalizado pelo vistoriador.</p>' : 
-            `<p class="text-sm text-red-400 text-center">Erro ao verificar laudo: ${error.message}</p>`;
+        const laudoContainer = document.getElementById('laudo-admin-container');
+        if (laudoContainer) {
+            laudoContainer.classList.remove('animate-pulse', 'border-dashed');
+            
+            if (error.message && error.message.includes('404')) {
+                // Caso normal: Vistoriador ainda não fez o laudo
+                laudoContainer.innerHTML = `
+                    <div class="flex items-center justify-center gap-2 text-slate-500">
+                        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        <span class="text-sm">Laudo ainda não iniciado pelo vistoriador.</span>
+                    </div>`;
+            } else {
+                // Caso erro de sistema
+                laudoContainer.className = "rounded-lg border border-red-500/30 bg-red-900/10 p-3 text-center";
+                laudoContainer.innerHTML = `<p class="text-xs text-red-400">Erro ao verificar status: ${sanitizeHTML(error.message)}</p>`;
+            }
+        }
     }
 }
-
 function handleCancelarAgendamento(event) {
     const modalHTML = `
         <h3 class="text-xl font-bold text-white mb-4">Cancelar Agendamento</h3>
