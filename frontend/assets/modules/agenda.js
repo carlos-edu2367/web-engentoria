@@ -334,6 +334,10 @@ function renderConfirmReabrirModal(agendaId, event) {
  * MODAL DA VISTORIA DO ADMIN (com abas e verificação de laudo)
  * @param {object} event - O evento do FullCalendar.
  */
+/**
+ * MODAL DA VISTORIA DO ADMIN (com abas e verificação de laudo)
+ * @param {object} event - O evento do FullCalendar.
+ */
 async function showAdminVistoriaModal(event) {
     const props = event.extendedProps;
     const imovel = props.imovel || {};
@@ -344,10 +348,18 @@ async function showAdminVistoriaModal(event) {
     const detailsTabHTML = `
         <div class="space-y-3 text-gray-300 mb-4 text-sm sm:text-base">
             <p><strong>Cód. Imóvel:</strong> ${sanitizeHTML(imovel.cod_imovel || 'N/A')}</p>
+            
+            <!-- NOVA LINHA: Tipo de Vistoria -->
+            <p><strong>Tipo de Vistoria:</strong> <span class="text-cyan-400 font-semibold">${sanitizeHTML(props.tipo || 'N/A')}</span></p>
+            
             <p><strong>Vistoriador:</strong> ${sanitizeHTML(props.vistoriador?.nome || 'N/A')}</p>
             <p><strong>Cliente:</strong> ${sanitizeHTML(cliente.nome || 'N/A')}</p>
             <p><strong>Imobiliária:</strong> ${sanitizeHTML(imobiliaria.nome || 'N/A')}</p>
             <p><strong>Endereço:</strong> ${sanitizeHTML(imovel.endereco || 'N/A')}</p>
+            
+            <!-- NOVA LINHA: Metragem -->
+            <p><strong>Tamanho:</strong> ${sanitizeHTML(imovel.tamanho ? imovel.tamanho + ' m²' : 'N/A')}</p>
+            
             <p><strong>Valor Vistoria:</strong> R$ ${props.valor_final_vistoria?.toFixed(2) || '0.00'}</p>
             <p><strong>Valor Vistoriador:</strong> R$ ${props.valor_vistoriador?.toFixed(2) || '0.00'}</p>
         </div>
@@ -487,30 +499,6 @@ async function showAdminVistoriaModal(event) {
             laudoContainer.innerHTML = `<p class="text-sm text-red-400 text-center">Erro ao verificar laudo: ${error.message}</p>`;
         }
     }
-}
-
-
-function handleCancelarAgendamento(event) {
-    const modalHTML = `
-        <h3 class="text-xl font-bold text-white mb-4">Cancelar Agendamento</h3>
-        <p class="text-gray-300 mb-6">Tem certeza que deseja cancelar esta vistoria? O horário voltará a ficar disponível.</p>
-        <div class="flex justify-end gap-4">
-            <button id="btn-cancel" class="px-4 py-2 bg-gray-600 hover:bg-gray-500 rounded-lg transition">Não</button>
-            <button id="btn-confirm-cancel" class="px-4 py-2 bg-red-600 hover:bg-red-500 text-white font-bold rounded-lg transition">Sim, Cancelar</button>
-        </div>
-    `;
-    showModal(modalHTML, 'max-w-md');
-    document.getElementById('btn-cancel').onclick = hideModal;
-    document.getElementById('btn-confirm-cancel').onclick = async () => {
-        try {
-            await api.cancelarVistoria(event.id);
-            showAlert('Agendamento cancelado com sucesso!');
-            hideModal();
-            calendar.refetchEvents();
-        } catch (error) {
-            showAlert(error.message || 'Não foi possível cancelar.', 'error');
-        }
-    };
 }
 
 function handleMarcarImprodutiva(event) {
