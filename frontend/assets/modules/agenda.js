@@ -251,7 +251,23 @@ function handleEventClick(clickInfo) {
         `;
         showModal(modalHTML, 'max-w-lg');
 
-        document.getElementById('btn-iniciar-agendamento').onclick = () => startAgendamentoWizard(event, calendar);
+        // AQUI ESTÁ A MUDANÇA PRINCIPAL
+        document.getElementById('btn-iniciar-agendamento').onclick = () => {
+            // Passamos uma função de callback como 3º argumento
+            startAgendamentoWizard(event, calendar, (novoAgendamento) => {
+                // Esta função será executada após o sucesso do wizard
+                
+                // Monta um objeto similes a um evento do FullCalendar para a função do comprovante
+                const mockEvent = {
+                    extendedProps: novoAgendamento,
+                    start: new Date(`${novoAgendamento.data}T${novoAgendamento.horario}`)
+                };
+                
+                // Abre o comprovante automaticamente
+                handleGerarComprovante(mockEvent);
+            });
+        };
+
         document.getElementById('btn-fechar-horario').onclick = () => handleFecharHorario(event.id);
 
     } else if (props.tipo === 'FECHADO') {
@@ -344,31 +360,22 @@ async function showAdminVistoriaModal(event) {
     const cliente = imovel.cliente || {};
     const imobiliaria = imovel.imobiliaria || {};
 
-    // 1. Gera o HTML da aba "Detalhes"
     const detailsTabHTML = `
         <div class="space-y-3 text-gray-300 mb-4 text-sm sm:text-base">
             <p><strong>Cód. Imóvel:</strong> ${sanitizeHTML(imovel.cod_imovel || 'N/A')}</p>
-            
-            <!-- NOVA LINHA: Tipo de Vistoria -->
             <p><strong>Tipo de Vistoria:</strong> <span class="text-cyan-400 font-semibold">${sanitizeHTML(props.tipo || 'N/A')}</span></p>
-            
             <p><strong>Vistoriador:</strong> ${sanitizeHTML(props.vistoriador?.nome || 'N/A')}</p>
             <p><strong>Cliente:</strong> ${sanitizeHTML(cliente.nome || 'N/A')}</p>
             <p><strong>Imobiliária:</strong> ${sanitizeHTML(imobiliaria.nome || 'N/A')}</p>
             <p><strong>Endereço:</strong> ${sanitizeHTML(imovel.endereco || 'N/A')}</p>
-            
-            <!-- NOVA LINHA: Metragem -->
             <p><strong>Tamanho:</strong> ${sanitizeHTML(imovel.tamanho ? imovel.tamanho + ' m²' : 'N/A')}</p>
-            
             <p><strong>Valor Vistoria:</strong> R$ ${props.valor_final_vistoria?.toFixed(2) || '0.00'}</p>
             <p><strong>Valor Vistoriador:</strong> R$ ${props.valor_vistoriador?.toFixed(2) || '0.00'}</p>
         </div>
 
-        <!-- NOVO CONTAINER DE VERIFICAÇÃO DE LAUDO -->
         <div id="laudo-admin-container" class="mt-4 p-4 bg-gray-900/50 rounded-lg">
             <p class="text-sm text-gray-400 text-center">Verificando status do laudo...</p>
         </div>
-        <!-- FIM DO NOVO CONTAINER -->
 
         <div class="border-t border-gray-700 mt-4 pt-4 space-y-3">
             <div>
@@ -382,14 +389,17 @@ async function showAdminVistoriaModal(event) {
         </div>
 
         <div id="vistoria-actions" class="border-t border-gray-700 mt-6 pt-6 flex flex-wrap justify-center gap-3">
+            <button data-action="comprovante" class="action-btn bg-teal-600 hover:bg-teal-500 text-white flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                Gerar Comprovante
+            </button>
             <button data-action="edit" class="action-btn bg-blue-600 hover:bg-blue-500">Editar</button>
             <button data-action="reschedule" class="action-btn bg-purple-600 hover:bg-purple-500">Reagendar</button>
             <button data-action="unproductive" class="action-btn bg-yellow-500 hover:bg-yellow-400 text-black">Marcar Improdutiva</button>
-            <button data-action="cancel" class="action-btn bg-red-600 hover:bg-red-500">Cancelar Agendamento</button>
+            <button data-action="cancel" class="action-btn bg-red-600 hover:bg-red-500">Cancelar</button>
         </div>
     `;
 
-    // 2. Gera a estrutura do Modal com Abas
     const modalHTML = `
         <div class="flex justify-between items-start mb-4">
             <h2 class="text-xl sm:text-2xl font-bold text-cyan-300">
@@ -400,7 +410,6 @@ async function showAdminVistoriaModal(event) {
             </button>
         </div>
 
-        <!-- Abas -->
         <div class="border-b border-gray-700/50 mb-4 overflow-x-auto">
             <nav class="flex space-x-2 sm:space-x-4 -mb-px" id="modal-tabs" role="tablist">
                 <button data-tab="detalhes" class="tab-btn active" role="tab" aria-selected="true">Detalhes</button>
@@ -409,26 +418,19 @@ async function showAdminVistoriaModal(event) {
             </nav>
         </div>
 
-        <!-- Conteúdo das Abas -->
-        <div id="tab-content-detalhes" class="tab-content" role="tabpanel">
-            ${detailsTabHTML}
-        </div>
-        <div id="tab-content-mural" class="tab-content hidden" role="tabpanel">
-            <p class="text-center text-gray-400">Carregando...</p>
-        </div>
-        <div id="tab-content-documentos" class="tab-content hidden" role="tabpanel">
-            <p class="text-center text-gray-400">Carregando...</p>
-        </div>
+        <div id="tab-content-detalhes" class="tab-content" role="tabpanel">${detailsTabHTML}</div>
+        <div id="tab-content-mural" class="tab-content hidden" role="tabpanel"><p class="text-center text-gray-400">Carregando...</p></div>
+        <div id="tab-content-documentos" class="tab-content hidden" role="tabpanel"><p class="text-center text-gray-400">Carregando...</p></div>
     `;
 
-    // 3. Exibe o modal
     showModal(modalHTML, 'max-w-3xl');
 
-    // 4. Adiciona Listeners para as ações
     document.getElementById('vistoria-actions').addEventListener('click', (e) => {
-        const action = e.target.dataset.action;
-        if (!action) return;
+        const target = e.target.closest('button');
+        if (!target) return;
+        const action = target.dataset.action;
         switch (action) {
+            case 'comprovante': handleGerarComprovante(event); break;
             case 'edit': handleEditarVistoria(event); break;
             case 'reschedule': enterReagendamentoMode(event); break;
             case 'unproductive': handleMarcarImprodutiva(event); break;
@@ -436,69 +438,71 @@ async function showAdminVistoriaModal(event) {
         }
     });
 
-    // 5. Adiciona Listener para fechar o modal
     document.getElementById('close-modal-btn').addEventListener('click', hideModal);
-
-    // 6. Adiciona Listeners para as Abas
+    
+    // Listeners de Abas e Laudo (mantidos simplificados aqui para brevidade)
     document.getElementById('modal-tabs').addEventListener('click', (e) => {
         const target = e.target.closest('.tab-btn');
         if (!target) return;
-
         const tabId = target.dataset.tab;
-        
         document.querySelectorAll('.tab-btn').forEach(btn => {
             btn.classList.remove('active');
             btn.setAttribute('aria-selected', 'false');
         });
         target.classList.add('active');
         target.setAttribute('aria-selected', 'true');
-        
-        document.querySelectorAll('.tab-content').forEach(content => {
-            content.classList.add('hidden');
-        });
+        document.querySelectorAll('.tab-content').forEach(content => content.classList.add('hidden'));
         const contentDiv = document.getElementById(`tab-content-${tabId}`);
         contentDiv.classList.remove('hidden');
-
         if (contentDiv.innerHTML.includes('Carregando...')) {
             if (tabId === 'mural') renderAdminMuralTab(event.id, 'tab-content-mural');
             if (tabId === 'documentos') renderAdminDocumentosTab(event.id, 'tab-content-documentos');
         }
     });
-
-    // 7. (NOVO) Chama a verificação do laudo
+    
     try {
         const laudo = await api.getLaudoByAgendamento(event.id);
         const laudoContainer = document.getElementById('laudo-admin-container');
-        
-        // Laudo encontrado e finalizado
         const statusClass = laudo.aprovado ? 'bg-green-600/50 text-green-300' : 'bg-yellow-600/50 text-yellow-300';
         const statusText = laudo.aprovado ? 'Laudo Aprovado' : 'Pendente de Análise';
-
         laudoContainer.innerHTML = `
             <div class="flex flex-col sm:flex-row justify-between items-center gap-2">
-                <div>
-                    <p class="font-semibold text-white">Status do Laudo</p>
-                    <span class="text-xs font-bold px-2 py-0.5 rounded ${statusClass}">${statusText}</span>
-                </div>
-                <button id="view-laudo-btn" data-laudo-id="${laudo.id}" class="w-full sm:w-auto action-btn bg-cyan-600 hover:bg-cyan-500 text-sm">
-                    Ver Laudo para Análise
-                </button>
-            </div>
-        `;
+                <div><p class="font-semibold text-white">Status do Laudo</p><span class="text-xs font-bold px-2 py-0.5 rounded ${statusClass}">${statusText}</span></div>
+                <button id="view-laudo-btn" data-laudo-id="${laudo.id}" class="w-full sm:w-auto action-btn bg-cyan-600 hover:bg-cyan-500 text-sm">Ver Laudo para Análise</button>
+            </div>`;
         document.getElementById('view-laudo-btn').onclick = (e) => {
             const laudoId = e.currentTarget.dataset.laudoId;
             hideModal();
             window.location.hash = `#laudos?view=${laudoId}`;
         };
-
     } catch (error) {
-        const laudoContainer = document.getElementById('laudo-admin-container');
-        if (error.message.includes('404')) {
-            laudoContainer.innerHTML = '<p class="text-sm text-gray-500 text-center">Laudo ainda não finalizado pelo vistoriador.</p>';
-        } else {
-            laudoContainer.innerHTML = `<p class="text-sm text-red-400 text-center">Erro ao verificar laudo: ${error.message}</p>`;
-        }
+        document.getElementById('laudo-admin-container').innerHTML = error.message.includes('404') ? 
+            '<p class="text-sm text-gray-500 text-center">Laudo ainda não finalizado pelo vistoriador.</p>' : 
+            `<p class="text-sm text-red-400 text-center">Erro ao verificar laudo: ${error.message}</p>`;
     }
+}
+
+function handleCancelarAgendamento(event) {
+    const modalHTML = `
+        <h3 class="text-xl font-bold text-white mb-4">Cancelar Agendamento</h3>
+        <p class="text-gray-300 mb-6">Tem certeza que deseja cancelar esta vistoria? O horário voltará a ficar disponível.</p>
+        <div class="flex justify-end gap-4">
+            <button id="btn-cancel" class="px-4 py-2 bg-gray-600 hover:bg-gray-500 rounded-lg transition">Não</button>
+            <button id="btn-confirm-cancel" class="px-4 py-2 bg-red-600 hover:bg-red-500 text-white font-bold rounded-lg transition">Sim, Cancelar</button>
+        </div>
+    `;
+    showModal(modalHTML, 'max-w-md');
+    document.getElementById('btn-cancel').onclick = hideModal;
+    document.getElementById('btn-confirm-cancel').onclick = async () => {
+        try {
+            await api.cancelarVistoria(event.id);
+            showAlert('Agendamento cancelado com sucesso!');
+            hideModal();
+            calendar.refetchEvents();
+        } catch (error) {
+            showAlert(error.message || 'Não foi possível cancelar.', 'error');
+        }
+    };
 }
 
 function handleMarcarImprodutiva(event) {
@@ -556,6 +560,87 @@ function handleMarcarImprodutiva(event) {
             btn.textContent = 'Confirmar Improdutiva';
         }
     };
+}
+
+function handleGerarComprovante(event) {
+    // Garante que funciona mesmo se passar o objeto de dados direto
+    const props = event.extendedProps || event;
+    const imovel = props.imovel || {};
+    const cliente = imovel.cliente || {};
+    
+    const dataParts = props.data.split('-'); 
+    const dataFormatada = `${dataParts[2]}/${dataParts[1]}/${dataParts[0]}`;
+    
+    const nomeCliente = cliente.nome || 'Cliente';
+    const telefoneBruto = cliente.telefone || cliente.celular || '';
+    const telefoneLimpo = telefoneBruto.replace(/\D/g, ''); 
+    
+    const whatsappMessage = `Olá ${nomeCliente}, tudo bem?%0A%0A` +
+        `Passando para confirmar o agendamento da sua vistoria:%0A` +
+        `🏠 *Imóvel:* ${imovel.cod_imovel || ''} - ${imovel.endereco || ''}%0A` +
+        `📅 *Data:* ${dataFormatada}%0A` +
+        `⏰ *Horário:* ${props.horario}%0A` +
+        `👷 *Vistoriador:* ${props.vistoriador?.nome || 'Equipe'}%0A%0A` +
+        `Qualquer dúvida estamos à disposição!`;
+
+    const whatsappLink = telefoneLimpo 
+        ? `https://wa.me/55${telefoneLimpo}?text=${whatsappMessage}`
+        : `https://wa.me/?text=${whatsappMessage}`; 
+
+    const modalHTML = `
+        <div class="text-center">
+            <div class="bg-gray-800 p-6 rounded-xl border border-gray-700 shadow-2xl relative overflow-hidden max-w-sm mx-auto">
+                <div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-cyan-500 to-green-500"></div>
+                <h3 class="text-xl font-bold text-white mb-2 tracking-wide">CONFIRMAÇÃO DE AGENDAMENTO</h3>
+                <p class="text-xs text-gray-500 uppercase tracking-widest mb-6">Comprovante Digital</p>
+
+                <div class="space-y-4 text-left bg-gray-900/50 p-4 rounded-lg border border-gray-700/50 text-sm">
+                    <div class="flex items-start gap-3">
+                        <div class="mt-0.5 text-cyan-400"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path></svg></div>
+                        <div>
+                            <p class="text-gray-400 text-xs uppercase font-bold">Endereço</p>
+                            <p class="text-white leading-tight">${sanitizeHTML(imovel.endereco || 'Endereço não informado')}</p>
+                            <p class="text-xs text-gray-500 mt-0.5">Cód: ${sanitizeHTML(imovel.cod_imovel || 'N/A')}</p>
+                        </div>
+                    </div>
+                    <div class="flex items-start gap-3 border-t border-gray-700/50 pt-3">
+                        <div class="mt-0.5 text-cyan-400"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg></div>
+                        <div>
+                            <p class="text-gray-400 text-xs uppercase font-bold">Data e Hora</p>
+                            <p class="text-white font-mono font-bold text-lg">${dataFormatada} <span class="text-gray-500 text-sm font-normal">às</span> ${props.horario}</p>
+                        </div>
+                    </div>
+                    <div class="flex items-start gap-3 border-t border-gray-700/50 pt-3">
+                         <div class="mt-0.5 text-cyan-400"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg></div>
+                        <div>
+                            <p class="text-gray-400 text-xs uppercase font-bold">Vistoriador Responsável</p>
+                            <p class="text-white">${sanitizeHTML(props.vistoriador?.nome || 'A definir')}</p>
+                        </div>
+                    </div>
+                     <div class="flex items-start gap-3 border-t border-gray-700/50 pt-3">
+                         <div class="mt-0.5 text-purple-400"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.121 17.804A13.937 13.937 0 0112 16c2.5 0 4.847.655 6.879 1.804M15 10a3 3 0 11-6 0 3 3 0 016 0zm6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg></div>
+                        <div class="w-full">
+                            <p class="text-gray-400 text-xs uppercase font-bold">Cliente</p>
+                            <p class="text-white">${sanitizeHTML(cliente.nome || 'N/A')}</p>
+                            <p class="text-xs text-gray-400 truncate w-full">${sanitizeHTML(cliente.email || 'Email não informado')}</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mt-6 flex flex-col gap-3">
+                    <a href="${whatsappLink}" target="_blank" class="w-full py-3 bg-green-600 hover:bg-green-500 text-white font-bold rounded-lg transition flex items-center justify-center gap-2 shadow-lg shadow-green-900/50">
+                        <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-.868-2.031-.967-.272-.099-.47-.149-.669.149-.198.297-.768.967-.941 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.463 1.065 2.876 1.213 3.074.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.414z"/></svg>
+                        Enviar via WhatsApp
+                    </a>
+                    <button id="btn-close-voucher" class="w-full py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 font-medium rounded-lg transition">
+                        Fechar
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+    showModal(modalHTML, 'max-w-md');
+    document.getElementById('btn-close-voucher').onclick = hideModal;
 }
 
 function handleEditarVistoria(event) {

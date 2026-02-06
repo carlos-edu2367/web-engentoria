@@ -298,10 +298,40 @@ async function renderStep4() {
             observacao_vistoriador: observacao
         };
         try {
-            await api.scheduleVistoria(data);
+            // MODIFICAÇÃO: Captura o resultado da API para passar ao callback
+            const resultado = await api.scheduleVistoria(data);
             showAlert('Vistoria agendada com sucesso!');
             hideModal();
             calendarRef.refetchEvents();
+            
+            // MODIFICAÇÃO: Executa o callback de sucesso se existir (para abrir o comprovante)
+            if (wizardState.onSuccessCallback && typeof wizardState.onSuccessCallback === 'function') {
+                // Tenta montar um objeto completo caso a API retorne algo parcial
+                // Prioriza os dados do 'resultado', mas preenche lacunas com o 'wizardState' e cache
+                
+                const cachedImovel = cache.imoveis[wizardState.imobiliaria_id]?.find(i => i.id === wizardState.imovel_id) || {};
+                
+                const agendamentoCompleto = {
+                    ...resultado,
+                    // Garante que data/horário existam (do objeto original de horário)
+                    data: resultado.data || wizardState.rawDate.toISOString().split('T')[0],
+                    horario: resultado.horario || wizardState.rawDate.toTimeString().substring(0,5),
+                    
+                    // Garante objeto vistoriador
+                    vistoriador: resultado.vistoriador || { nome: wizardState.vistoriador_nome },
+                    
+                    // Garante objeto imóvel e dados do cliente
+                    imovel: resultado.imovel || {
+                        ...cachedImovel,
+                        cod_imovel: wizardState.imovel_cod,
+                        cliente: cachedImovel.cliente || { nome: wizardState.cliente_nome } // Fallback para nome do cliente
+                    }
+                };
+
+                // Executa o callback passando o objeto montado
+                wizardState.onSuccessCallback(agendamentoCompleto);
+            }
+
         } catch (error) {
             showAlert(error.message || 'Não foi possível agendar.', 'error');
         }
@@ -420,13 +450,16 @@ function renderNewImovelForm() {
 
 // --- Função de Inicialização ---
 
-export function startAgendamentoWizard(horario, calendarInstance) {
+// MODIFICAÇÃO: Adicionado parâmetro onSuccessCallback
+export function startAgendamentoWizard(horario, calendarInstance, onSuccessCallback = null) {
     wizardState = {
         horario_id: horario.id,
         vistoriador_id: horario.extendedProps.vistoriador.id,
         vistoriador_nome: horario.extendedProps.vistoriador.nome,
         horario_selecionado_str: horario.start.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }),
+        rawDate: horario.start, // Salva o objeto Date para uso posterior
         step: 1,
+        onSuccessCallback: onSuccessCallback // Armazena o callback
     };
     calendarRef = calendarInstance;
     renderWizard();
