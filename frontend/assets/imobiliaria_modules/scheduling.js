@@ -72,7 +72,7 @@ export const renderSchedulingPage = async (container) => {
                             <div class="rounded-2xl border border-slate-700/50 bg-slate-950/50 p-6 md:p-8">
                                 <h3 class="mb-8 flex items-center gap-3 text-xs font-bold uppercase tracking-[0.2em] text-cyan-400">
                                     <span class="flex h-2 w-2 rounded-full bg-cyan-400 shadow-[0_0_10px_rgba(34,211,238,1)] animate-pulse"></span>
-                                    Workflow em Construção
+                                    Funcionalidade em Construção
                                 </h3>
 
                                 <div class="relative space-y-8 pl-2">
