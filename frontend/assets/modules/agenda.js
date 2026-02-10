@@ -7,9 +7,14 @@ import { startAgendamentoWizard } from './agendamento-wizard.js';
 let calendar; // Manter a referência do calendário
 let reagendamentoState = { active: false, event: null }; // Controla o modo de reagendamento
 
-// --- VARIÁVEIS PARA O FILTRO DE VISTORIADOR ---
+// --- VARIÁVEIS PARA OS FILTROS ---
 let currentVistoriadorFilter = 'all'; // 'all' ou o ID do vistoriador
 let knownVistoriadores = new Map(); // Armazena {id: nome} para popular o select
+
+let currentImobiliariaFilter = 'all'; // 'all' ou o ID da imobiliária
+let knownImobiliarias = new Map(); // Armazena {id: nome} para popular o select
+
+let currentSearchQuery = ''; // Texto para busca por código do imóvel
 
 // --- SISTEMA DE CACHE IA ---
 // Armazena { message: string, timestamp: number }
@@ -346,10 +351,6 @@ function renderConfirmReabrirModal(agendaId, event) {
     };
 }
 
-/**
- * MODAL DA VISTORIA DO ADMIN (com abas e verificação de laudo)
- * @param {object} event - O evento do FullCalendar.
- */
 /**
  * MODAL DA VISTORIA DO ADMIN (com abas e verificação de laudo)
  * @param {object} event - O evento do FullCalendar.
@@ -1119,24 +1120,78 @@ function updateVistoriadorSelect(events) {
     }
 }
 
+/**
+ * Atualiza as opções do select de filtro de Imobiliárias.
+ * Adiciona novas imobiliárias encontradas nos eventos sem duplicar.
+ * @param {Array} events - Lista de eventos carregados.
+ */
+function updateImobiliariaSelect(events) {
+    const select = document.getElementById('filter-imobiliaria');
+    if (!select) return;
+
+    let hasNew = false;
+    events.forEach(e => {
+        if (e.imovel && e.imovel.imobiliaria && e.imovel.imobiliaria.id && e.imovel.imobiliaria.nome) {
+            if (!knownImobiliarias.has(e.imovel.imobiliaria.id)) {
+                knownImobiliarias.set(e.imovel.imobiliaria.id, e.imovel.imobiliaria.nome);
+                hasNew = true;
+            }
+        }
+    });
+
+    if (hasNew) {
+        // Reconstrói as opções mantendo a seleção atual
+        const currentVal = select.value;
+        let options = '<option value="all">Todas as Imobiliárias</option>';
+        
+        knownImobiliarias.forEach((nome, id) => {
+            options += `<option value="${id}">${sanitizeHTML(nome)}</option>`;
+        });
+
+        select.innerHTML = options;
+        select.value = currentVal; // Restaura seleção
+    }
+}
+
 export async function initAgenda() {
     const pageHTML = `
-        <div class="flex flex-col sm:flex-row justify-between items-center mb-8 flex-wrap gap-4">
+        <div class="flex flex-col mb-8 gap-4">
             <h1 class="text-3xl font-bold text-cyan-300">Agenda de Vistorias</h1>
-            <div class="flex flex-wrap gap-3 w-full sm:w-auto justify-end items-center">
-                <!-- Filtro de Vistoriador -->
-                <select id="filter-vistoriador" class="w-full sm:w-auto bg-gray-700 text-white border border-gray-600 rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-cyan-500 text-sm">
-                    <option value="all">Todos os Vistoriadores</option>
-                </select>
+            
+            <div class="flex flex-wrap gap-3 w-full justify-between items-center bg-gray-800/40 p-3 rounded-lg border border-gray-700">
+                
+                <!-- Grupo de Filtros Esquerda -->
+                <div class="flex flex-wrap gap-3 w-full lg:w-auto">
+                    <!-- Busca por Código -->
+                    <div class="relative w-full sm:w-auto">
+                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <svg class="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+                        </div>
+                        <input type="text" id="filter-search-code" placeholder="Buscar cód. imóvel..." class="w-full sm:w-48 bg-gray-700 text-white border border-gray-600 rounded-lg pl-10 pr-3 py-2 focus:outline-none focus:ring-2 focus:ring-cyan-500 text-sm placeholder-gray-400">
+                    </div>
 
-                <button id="btn-analise-ia" class="w-full sm:w-auto bg-purple-600 hover:bg-purple-500 text-white font-bold py-2 px-4 rounded-lg transition flex items-center justify-center gap-2">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
-                    Análise IA
-                </button>
-                <button id="btn-gerar-agenda" class="w-full sm:w-auto bg-green-600 hover:bg-green-500 text-white font-bold py-2 px-4 rounded-lg transition flex items-center justify-center gap-2">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
-                    Gerar Agenda (4 Semanas)
-                </button>
+                    <!-- Filtro de Vistoriador -->
+                    <select id="filter-vistoriador" class="w-full sm:w-auto bg-gray-700 text-white border border-gray-600 rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-cyan-500 text-sm">
+                        <option value="all">Todos os Vistoriadores</option>
+                    </select>
+
+                    <!-- Filtro de Imobiliária -->
+                    <select id="filter-imobiliaria" class="w-full sm:w-auto bg-gray-700 text-white border border-gray-600 rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-cyan-500 text-sm">
+                        <option value="all">Todas as Imobiliárias</option>
+                    </select>
+                </div>
+
+                <!-- Grupo de Ações Direita -->
+                <div class="flex flex-wrap gap-3 w-full lg:w-auto justify-end mt-2 lg:mt-0">
+                    <button id="btn-analise-ia" class="w-full sm:w-auto bg-purple-600 hover:bg-purple-500 text-white font-bold py-2 px-4 rounded-lg transition flex items-center justify-center gap-2 text-sm">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                        Análise IA
+                    </button>
+                    <button id="btn-gerar-agenda" class="w-full sm:w-auto bg-green-600 hover:bg-green-500 text-white font-bold py-2 px-4 rounded-lg transition flex items-center justify-center gap-2 text-sm">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                        Gerar Agenda
+                    </button>
+                </div>
             </div>
         </div>
         <div id="calendar-container" class="bg-gray-800/50 rounded-xl neon-border p-2 sm:p-4 relative">
@@ -1145,12 +1200,22 @@ export async function initAgenda() {
     `;
     renderPageContent(pageHTML);
 
-    // Listener para o filtro
+    // Listener para o filtro de Vistoriador
     document.getElementById('filter-vistoriador').addEventListener('change', (e) => {
         currentVistoriadorFilter = e.target.value;
-        if (calendar) {
-            calendar.refetchEvents();
-        }
+        if (calendar) calendar.refetchEvents();
+    });
+
+    // Listener para o filtro de Imobiliária
+    document.getElementById('filter-imobiliaria').addEventListener('change', (e) => {
+        currentImobiliariaFilter = e.target.value;
+        if (calendar) calendar.refetchEvents();
+    });
+
+    // Listener para a Busca por Código (com pequeno debounce se necessário, mas input direto é ok aqui)
+    document.getElementById('filter-search-code').addEventListener('input', (e) => {
+        currentSearchQuery = e.target.value.trim().toLowerCase();
+        if (calendar) calendar.refetchEvents();
     });
 
     document.getElementById('btn-analise-ia').addEventListener('click', async (e) => {
@@ -1261,14 +1326,38 @@ export async function initAgenda() {
                 const end = fetchInfo.endStr.split('T')[0];
                 const rawEvents = await api.getAgendaEvents(start, end);
                 
-                // Atualiza as opções do filtro com base nos dados recebidos
+                // Atualiza as opções dos filtros com base nos dados recebidos
                 updateVistoriadorSelect(rawEvents);
+                updateImobiliariaSelect(rawEvents); // Atualiza select de imobiliárias
 
-                // Aplica o filtro selecionado pelo usuário
+                // Aplica TODOS os filtros selecionados pelo usuário no Client-Side
                 const filteredEvents = rawEvents.filter(e => {
-                    if (currentVistoriadorFilter === 'all') return true;
-                    // Verifica se o evento tem vistoriador e se o ID bate (convertendo para string por segurança)
-                    return e.vistoriador && String(e.vistoriador.id) === String(currentVistoriadorFilter);
+                    // 1. Filtro de Vistoriador
+                    if (currentVistoriadorFilter !== 'all') {
+                        // Se filtro ativo, verifica se ID bate.
+                        if (!e.vistoriador || String(e.vistoriador.id) !== String(currentVistoriadorFilter)) {
+                            return false;
+                        }
+                    }
+
+                    // 2. Filtro de Imobiliária
+                    if (currentImobiliariaFilter !== 'all') {
+                        // Eventos LIVRE ou FECHADO geralmente não têm imobiliária, então são ocultados ao filtrar
+                        if (!e.imovel || !e.imovel.imobiliaria || String(e.imovel.imobiliaria.id) !== String(currentImobiliariaFilter)) {
+                            return false;
+                        }
+                    }
+
+                    // 3. Filtro de Busca (Código do Imóvel - LIKE)
+                    if (currentSearchQuery) {
+                        const codImovel = (e.imovel?.cod_imovel || '').toLowerCase();
+                        // Se não tiver código (ex: LIVRE/FECHADO) ou código não contém o termo, oculta
+                        if (!codImovel.includes(currentSearchQuery)) {
+                            return false;
+                        }
+                    }
+
+                    return true;
                 });
 
                 successCallback(filteredEvents.map(e => ({
