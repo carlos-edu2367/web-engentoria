@@ -818,8 +818,17 @@ window.rejectInfo = (id) => {
     setTimeout(() => document.getElementById('reject-reason')?.focus(), 100);
 };
 
+// --- FUNÇÕES CORRIGIDAS ABAIXO ---
+
 window.finalizeAccept = async (id) => {
-    document.getElementById('generic-modal').classList.add('hidden');
+    // FIX: Verificação segura para evitar crash se o modal não for encontrado
+    const modal = document.getElementById('generic-modal');
+    if (modal) {
+        modal.classList.add('hidden');
+    } else {
+        console.warn("Elemento 'generic-modal' não encontrado. Verifique se o ID no HTML corresponde.");
+    }
+
     showNotification('Processando aprovação...', 'info');
     
     try {
@@ -841,7 +850,14 @@ window.finalizeReject = async (id) => {
         return;
     }
 
-    document.getElementById('generic-modal').classList.add('hidden');
+    // FIX: Verificação segura para evitar crash se o modal não for encontrado
+    const modal = document.getElementById('generic-modal');
+    if (modal) {
+        modal.classList.add('hidden');
+    } else {
+        console.warn("Elemento 'generic-modal' não encontrado. Verifique se o ID no HTML corresponde.");
+    }
+    
     showNotification('Enviando contestação...', 'info');
 
     try {
