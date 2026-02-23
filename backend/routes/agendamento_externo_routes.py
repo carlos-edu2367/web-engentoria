@@ -1,14 +1,16 @@
 # backend/routes/agendamento_externo_routes.py
 
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Request
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Request, UploadFile, File, Form
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import and_, or_
-from typing import List, Dict
+from typing import List, Dict, Optional
 from uuid import UUID
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone, UTC
 import uuid
 import os
+import unicodedata
+import re
 from .admin_panel_routes import calcular_valores_vistoria
 from logging import getLogger
 
@@ -17,6 +19,12 @@ logger = getLogger(__name__)
 from .. import models, schemas, auth
 from ..config import get_db, settings
 from ..email_utils import send_email
+from ..supabase_client import supabase
+
+def sanitize_filename(filename):
+    filename = ''.join(c for c in unicodedata.normalize('NFD', filename) if unicodedata.category(c) != 'Mn')
+    filename = filename.replace(" ", "_")
+    return re.sub(r"[^a-zA-Z0-9._-]", "", filename)
 
 # Roteador protegido (Para a Imobiliária/Admin criar os dados e o link)
 router_protected = APIRouter(
@@ -34,6 +42,45 @@ router_public = APIRouter(
 # =================================================================
 # --- Rotas Auxiliares de Cadastro Rápido (Inline) ---
 # =================================================================
+
+@router_protected.get("/clientes", response_model=List[schemas.ClienteDisplay])
+def get_clientes_agendamento(
+    current_user=Depends(auth.get_current_active_user_or_imobiliaria),
+    db: Session = Depends(get_db)
+):
+    """Retorna clientes respeitando o isolamento do Grupo da Imobiliária (Multi-tenant)."""
+    # Consulta base ignorando deletados lógicos
+    query = db.query(models.Cliente).filter(models.Cliente.is_deleted == False)
+
+    # Regra Multi-tenant: Se for GrupoImobiliaria, filtra apenas clientes com imóveis no grupo
+    if isinstance(current_user, models.GrupoImobiliaria):
+        query = query.join(models.Imovel).join(models.Imobiliaria).filter(
+            models.Imobiliaria.grupo_id == current_user.id,
+            models.Imovel.is_deleted == False
+        ).distinct() # Distinct previne duplicação se o cliente tiver > 1 imóvel
+
+    return query.order_by(models.Cliente.nome.asc()).all()
+
+@router_protected.get("/imoveis", response_model=List[schemas.ImovelDisplay])
+def get_imoveis_agendamento(
+    current_user=Depends(auth.get_current_active_user_or_imobiliaria),
+    db: Session = Depends(get_db)
+):
+    """Retorna imóveis respeitando o isolamento do Grupo da Imobiliária (Multi-tenant)."""
+    # Consulta base com joinload para evitar N+1 queries na serialização
+    query = db.query(models.Imovel).options(
+        joinedload(models.Imovel.cliente), 
+        joinedload(models.Imovel.imobiliaria)
+    ).filter(models.Imovel.is_deleted == False)
+
+    # Regra Multi-tenant: Se for GrupoImobiliaria, vê apenas imóveis de suas imobiliárias
+    if isinstance(current_user, models.GrupoImobiliaria):
+        query = query.join(models.Imobiliaria).filter(
+            models.Imobiliaria.grupo_id == current_user.id
+        )
+
+    return query.order_by(models.Imovel.cod_imovel.asc()).all()
+
 
 @router_protected.get("/vistoriadores", response_model=List[schemas.UsuarioDisplay])
 def get_vistoriadores_para_filtro(db: Session = Depends(get_db)):
@@ -102,56 +149,184 @@ def create_imovel_inline(
     return new_imovel
 
 # =================================================================
+# --- Rotas de Consultas imobiliaria ---
+# =================================================================
+
+
+@router_protected.get("/minhas-solicitacoes", response_model=schemas.PaginatedSolicitacoesResponse)
+async def listar_minhas_solicitacoes(
+    page: int = 1,
+    page_size: int = 10,
+    status: Optional[str] = None,
+    current_user = Depends(auth.get_current_active_user_or_imobiliaria),
+    db: Session = Depends(get_db)
+):
+    """Lista solicitações da imobiliária com paginação e isolamento multi-tenant."""
+    query = db.query(models.SolicitacaoAgendamento).options(
+        joinedload(models.SolicitacaoAgendamento.cliente),
+        joinedload(models.SolicitacaoAgendamento.imovel),
+        joinedload(models.SolicitacaoAgendamento.imobiliaria)
+    )
+
+    # Isolamento Multi-tenant: Filtra pelas imobiliárias do grupo atual
+    if isinstance(current_user, models.GrupoImobiliaria):
+        query = query.join(models.Imobiliaria).filter(
+            models.Imobiliaria.grupo_id == current_user.id
+        )
+
+    # Filtro opcional por status
+    if status:
+        query = query.filter(models.SolicitacaoAgendamento.status == status)
+
+    total_items = query.count()
+    total_pages = (total_items + page_size - 1) // page_size
+
+    # Ordenação e Paginação
+    items = query.order_by(
+        models.SolicitacaoAgendamento.created_at.desc()
+    ).offset((page - 1) * page_size).limit(page_size).all()
+
+    return {
+        "total": total_items,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": total_pages,
+        "items": items
+    }
+
+@router_protected.get("/minhas-solicitacoes/{solicitacao_id}", response_model=schemas.SolicitacaoAgendamentoDisplay)
+async def detalhes_minha_solicitacao(
+    solicitacao_id: UUID,
+    current_user = Depends(auth.get_current_active_user_or_imobiliaria),
+    db: Session = Depends(get_db)
+):
+    """Retorna os detalhes de uma solicitação, validando o isolamento multi-tenant."""
+    query = db.query(models.SolicitacaoAgendamento).options(
+        joinedload(models.SolicitacaoAgendamento.cliente),
+        joinedload(models.SolicitacaoAgendamento.imovel),
+        joinedload(models.SolicitacaoAgendamento.imobiliaria),
+        joinedload(models.SolicitacaoAgendamento.anexos)
+    ).filter(models.SolicitacaoAgendamento.id == solicitacao_id)
+
+    # Isolamento Multi-tenant: Garante que a solicitação pertence ao grupo do usuário
+    if isinstance(current_user, models.GrupoImobiliaria):
+        query = query.join(models.Imobiliaria).filter(
+            models.Imobiliaria.grupo_id == current_user.id
+        )
+
+    solicitacao = query.first()
+
+    if not solicitacao:
+        # Retorna 404 para não expor a existência de dados de outros grupos
+        raise HTTPException(status_code=404, detail="Solicitação não encontrada.")
+    
+    for anexo in solicitacao.anexos:
+        # Gera uma URL assinada válida por 60 minutos (3600 segundos)
+        res = supabase.storage.from_('documentos').create_signed_url(anexo.file_path, 3600)
+        
+        # Injeta a URL na propriedade 'link' que o frontend está esperando
+        anexo.link = res.get('signedURL') if res and 'signedURL' in res else None
+
+    return solicitacao
+
+
+# =================================================================
 # --- Rotas de Geração de Link ---
 # =================================================================
 
-@router_protected.post("/criar-link", response_model=schemas.SolicitacaoLinkResponse)
-def criar_link_agendamento(
-    dados: schemas.SolicitacaoLinkCreate,
-    request: Request, # Injetar Request para pegar a URL base atual
+@router_protected.post("/solicitacao", response_model=schemas.SolicitacaoLinkResponse)
+async def criar_solicitacao(
+    imovel_id: UUID = Form(...),
+    cliente_id: UUID = Form(...),
+    tipo_vistoria: str = Form(...),
+    origem: str = Form("LINK_CLIENTE"),
+    observacao: Optional[str] = Form(None),
+    vistoriadores_ids: Optional[str] = Form(None),
+    arquivos: List[UploadFile] = File(default=[]),
+    request: Request = None,
     db: Session = Depends(get_db)
 ):
-    imovel = db.query(models.Imovel).filter(models.Imovel.id == dados.imovel_id).first()
+    imovel = db.query(models.Imovel).filter(models.Imovel.id == imovel_id).first()
     if not imovel:
         raise HTTPException(status_code=404, detail="Imóvel não encontrado")
     
-    cliente = db.query(models.Cliente).filter(models.Cliente.id == dados.cliente_id).first()
+    cliente = db.query(models.Cliente).filter(models.Cliente.id == cliente_id).first()
     if not cliente:
         raise HTTPException(status_code=404, detail="Cliente não encontrado")
 
+    lista_vistoriadores = None
+    if vistoriadores_ids and vistoriadores_ids.strip():
+        lista_vistoriadores = [v.strip() for v in vistoriadores_ids.split(",") if v.strip()]
+
     token = str(uuid.uuid4())
+    status_solicitacao = "PENDENTE_ADMIN"
+    expires_at = None
     
-    vistoriadores_json = [str(uid) for uid in dados.vistoriadores_ids] if dados.vistoriadores_ids else None
+    if origem == "LINK_CLIENTE":
+        status_solicitacao = "PENDENTE_CLIENTE"
+        expires_at = datetime.now(UTC) + timedelta(days=7)
     
     nova_solicitacao = models.SolicitacaoAgendamento(
         token=token,
-        imovel_id=dados.imovel_id,
-        cliente_id=dados.cliente_id,
+        imovel_id=imovel_id,
+        cliente_id=cliente_id,
         imobiliaria_id=imovel.imobiliaria_id,
-        tipo_vistoria=dados.tipo_vistoria,
-        vistoriadores_permitidos=vistoriadores_json,
-        status="PENDENTE",
-        expires_at=datetime.utcnow() + timedelta(days=7)
+        tipo_vistoria=tipo_vistoria,
+        vistoriadores_permitidos=lista_vistoriadores,
+        origem=origem,
+        observacao=observacao,
+        status=status_solicitacao,
+        expires_at=expires_at
     )
     
     db.add(nova_solicitacao)
     db.commit()
     db.refresh(nova_solicitacao)
     
-    # Define a URL base. Tenta pegar do settings, senão constrói a partir do request atual.
-    if hasattr(settings, 'FRONTEND_URL') and settings.FRONTEND_URL:
-        base = settings.FRONTEND_URL
-    else:
-        # Pega o host atual (ex: http://127.0.0.1:8000)
-        base = str(request.base_url).rstrip('/')
-
-    link_completo = f"{base}/api/v1/publico/agendamento/view/{token}"
+    for arquivo in arquivos:
+        if arquivo.filename:
+            nome, extensao = os.path.splitext(arquivo.filename)
+            nome_sanitizado = sanitize_filename(nome)
+            nome_arquivo = f"{nome_sanitizado}_SOLICIT_{uuid.uuid4()}{extensao}"
+            
+            conteudo = await arquivo.read()
+            res = supabase.storage.from_("documentos").upload(nome_arquivo, conteudo, {"content-type": arquivo.content_type})
+            
+            if not getattr(res, "error", None):
+                novo_doc = models.DocumentoSolicitacao(
+                    solicitacao_id=nova_solicitacao.id,
+                    file_path=nome_arquivo
+                )
+                db.add(novo_doc)
+    
+    db.commit()
+    
+    link_completo = None
+    if origem == "LINK_CLIENTE" and token:
+        if hasattr(settings, 'FRONTEND_URL') and settings.FRONTEND_URL:
+            base = settings.FRONTEND_URL
+        else:
+            base = str(request.base_url).rstrip('/') if request else ""
+        link_completo = f"{base}/api/v1/publico/agendamento/view/{token}"
     
     return {
+        "solicitacao_id": nova_solicitacao.id,
         "token": token,
         "link_completo": link_completo,
-        "expires_at": nova_solicitacao.expires_at
+        "expires_at": nova_solicitacao.expires_at,
+        "status": nova_solicitacao.status
     }
+
+@router_protected.put("/marcar_agendada")
+async def marcar_agendada(solicitacao_id: UUID, agenda_id: UUID, db: Session = Depends(get_db)):
+    sol = db.query(models.SolicitacaoAgendamento).filter(models.SolicitacaoAgendamento.id == solicitacao_id).first()
+    agenda = db.query(models.Agenda).filter(models.Agenda.id == agenda_id).first()
+    if not sol or not agenda:
+        raise HTTPException(status_code=404, detail="Solicitação não encontrada")
+    sol.status = "AGENDADO"
+    sol.agenda_id = agenda_id
+    db.commit()
+    return
 
 # =================================================================
 # --- Rotas Públicas (Serving HTML & API) ---
@@ -516,6 +691,14 @@ def confirmar_agendamento(
     solicitacao.status = "AGENDADO"
     solicitacao.agenda_id = slot_escolhido.id
     
+    for anexo in solicitacao.anexos:
+        novo_doc_agenda = models.DocumentoAgenda(
+            agenda_id=slot_escolhido.id,
+            file_path=anexo.file_path,
+            usuario_id=None
+        )
+        db.add(novo_doc_agenda)
+
     db.commit()
     
     # Envio de E-mail
@@ -537,3 +720,34 @@ def confirmar_agendamento(
     )
 
     return {"message": "Agendamento confirmado!", "data": str(slot_escolhido.data), "horario": slot_escolhido.horario}
+
+@router_protected.get("/pendentes")
+async def listar_pendentes(db: Session = Depends(get_db)):
+    """Retorna todas as solicitações de vistoria pendentes (aguardando agendamento)."""
+    solicitacoes = db.query(models.SolicitacaoAgendamento).options(
+        joinedload(models.SolicitacaoAgendamento.imovel),
+        joinedload(models.SolicitacaoAgendamento.cliente),
+        joinedload(models.SolicitacaoAgendamento.imobiliaria)
+    ).filter(
+        models.SolicitacaoAgendamento.status == "PENDENTE_ADMIN"
+    ).order_by(
+        models.SolicitacaoAgendamento.created_at.desc()
+    ).all()
+    
+    return solicitacoes
+
+@router_protected.get("/pendentes/{solicitacao_id}")
+async def get_solicitacao_info(solicitacao_id: UUID, db: Session = Depends(get_db)):
+    """Retorna os dados completos e aninhados de uma solicitação específica."""
+    solicitacao = db.query(models.SolicitacaoAgendamento).options(
+        joinedload(models.SolicitacaoAgendamento.imovel),
+        joinedload(models.SolicitacaoAgendamento.cliente),
+        joinedload(models.SolicitacaoAgendamento.imobiliaria)
+    ).filter(
+        models.SolicitacaoAgendamento.id == solicitacao_id
+    ).first()
+    
+    if not solicitacao:
+        raise HTTPException(status_code=404, detail="Solicitação não encontrada")
+        
+    return solicitacao

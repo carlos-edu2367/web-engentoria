@@ -83,6 +83,11 @@ export const api = {
     getImobiliarias: () => apiFetch(`${API_URL}/sub-imobiliarias`),
 
     // --- AGENDAMENTO EXTERNO ---
+    createSolicitacao: (formData) => apiFetch(`${EXT_SCHEDULING_URL}/solicitacao`, {
+        method: 'POST',
+        body: formData
+    }),
+    // --- AGENDAMENTO EXTERNO ---
     createCliente: (data) => apiFetch(`${EXT_SCHEDULING_URL}/clientes`, { method: 'POST', body: data }),
     createImovel: (data) => apiFetch(`${EXT_SCHEDULING_URL}/imoveis`, { method: 'POST', body: data }),
     getVistoriadores: () => apiFetch(`${EXT_SCHEDULING_URL}/vistoriadores`),

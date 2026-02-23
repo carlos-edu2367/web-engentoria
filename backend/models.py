@@ -146,11 +146,10 @@ class Agenda(Base):
     # Novo relacionamento reverso para saber de onde veio o agendamento
     solicitacao_origem = relationship("SolicitacaoAgendamento", back_populates="agenda_resultante", uselist=False)
 
-# --- NOVA TABELA: Solicitações de Agendamento (Links Externos) ---
 class SolicitacaoAgendamento(Base):
     __tablename__ = "solicitacoes_agendamento"
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    token = Column(String, unique=True, index=True, nullable=False) # Hash único para a URL
+    token = Column(String, unique=True, index=True, nullable=True) # Alterado para nullable=True
     
     # Dados vinculados
     imovel_id = Column(UUID(as_uuid=True), ForeignKey("imoveis.id"), nullable=False)
@@ -160,9 +159,11 @@ class SolicitacaoAgendamento(Base):
     # Configuração do Agendamento
     tipo_vistoria = Column(String, nullable=False) # ENTRADA, SAIDA, etc.
     vistoriadores_permitidos = Column(JSON, nullable=True) # Lista de IDs [uuid1, uuid2] ou NULL para todos
+    origem = Column(String, nullable=False, default="LINK_CLIENTE") # Novo campo (LINK_CLIENTE ou DIRETO_IMOBILIARIA)
+    observacao = Column(Text, nullable=True) # Novo campo
     
     # Controle de Estado
-    status = Column(String, default="PENDENTE", nullable=False) # PENDENTE, AGENDADO, EXPIRADO, CANCELADO
+    status = Column(String, default="PENDENTE_CLIENTE", nullable=False) # PENDENTE_CLIENTE, PENDENTE_ADMIN, AGENDADO, EXPIRADO, CANCELADO
     expires_at = Column(DateTime, nullable=True) # Data limite para usar o link
     
     # Resultado (quando o cliente agendar, preenchemos aqui)
@@ -176,6 +177,16 @@ class SolicitacaoAgendamento(Base):
     cliente = relationship("Cliente", back_populates="solicitacoes_agendamento")
     imobiliaria = relationship("Imobiliaria")
     agenda_resultante = relationship("Agenda", back_populates="solicitacao_origem")
+    anexos = relationship("DocumentoSolicitacao", back_populates="solicitacao", cascade="all, delete-orphan") # Novo Relacionamento
+
+class DocumentoSolicitacao(Base):
+    __tablename__ = "documentos_solicitacao"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    solicitacao_id = Column(UUID(as_uuid=True), ForeignKey("solicitacoes_agendamento.id", ondelete="CASCADE"), nullable=False)
+    file_path = Column(String, nullable=False)
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+
+    solicitacao = relationship("SolicitacaoAgendamento", back_populates="anexos")
 
 
 # --- Modelo para a tabela de Horários Fixos ---

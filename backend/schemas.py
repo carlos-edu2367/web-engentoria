@@ -184,6 +184,7 @@ class AgendaCreate(BaseModel):
     tipo: TipoVistoriaEnum # Validação com Enum
     observacao_vistoriador: Optional[str] = None
     force_single_slot: Optional[bool] = False
+    solicitacao_id: Optional[UUID] = None
 
 class AgendaUpdate(BaseModel):
     cod_imovel: Optional[str] = None
@@ -255,31 +256,6 @@ class VistoriaImprodutivaCreate(BaseModel):
 # --- Schemas de Link de Agendamento (Self-Service) ---
 # =================================================================
 
-# Payload para gerar o link (Admin/Imobiliaria -> Backend)
-class SolicitacaoLinkCreate(BaseModel):
-    imovel_id: UUID
-    cliente_id: UUID
-    tipo_vistoria: TipoVistoriaEnum
-    # Lista de IDs permitidos. Se vazio ou None, todos os vistoriadores são considerados.
-    vistoriadores_ids: Optional[List[UUID]] = None
-    
-# Resposta ao gerar o link
-class SolicitacaoLinkResponse(BaseModel):
-    token: str
-    link_completo: str # URL montada para facilitar
-    expires_at: Optional[datetime]
-
-# O que o cliente vê ao abrir o link (Header da página bonita)
-class PublicAgendamentoInfo(BaseModel):
-    cliente_nome: str
-    imovel_cod: str
-    imovel_endereco: str
-    imovel_tamanho: float
-    imovel_mobiliado: str
-    tipo_vistoria: str
-    imobiliaria_nome: str
-    status: str # PENDENTE, AGENDADO...
-
 class SlotPublico(BaseModel):
     agenda_id: UUID
     data: date
@@ -290,10 +266,60 @@ class SlotsResponse(BaseModel):
     slots_por_dia: Dict[str, List[SlotPublico]]
     necessita_horario_duplo: bool
 
-# Payload para o cliente confirmar o agendamento
+class DocumentoSolicitacaoDisplay(BaseModel):
+    id: UUID
+    file_path: str
+    link: Optional[str] = None # Usado para retornar a URL assinada do Supabase
+
+    class Config:
+        from_attributes = True
+
+# Payload para gerar a solicitação via JSON (Usado se for criar sem arquivos, como fallback)
+class SolicitacaoLinkCreate(BaseModel):
+    imovel_id: UUID
+    cliente_id: UUID
+    tipo_vistoria: TipoVistoriaEnum
+    # Lista de IDs permitidos. Se vazio ou None, todos os vistoriadores são considerados.
+    vistoriadores_ids: Optional[List[UUID]] = None
+    origem: str = "LINK_CLIENTE"
+    observacao: Optional[str] = None
+    
+# Resposta ao gerar o link/solicitação
+class SolicitacaoLinkResponse(BaseModel):
+    solicitacao_id: UUID
+    token: Optional[str] = None
+    link_completo: Optional[str] = None # URL montada para facilitar
+    expires_at: Optional[datetime] = None
+    status: str
+
+# Schema de Listagem para o Admin (com dados populados)
+class SolicitacaoAgendamentoDisplay(BaseModel):
+    id: UUID
+    token: Optional[str] = None
+    origem: str
+    status: str
+    tipo_vistoria: str
+    observacao: Optional[str] = None
+    created_at: datetime
+    expires_at: Optional[datetime] = None
+    
+    cliente: ClienteDisplay
+    imovel: ImovelDisplay
+    imobiliaria: ImobiliariaDisplay
+    anexos: List[DocumentoSolicitacaoDisplay] = []
+
+    class Config:
+        from_attributes = True
+
+# O que o cliente vê ao abrir o link (Header da página bonita)
+class PublicAgendamentoInfo(BaseModel):
+    cliente_nome: str
+    imovel_cod: str
+
+    # Payload para o cliente confirmar o agendamento
 class ConfirmacaoAgendamento(BaseModel):
     # O cliente escolhe um slot (Agenda ID) que estava livre
-    agenda_id: UUID 
+    agenda_id: UUID
 
 # =================================================================
 # --- Schemas de Relatórios e Dashboards ---
@@ -575,3 +601,29 @@ class VistoriaImprodutivaDetalhes(BaseModel):
     
     class Config:
         from_attributes = True
+
+class SolicitacaoAgendamentoDisplay(BaseModel):
+    id: UUID
+    token: Optional[str] = None
+    origem: str
+    status: str
+    tipo_vistoria: str
+    observacao: Optional[str] = None
+    created_at: datetime
+    expires_at: Optional[datetime] = None
+    agenda_id: Optional[UUID] = None
+    
+    cliente: ClienteDisplay
+    imovel: ImovelDisplay
+    imobiliaria: ImobiliariaDisplay
+    anexos: List[DocumentoSolicitacaoDisplay] = []
+
+    class Config:
+        from_attributes = True
+
+class PaginatedSolicitacoesResponse(BaseModel):
+    total: int
+    page: int
+    page_size: int
+    total_pages: int
+    items: List[SolicitacaoAgendamentoDisplay]

@@ -259,4 +259,39 @@ export const api = {
     // --- NOVAS ROTAS DE IMPRODUTIVAS (PARTE 5) ---
     getImprodutivas: (skip = 0, limit = 50) => apiFetch(`/improdutivas/?skip=${skip}&limit=${limit}`),
     updateImprodutiva: (id, data) => apiFetch(`/improdutivas/${id}`, 'PUT', data),
+
+    // --- NOVAS ROTAS DE VISTORIAS PENDENTES ---
+    getVistoriasPendentes: async () => {
+        // Remove '/admin-panel' do baseUrl para aceder ao router correto
+        const baseUrl = window.APP_CONFIG.API_BASE_URL_ADMIN.replace('/admin-panel', '');
+        const token = getToken(); // Ajuste se o seu token estiver guardado com outro nome
+        
+        const response = await fetch(`${baseUrl}/agendamento-externo/pendentes`, {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        if (!response.ok) throw new Error('Erro ao buscar vistorias pendentes');
+        return await response.json();
+    },
+
+    marcarSolicitacaoAgendada: async (solicitacaoId, agendaId) => {
+        const baseUrl = window.APP_CONFIG.API_BASE_URL_ADMIN.replace('/admin-panel', '');
+        const token = getToken();
+        
+        const response = await fetch(`${baseUrl}/agendamento-externo/marcar_agendada?solicitacao_id=${solicitacaoId}&agenda_id=${agendaId}`, {
+            method: 'PUT',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        if (!response.ok) throw new Error('Erro ao vincular solicitação à agenda');
+        return await response.json();
+    },
+    getSolicitacaoInfo: (id) => apiFetch(`/../agendamento-externo/pendentes/${id}`),
 };

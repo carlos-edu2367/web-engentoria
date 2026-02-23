@@ -832,6 +832,27 @@ def delete_imovel(imovel_id: UUID, db: Session = Depends(get_db)):
 # --- Gestão de Disponibilidade e Agenda ---
 # =================================================================
 
+@router.get("/solicitacoes-pendentes", response_model=List[schemas.SolicitacaoAgendamentoDisplay], summary="Lista todas as solicitações pendentes para o Admin agendar")
+def get_solicitacoes_pendentes(db: Session = Depends(get_db)):
+    """
+    Busca todas as solicitações marcadas como PENDENTE_ADMIN.
+    Essas são as solicitações enviadas diretamente pela imobiliária para o sistema.
+    """
+    solicitacoes = db.query(models.SolicitacaoAgendamento).options(
+        joinedload(models.SolicitacaoAgendamento.cliente),
+        joinedload(models.SolicitacaoAgendamento.imovel),
+        joinedload(models.SolicitacaoAgendamento.imobiliaria),
+        joinedload(models.SolicitacaoAgendamento.anexos)
+    ).filter(
+        models.SolicitacaoAgendamento.status == "PENDENTE_ADMIN"
+    ).order_by(models.SolicitacaoAgendamento.created_at.asc()).all()
+    
+    for sol in solicitacoes:
+        for anexo in sol.anexos:
+            anexo.link = gerar_url_assinada(bucket="documentos", file_path=anexo.file_path)
+
+    return solicitacoes
+
 @router.get("/agenda/all", response_model=List[schemas.AgendaDisplay], summary="Busca todos os eventos da agenda para um período")
 def get_all_agenda_events(start: date, end: date, db: Session = Depends(get_db)):
     events = db.query(models.Agenda).options(
@@ -1074,6 +1095,22 @@ def schedule_vistoria(agendamento: schemas.AgendaCreate, db: Session = Depends(g
     db_agenda_1.valor_final_vistoria = valor_final if valor_final is not None else 0
     db_agenda_1.valor_vistoriador = valor_comissao if valor_comissao is not None else 0
     db_agenda_1.observacao_vistoriador = agendamento.observacao_vistoriador
+
+    if agendamento.solicitacao_id:
+        solicitacao = db.query(models.SolicitacaoAgendamento).options(
+            joinedload(models.SolicitacaoAgendamento.anexos)
+        ).filter(models.SolicitacaoAgendamento.id == agendamento.solicitacao_id).first()
+        
+        if solicitacao:
+            solicitacao.status = "AGENDADO"
+            solicitacao.agenda_id = db_agenda_1.id
+            
+            for anexo in solicitacao.anexos:
+                novo_doc = models.DocumentoAgenda(
+                    file_path=anexo.file_path,
+                    agenda_id=db_agenda_1.id
+                )
+                db.add(novo_doc)
 
     db.commit()
     db.refresh(db_agenda_1)
