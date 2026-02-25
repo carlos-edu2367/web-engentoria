@@ -736,7 +736,7 @@ async def listar_pendentes(db: Session = Depends(get_db)):
     
     return solicitacoes
 
-@router_protected.get("/pendentes/{solicitacao_id}")
+@router_protected.get("/pendentes/{solicitacao_id}", response_model=schemas.SolicitacaoAgendamentoDisplay)
 async def get_solicitacao_info(solicitacao_id: UUID, db: Session = Depends(get_db)):
     """Retorna os dados completos e aninhados de uma solicitação específica."""
     solicitacao = db.query(models.SolicitacaoAgendamento).options(
@@ -748,6 +748,13 @@ async def get_solicitacao_info(solicitacao_id: UUID, db: Session = Depends(get_d
     ).first()
     
     if not solicitacao:
-        raise HTTPException(status_code=404, detail="Solicitação não encontrada")
+        raise HTTPException(status_code=404, detail="Solicitação não encontrada.")
+    
+    for anexo in solicitacao.anexos:
+        # Gera uma URL assinada válida por 60 minutos (3600 segundos)
+        res = supabase.storage.from_('documentos').create_signed_url(anexo.file_path, 3600)
+        
+        # Injeta a URL na propriedade 'link' que o frontend está esperando
+        anexo.link = res.get('signedURL') if res and 'signedURL' in res else None
         
     return solicitacao

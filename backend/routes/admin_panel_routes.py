@@ -3108,3 +3108,78 @@ def analyze_schedule_with_ai(db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail="Erro ao processar análise inteligente.")
 
     return {"message": mensagem_analise}
+
+@router.post("/improdutivas/{improdutiva_id}/reverter", response_model=schemas.AgendaDisplay, summary="Reverter Vistoria Improdutiva para a Agenda")
+def reverter_improdutiva(
+    improdutiva_id: UUID,
+    payload: schemas.ReverterImprodutiva,
+    db: Session = Depends(get_db)
+):
+    """
+    Remove o status de improdutiva (soft delete) e volta o imóvel para o horário original na agenda.
+    Recalcula os valores de cobrança e comissão baseados no tipo de vistoria informado.
+    """
+    # 1. Buscar a improdutiva
+    db_improdutiva = db.query(models.VistoriaImprodutiva).filter(
+        models.VistoriaImprodutiva.id == improdutiva_id,
+        models.VistoriaImprodutiva.is_deleted == False
+    ).first()
+
+    if not db_improdutiva:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vistoria Improdutiva não encontrada.")
+
+    # 2. Buscar a agenda original
+    db_agenda = db.query(models.Agenda).filter(
+        models.Agenda.id == db_improdutiva.agenda_id_original
+    ).first()
+
+    if not db_agenda:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Horário original da agenda não encontrado.")
+
+    if not db_agenda.disponivel:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, 
+            detail="O horário original na agenda já foi ocupado por outra vistoria. Não é possível reverter diretamente."
+        )
+
+    # 3. Buscar Imóvel, Imobiliária e Vistoriador para cálculos
+    db_imovel = db.query(models.Imovel).options(
+        joinedload(models.Imovel.imobiliaria)
+    ).filter(models.Imovel.id == db_improdutiva.imovel_id).first()
+
+    db_vistoriador = db.query(models.Usuario).filter(
+        models.Usuario.id == db_agenda.vistoriador_id
+    ).first()
+
+    if not db_imovel or not db_imovel.imobiliaria:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, 
+            detail="Imóvel ou Imobiliária não encontrados para recalcular os valores da vistoria."
+        )
+
+    # 4. Refazer os cálculos financeiros (utilizando as funções auxiliares já existentes)
+    valor_base_ref = _calculate_valor_base_imovel(db_imovel.imobiliaria, db_imovel.tamanho, db_imovel.mobiliado)
+    valor_final = _calculate_valor_final_vistoria(db_imovel, db_imovel.imobiliaria, payload.tipo_vistoria.value, valor_base_externo=valor_base_ref)
+    valor_comissao = _calculate_valor_comissao_vistoriador(db_imovel.tamanho, db_imovel.mobiliado, payload.tipo_vistoria.value, db_vistoriador)
+
+    # 5. Atualizar a Agenda (Ocupando o horário novamente)
+    db_agenda.imovel_id = db_improdutiva.imovel_id
+    db_agenda.tipo = payload.tipo_vistoria.value
+    db_agenda.disponivel = False
+    db_agenda.valor_final_vistoria = valor_final
+    db_agenda.valor_vistoriador = valor_comissao
+    db_agenda.observacao_privada = payload.observacao
+
+    # 6. Deletar a Improdutiva (Soft delete para manter histórico se necessário)
+    db_improdutiva.is_deleted = True
+
+    try:
+        db.commit()
+        db.refresh(db_agenda)
+        return db_agenda
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+            detail=f"Erro interno ao tentar reverter a vistoria: {str(e)}"
+        )

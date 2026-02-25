@@ -602,6 +602,10 @@ class VistoriaImprodutivaDetalhes(BaseModel):
     class Config:
         from_attributes = True
 
+class ReverterImprodutiva(BaseModel):
+    tipo_vistoria: TipoVistoriaEnum
+    observacao: Optional[str] = None
+
 class SolicitacaoAgendamentoDisplay(BaseModel):
     id: UUID
     token: Optional[str] = None

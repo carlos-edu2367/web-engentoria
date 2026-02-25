@@ -259,6 +259,7 @@ export const api = {
     // --- NOVAS ROTAS DE IMPRODUTIVAS (PARTE 5) ---
     getImprodutivas: (skip = 0, limit = 50) => apiFetch(`/improdutivas/?skip=${skip}&limit=${limit}`),
     updateImprodutiva: (id, data) => apiFetch(`/improdutivas/${id}`, 'PUT', data),
+    reverterImprodutiva: (id, data) => apiFetch(`/improdutivas/${id}/reverter`, 'POST', data),
 
     // --- NOVAS ROTAS DE VISTORIAS PENDENTES ---
     getVistoriasPendentes: async () => {
