@@ -2455,7 +2455,7 @@ async def add_documento(agendamento_id: str = Form(...),
     nome = sanitize_filename(nome)
     nome_arquivo = f"{nome}-CODIGO-{uuid.uuid4()}{extensao}"
 
-    if not extensao.lower() in [".jpg", ".png", ".jpeg", ".pdf", ".docx", ".zip" ".rar"]:
+    if not extensao.lower() in [".jpg", ".png", ".jpeg", ".pdf", ".docx", ".zip", ".rar"]:
             raise HTTPException(status_code=400, detail="Tipo de imagem não aceita")
     
     try:
