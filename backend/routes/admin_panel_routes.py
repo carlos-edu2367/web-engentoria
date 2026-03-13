@@ -2599,7 +2599,7 @@ async def enviar_documento_mensal(id_info: str = Form(...),
     nome = sanitize_filename(nome)
     nome_arquivo = f"{nome}-CODIGO-{uuid.uuid4()}{extensao}"
 
-    if not extensao.lower() in [".jpg", ".png", ".jpeg", ".pdf", ".docx"]:
+    if not extensao.lower() in [".jpg", ".png", ".jpeg", ".pdf", ".docx", ".zip"]:
             raise HTTPException(status_code=400, detail="Tipo de imagem não aceita")
     
     try:
