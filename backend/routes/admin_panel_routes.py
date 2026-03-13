@@ -2452,11 +2452,25 @@ async def add_documento(agendamento_id: str = Form(...),
         raise HTTPException(status_code=400, detail=f"Limite de {config.max_arquivos} arquivos atingido.")
     
     nome, extensao = os.path.splitext(file.filename)
-    nome = sanitize_filename(nome)
-    nome_arquivo = f"{nome}-CODIGO-{uuid.uuid4()}{extensao}"
+    nome_arquivo = sanitize_filename(nome)
 
-    if not extensao.lower() in [".jpg", ".png", ".jpeg", ".pdf", ".docx", ".zip", ".rar"]:
-            raise HTTPException(status_code=400, detail="Tipo de imagem não aceita")
+    extensao = extensao.strip().lower()
+
+    extensoes_permitidas = {
+        ".jpg",
+        ".png",
+        ".jpeg",
+        ".pdf",
+        ".docx",
+        ".zip",
+        ".rar"
+    }
+
+    if extensao not in extensoes_permitidas:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Tipo de arquivo não aceito: {extensao}"
+        )
     
     try:
         conteudo = await file.read()
