@@ -102,7 +102,7 @@ async function abrirModalDetalhes(solicitacaoId) {
         let anexosHTML = '';
         if (temAnexos) {
             const listaAnexos = fullData.anexos.map((anexo, index) => {
-                const url = typeof anexo === 'string' ? anexo : (anexo.url || '#');
+                const url = typeof anexo === 'string' ? anexo : (anexo.link || '#');
                 const nome = typeof anexo === 'string' ? `Documento ${index + 1}` : (anexo.nome || anexo.name || `Documento ${index + 1}`);
                 
                 return `
