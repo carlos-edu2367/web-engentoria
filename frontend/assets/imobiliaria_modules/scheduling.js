@@ -806,42 +806,82 @@ export const renderSchedulingPage = async (container) => {
 
     const handleFinalSubmit = async (e) => {
         e.preventDefault();
-        if (!state.wizard.clienteId || !state.wizard.imovelId) return showNotification('Dados inconsistentes.', 'error');
         
-        const files = $('#form_arquivos').files;
-        
-        // Validação adicional de JavaScript garantindo que pelo menos um arquivo seja anexado
-        if (!files || files.length === 0) {
-            return showNotification('É obrigatório anexar pelo menos um arquivo (documento ou foto).', 'warning');
-        }
-
-        const btn = $('#btn-submit-solicitacao');
-        const originalText = btn.innerHTML;
-        btn.disabled = true; btn.innerHTML = 'Enviando...';
-
-        const fd = new FormData();
-        fd.append('cliente_id', state.wizard.clienteId);
-        fd.append('imovel_id', state.wizard.imovelId);
-        fd.append('tipo_vistoria', $('#form_tipo_vistoria').value);
-        fd.append('origem', 'DIRETO_IMOBILIARIA');
-        if ($('#form_observacao').value.trim()) fd.append('observacao', $('#form_observacao').value.trim());
-        for (let i = 0; i < files.length; i++) fd.append('arquivos', files[i]);
-
-        try {
-            await api.createSolicitacao(fd);
-            showNotification('Enviado com sucesso!', 'success');
-            e.target.reset();
-            state.wizard = { step: 1, clienteId: null, clienteObj: null, imovelId: null, imovelObj: null };
-            updateWizardUI();
-
-            // Limpa o cache do histórico para obrigar recarregamento se o usuário mudar de aba
-            state.history = { items: [], page: 1, pageSize: 10, totalPages: 1, isLoading: false, hasMore: true };
+        const performSubmission = async () => {
+            if (!state.wizard.clienteId || !state.wizard.imovelId) return showNotification('Dados inconsistentes.', 'error');
             
-            // Navega para aba histórico para mostrar o sucesso
-            switchTab('historico');
+            const files = $('#form_arquivos').files;
+            
+            if (!files || files.length === 0) {
+                return showNotification('É obrigatório anexar pelo menos um arquivo (documento ou foto).', 'warning');
+            }
 
-        } catch (err) { showNotification(err.message || 'Erro no envio.', 'error'); } 
-        finally { btn.disabled = false; btn.innerHTML = originalText; }
+            const btn = $('#btn-submit-solicitacao');
+            const originalText = btn?.innerHTML || 'Enviar Solicitação →';
+            if (btn) {
+                btn.disabled = true; 
+                btn.innerHTML = 'Enviando...';
+            }
+
+            const fd = new FormData();
+            fd.append('cliente_id', state.wizard.clienteId);
+            fd.append('imovel_id', state.wizard.imovelId);
+            fd.append('tipo_vistoria', $('#form_tipo_vistoria').value);
+            fd.append('origem', 'DIRETO_IMOBILIARIA');
+            if ($('#form_observacao').value.trim()) fd.append('observacao', $('#form_observacao').value.trim());
+            for (let i = 0; i < files.length; i++) fd.append('arquivos', files[i]);
+
+            try {
+                await api.createSolicitacao(fd);
+                showNotification('Enviado com sucesso!', 'success');
+                e.target.reset();
+                state.wizard = { step: 1, clienteId: null, clienteObj: null, imovelId: null, imovelObj: null };
+                updateWizardUI();
+
+                // Limpa o cache do histórico para obrigar recarregamento se o usuário mudar de aba
+                state.history = { items: [], page: 1, pageSize: 10, totalPages: 1, isLoading: false, hasMore: true };
+                
+                // Fecha modal se estiver aberto
+                if (window.closeModal) window.closeModal();
+
+                // Navega para aba histórico para mostrar o sucesso
+                switchTab('historico');
+
+            } catch (err) { 
+                showNotification(err.message || 'Erro no envio.', 'error'); 
+            } finally { 
+                if (btn) {
+                    btn.disabled = false; 
+                    btn.innerHTML = originalText;
+                }
+            }
+        };
+
+        const now = new Date();
+        const hours = now.getHours();
+
+        // Verificação de horário: 17:00 em diante
+        if (hours >= 17) {
+            openModal(`
+                <div class="text-center py-6">
+                    <div class="w-20 h-20 bg-yellow-500/10 border border-yellow-500/20 rounded-full flex items-center justify-center mx-auto mb-6 shadow-[0_0_20px_rgba(234,179,8,0.1)]">
+                        <svg class="w-10 h-10 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    </div>
+                    <h3 class="text-xl font-bold text-white mb-3">Aviso de Horário</h3>
+                    <p class="text-slate-400 mb-8 px-4 leading-relaxed">Este agendamento será realizado a partir do próximo dia útil <br> <span class="text-yellow-500/80 text-sm">(Solicitado a partir das 17:00)</span></p>
+                    <button id="btn-confirm-scheduling" class="w-full bg-gradient-to-r from-emerald-600 to-cyan-600 text-white font-bold py-4 px-8 rounded-xl shadow-lg shadow-emerald-900/20 transition-all hover:brightness-110 active:scale-[0.98]">
+                        Entendido
+                    </button>
+                </div>
+            `);
+            
+            const confirmBtn = document.getElementById('btn-confirm-scheduling');
+            if (confirmBtn) {
+                confirmBtn.onclick = () => performSubmission();
+            }
+        } else {
+            await performSubmission();
+        }
     };
 
     // =========================================================================
