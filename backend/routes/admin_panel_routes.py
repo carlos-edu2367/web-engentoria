@@ -338,10 +338,9 @@ def _calculate_valor_final_vistoria(
     valor_minimo_imob = float(imobiliaria.valor_minimo or 0)
     valor_minimo_aplicavel = 0.0
 
-    # Determina qual valor base usar (o do banco ou o recém calculado)
-    valor_base_imovel = float(imovel.valor or 0)
-    if valor_base_imovel <= 0 and valor_base_externo > 0:
-        valor_base_imovel = valor_base_externo
+    # Prioriza o valor recém calculado da tabela de preços (respeita mobiliado atual),
+    # usando o valor armazenado no imóvel apenas como último recurso.
+    valor_base_imovel = valor_base_externo if valor_base_externo > 0 else float(imovel.valor or 0)
 
     # --- REGRAS DE TIPO ---
     if tipo_vistoria == 'ENTRADA':
@@ -1048,18 +1047,18 @@ def schedule_vistoria(agendamento: schemas.AgendaCreate, db: Session = Depends(g
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vistoriador associado ao horário não encontrado.")
     # --- MODIFICAÇÃO TERMINA AQUI ---
 
-    # ATUALIZAÇÃO: Passa o objeto 'db_imovel.imobiliaria' para a função de cálculo
-    valor_final = _calculate_valor_final_vistoria(db_imovel, db_imovel.imobiliaria, agendamento.tipo.value)
-    
-    # --- MODIFICAÇÃO INICIA AQUI ---
-    # ATUALIZAÇÃO: Passa o objeto db_vistoriador para a nova assinatura da função
-    valor_comissao = _calculate_valor_comissao_vistoriador(
-        db_imovel.tamanho, 
-        db_imovel.mobiliado, 
-        agendamento.tipo.value,
-        db_vistoriador # <-- Novo parâmetro
+    # Usa o orquestrador central de cálculo para garantir que o valor_base_ref
+    # seja calculado a partir da tabela de preços da imobiliária (respeitando mobiliado)
+    # e passado como fallback para _calculate_valor_final_vistoria.
+    valores_calculados = calcular_valores_vistoria(
+        db_imovel, db_imovel.imobiliaria, agendamento.tipo.value, db_vistoriador
     )
-    # --- MODIFICAÇÃO TERMINA AQUI ---
+    valor_final = valores_calculados["valor_final_vistoria"]
+    valor_comissao = valores_calculados["valor_vistoriador"]
+
+    # Garante que o imovel.valor esteja atualizado para futuros agendamentos
+    if not db_imovel.valor or float(db_imovel.valor) == 0.0:
+        db_imovel.valor = valores_calculados["valor_base_ref"]
 
     necessita_horario_duplo = ((agendamento.tipo.value in ["ENTRADA", "SAIDA"]) and 
                               (float(db_imovel.tamanho) >= 100 or db_imovel.mobiliado == "mobiliado"))
