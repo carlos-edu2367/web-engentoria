@@ -397,34 +397,9 @@ async function showVistoriaDetails(vistoria) {
     loadDocs(vistoria.id);
 
     // --- Lógica do Botão Acessar Laudo ---
-    document.getElementById('btn-acessar-laudo').onclick = async () => {
-        const btn = document.getElementById('btn-acessar-laudo');
-        const spinner = document.getElementById('laudo-loading');
-        
-        btn.disabled = true;
-        btn.querySelector('span').textContent = 'Carregando...';
-        spinner.classList.remove('hidden');
-        
-        try {
-            let laudo;
-            try {
-                laudo = await api.getLaudoInfo(vistoria.id);
-            } catch (e) {
-                // Se 404, cria o laudo
-                if (e.message.includes('404') || e.message.includes('not found')) {
-                    laudo = await api.createLaudo(vistoria.id);
-                } else throw e;
-            }
-
-            if (laudo && laudo.id) {
-                window.location.href = `laudo.html?laudo_id=${laudo.id}&agendamento_id=${vistoria.id}`;
-            }
-        } catch (error) {
-            showNotification(error.message, 'error');
-            btn.disabled = false;
-            btn.querySelector('span').textContent = 'Acessar Laudo';
-            spinner.classList.add('hidden');
-        }
+    document.getElementById('btn-acessar-laudo').onclick = () => {
+        closeModal();
+        window.location.hash = `laudo?agendamento_id=${vistoria.id}`;
     };
 
     document.getElementById('close-modal-btn').onclick = closeModal;
