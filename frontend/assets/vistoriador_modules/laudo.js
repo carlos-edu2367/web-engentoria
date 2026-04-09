@@ -411,14 +411,43 @@ async function handleDeletePdf() {
 
 async function handleToggleStatus() {
     const isFinalizing = !state.laudoData.finalizado;
-    const msg = isFinalizing ? 'Finalizar laudo? Isso bloqueará edições.' : 'Reabrir laudo para edições?';
-    if(confirm(msg)) {
+
+    openModal(`
+        <div class="flex flex-col items-center text-center gap-5 py-2">
+            <div class="p-4 ${isFinalizing ? 'bg-teal-900/40' : 'bg-yellow-900/40'} rounded-full">
+                <svg class="w-10 h-10 ${isFinalizing ? 'text-teal-400' : 'text-yellow-400'}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    ${isFinalizing
+                        ? '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M5 13l4 4L19 7"/>'
+                        : '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>'}
+                </svg>
+            </div>
+            <div>
+                <p class="text-white font-bold text-lg">${isFinalizing ? 'Finalizar Laudo?' : 'Reabrir Laudo?'}</p>
+                <p class="text-slate-400 text-sm mt-1">${isFinalizing ? 'O laudo será bloqueado para edições.' : 'O laudo voltará a estar disponível para edição.'}</p>
+            </div>
+            <div class="flex gap-3 w-full">
+                <button id="btn-cancel-status" class="flex-1 py-3 bg-slate-700 hover:bg-slate-600 text-white rounded-xl font-medium transition">Cancelar</button>
+                <button id="btn-confirm-status" class="flex-1 py-3 ${isFinalizing ? 'bg-teal-600 hover:bg-teal-500' : 'bg-yellow-600 hover:bg-yellow-500'} text-white rounded-xl font-bold transition">
+                    ${isFinalizing ? 'Finalizar' : 'Reabrir'}
+                </button>
+            </div>
+        </div>
+    `);
+
+    document.getElementById('btn-cancel-status').onclick = closeModal;
+    document.getElementById('btn-confirm-status').onclick = async () => {
+        document.getElementById('btn-confirm-status').disabled = true;
+        document.getElementById('btn-confirm-status').textContent = 'Aguarde...';
         try {
             await api.updateStatusLaudo(state.laudoId, isFinalizing);
+            closeModal();
             loadData();
             showNotification(isFinalizing ? 'Laudo Finalizado!' : 'Laudo Reaberto!');
-        } catch(err) { showNotification(err.message, 'error'); }
-    }
+        } catch(err) {
+            closeModal();
+            showNotification(err.message, 'error');
+        }
+    };
 }
 
 function setupSpeechRecognition() {
