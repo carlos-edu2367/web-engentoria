@@ -220,6 +220,7 @@ export const api = {
     reagendarVistoria: (id, targetId) => apiFetch(`/agenda/${id}/reagendar`, 'PUT', { target_agenda_id: targetId }),
     markAsImprodutiva: (id, data) => apiFetch(`/agenda/${id}/improdutiva`, 'PUT', data),
     fecharHorario: (id, data) => apiFetch(`/agenda/${id}/fechar`, 'PUT', data),
+    recalcularValoresAgenda: (id) => apiFetch(`/agenda/${id}/recalcular-valores`, 'POST'),
 
     // Relatórios
     getRelatorioImobiliaria: (imobiliariaId, mes, ano) => apiFetch(`/imobiliarias/${imobiliariaId}/relatorio?mes=${mes}&ano=${ano}`),

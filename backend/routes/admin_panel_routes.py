@@ -3193,6 +3193,58 @@ def reverter_improdutiva(
     except Exception as e:
         db.rollback()
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Erro interno ao tentar reverter a vistoria: {str(e)}"
+        )
+
+
+@router.post("/agenda/{agenda_id}/recalcular-valores", response_model=schemas.AgendaDisplay, summary="Recalcular valores financeiros de um agendamento")
+def recalcular_valores_agenda(
+    agenda_id: uuid.UUID,
+    db: Session = Depends(get_db),
+):
+    """Recalcula valor_final_vistoria e valor_vistoriador para um agendamento existente
+    usando as tabelas de preço atuais da imobiliária e do vistoriador."""
+    db_agenda = db.query(models.Agenda).options(
+        joinedload(models.Agenda.imovel).joinedload(models.Imovel.imobiliaria)
+    ).filter(models.Agenda.id == agenda_id).first()
+
+    if not db_agenda:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agendamento não encontrado.")
+
+    if db_agenda.tipo in ("LIVRE", "FECHADO"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Não é possível recalcular valores para horários livres ou fechados."
+        )
+
+    if not db_agenda.imovel or not db_agenda.imovel.imobiliaria:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Imóvel ou imobiliária não encontrados para este agendamento."
+        )
+
+    db_vistoriador = db.query(models.Usuario).filter(
+        models.Usuario.id == db_agenda.vistoriador_id
+    ).first()
+
+    if not db_vistoriador:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vistoriador do agendamento não encontrado.")
+
+    valores = calcular_valores_vistoria(
+        db_agenda.imovel, db_agenda.imovel.imobiliaria, db_agenda.tipo, db_vistoriador
+    )
+
+    db_agenda.valor_final_vistoria = valores["valor_final_vistoria"]
+    db_agenda.valor_vistoriador = valores["valor_vistoriador"]
+
+    try:
+        db.commit()
+        db.refresh(db_agenda)
+        return db_agenda
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Erro ao salvar os valores recalculados: {str(e)}"
         )

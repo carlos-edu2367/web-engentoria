@@ -637,6 +637,57 @@ function renderConfirmReabrirModal(agendaId, event) {
     };
 }
 
+function handleRecalcularValores(event) {
+    const modalHTML = `
+        <div class="text-center anim-scale-in">
+            <div class="mx-auto flex items-center justify-center h-16 w-16 rounded-2xl bg-gradient-to-br from-cyan-500/20 to-blue-600/20 mb-5 border border-cyan-500/30 shadow-[0_0_20px_rgba(6,182,212,0.2)]">
+                <svg class="h-8 w-8 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+            </div>
+            <h3 class="text-2xl font-black text-white mb-3 tracking-tight">Recalcular Valores</h3>
+            <p class="text-slate-300 mb-8 font-medium leading-relaxed">Os valores serão recalculados com base nas <span class="text-cyan-400 font-bold">tabelas de preço atuais</span> da imobiliária e do vistoriador. Os valores anteriores serão substituídos.</p>
+            <div class="flex flex-col sm:flex-row justify-center gap-3">
+                <button id="btn-cancel-recalcular" class="px-6 py-3 bg-slate-800 hover:bg-slate-700 rounded-xl transition-colors text-slate-300 font-bold border border-slate-600 hover:text-white">Cancelar</button>
+                <button id="btn-confirm-recalcular" class="px-6 py-3 bg-cyan-600 hover:bg-cyan-500 text-white font-black rounded-xl transition-all shadow-[0_0_20px_rgba(6,182,212,0.3)] hover:shadow-[0_0_25px_rgba(6,182,212,0.5)] transform hover:-translate-y-1 border border-cyan-500/50">Sim, Recalcular</button>
+            </div>
+        </div>
+    `;
+    showModal(modalHTML, 'max-w-md bg-slate-900/95 backdrop-blur-2xl border border-slate-700/60 rounded-3xl');
+
+    document.getElementById('btn-cancel-recalcular').onclick = hideModal;
+    document.getElementById('btn-confirm-recalcular').onclick = async (e) => {
+        const btn = e.currentTarget;
+        btn.disabled = true;
+        btn.innerHTML = `<svg class="h-4 w-4 animate-spin inline mr-2" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Calculando...`;
+
+        try {
+            const updated = await api.recalcularValoresAgenda(event.id);
+
+            const valorVistoria = parseFloat(updated.valor_final_vistoria || 0).toFixed(2);
+            const valorVistoriador = parseFloat(updated.valor_vistoriador || 0).toFixed(2);
+
+            hideModal();
+            showAlert(`Valores atualizados — Vistoria: R$ ${valorVistoria} | Vistoriador: R$ ${valorVistoriador}`, 'success');
+
+            const elVistoria = document.querySelector('[data-field="valor_final_vistoria"]');
+            const elVistoriador = document.querySelector('[data-field="valor_vistoriador"]');
+            if (elVistoria) elVistoria.textContent = `R$ ${valorVistoria}`;
+            if (elVistoriador) elVistoriador.textContent = `R$ ${valorVistoriador}`;
+
+            if (calendar) {
+                const calEvent = calendar.getEventById(event.id);
+                if (calEvent) {
+                    calEvent.setExtendedProp('valor_final_vistoria', updated.valor_final_vistoria);
+                    calEvent.setExtendedProp('valor_vistoriador', updated.valor_vistoriador);
+                }
+            }
+        } catch (err) {
+            showAlert(err.message || 'Erro ao recalcular valores.', 'error');
+            btn.disabled = false;
+            btn.textContent = 'Sim, Recalcular';
+        }
+    };
+}
+
 function handleCancelarAgendamento(event) {
     const modalHTML = `
         <div class="text-center anim-scale-in">
@@ -1027,11 +1078,11 @@ async function showAdminVistoriaModal(event) {
                 <div class="flex divide-x divide-emerald-500/20">
                     <div class="flex-1 px-2 text-center">
                         <p class="text-[10px] uppercase tracking-widest text-slate-500 font-bold mb-1">Valor Vistoria</p>
-                        <p class="text-xl font-black text-emerald-400">R$ ${props.valor_final_vistoria?.toFixed(2) || '0.00'}</p>
+                        <p class="text-xl font-black text-emerald-400" data-field="valor_final_vistoria">R$ ${props.valor_final_vistoria?.toFixed(2) || '0.00'}</p>
                     </div>
                     <div class="flex-1 px-2 text-center">
                         <p class="text-[10px] uppercase tracking-widest text-slate-500 font-bold mb-1">Repasse Vistoriador</p>
-                        <p class="text-xl font-bold text-slate-200">R$ ${props.valor_vistoriador?.toFixed(2) || '0.00'}</p>
+                        <p class="text-xl font-bold text-slate-200" data-field="valor_vistoriador">R$ ${props.valor_vistoriador?.toFixed(2) || '0.00'}</p>
                     </div>
                 </div>
             </div>
@@ -1064,6 +1115,11 @@ async function showAdminVistoriaModal(event) {
             </div>
 
             <div id="vistoria-actions" class="mt-4 flex flex-wrap items-center justify-end gap-3 border-t border-slate-700/60 pt-6">
+                <button data-action="recalcular" class="flex items-center gap-2 rounded-xl bg-cyan-500/10 px-5 py-2.5 text-sm font-bold text-cyan-400 ring-1 ring-inset ring-cyan-500/20 transition-all hover:bg-cyan-500 hover:text-white hover:shadow-[0_0_15px_rgba(6,182,212,0.4)] transform hover:-translate-y-0.5">
+                    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                    Recalcular Valores
+                </button>
+
                 <button data-action="comprovante" class="flex items-center gap-2 rounded-xl bg-emerald-500/10 px-5 py-2.5 text-sm font-bold text-emerald-400 ring-1 ring-inset ring-emerald-500/20 transition-all hover:bg-emerald-500 hover:text-white hover:shadow-[0_0_15px_rgba(16,185,129,0.4)] transform hover:-translate-y-0.5">
                     <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
                     Comprovante
@@ -1145,6 +1201,7 @@ async function showAdminVistoriaModal(event) {
         if (!target) return;
         const action = target.dataset.action;
         switch (action) {
+            case 'recalcular': handleRecalcularValores(event); break;
             case 'comprovante': handleGerarComprovante(event); break;
             case 'edit': handleEditarVistoria(event); break;
             case 'reschedule': enterReagendamentoMode(event); break;
