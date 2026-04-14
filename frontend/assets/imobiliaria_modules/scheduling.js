@@ -543,20 +543,28 @@ export const renderSchedulingPage = async (container) => {
                 
                 res.items.forEach(item => {
                     const statusObj = formatStatus(item.status);
+                    const podeEditar = item.status === 'PENDENTE_ADMIN' || item.status === 'PENDENTE_CLIENTE';
                     const div = document.createElement('div');
-                    div.className = "glass-card glass-hover rounded-xl p-4 flex flex-col justify-between anim-fade-in";
+                    div.className = "glass-card rounded-xl p-4 flex flex-col justify-between anim-fade-in";
                     div.innerHTML = `
-                        <div class="flex justify-between items-start mb-3">
+                        <div class="flex justify-between items-start mb-3 cursor-pointer hist-card-body">
                             <span class="text-[10px] uppercase font-bold px-2 py-0.5 rounded-md border ${statusObj.color}">${statusObj.label}</span>
                             <span class="text-xs text-slate-500 font-mono">${formatDate(item.created_at)}</span>
                         </div>
-                        <div>
+                        <div class="cursor-pointer hist-card-body">
                             <h4 class="font-bold text-white text-sm truncate">${item.imovel.cod_imovel} - ${(item.imovel.endereco||'').split(',')[0]}</h4>
                             <p class="text-xs text-slate-400 mt-1 truncate">👤 ${item.cliente.nome}</p>
                             <p class="text-xs text-purple-400 font-medium mt-1">📋 ${item.tipo_vistoria.replace('_', ' ')}</p>
                         </div>
+                        ${podeEditar ? `
+                        <div class="flex gap-2 mt-3 pt-3 border-t border-slate-700/50">
+                            <button data-action="editar" data-id="${item.id}" class="flex-1 text-xs font-semibold py-1.5 px-2 rounded-lg bg-blue-600/20 hover:bg-blue-600/40 text-blue-300 border border-blue-500/30 transition-colors">Editar</button>
+                            <button data-action="cancelar" data-id="${item.id}" class="flex-1 text-xs font-semibold py-1.5 px-2 rounded-lg bg-red-600/20 hover:bg-red-600/40 text-red-300 border border-red-500/30 transition-colors">Cancelar</button>
+                        </div>` : ''}
                     `;
-                    div.addEventListener('click', () => openHistoricoModal(item.id));
+                    div.querySelectorAll('.hist-card-body').forEach(el => el.addEventListener('click', () => openHistoricoModal(item.id)));
+                    div.querySelector('[data-action="editar"]')?.addEventListener('click', (e) => { e.stopPropagation(); openEditarModal(item.id); });
+                    div.querySelector('[data-action="cancelar"]')?.addEventListener('click', (e) => { e.stopPropagation(); confirmarCancelamento(item.id, div); });
                     grid.appendChild(div);
                 });
             }
@@ -686,10 +694,148 @@ export const renderSchedulingPage = async (container) => {
     // Expor função global para o botão do modal
     window.visualizarNaAgenda = (agendaId) => {
         closeModal();
-        // Salva a intenção no LocalStorage para o dashboard capturar
         localStorage.setItem('focus_agenda_id', agendaId);
-        // Troca a rota do frontend
         window.location.hash = 'dashboard';
+    };
+
+    const TIPOS_VISTORIA = ['ENTRADA', 'SAIDA', 'CONFERENCIA', 'AVERIGUACAO', 'COMPLEMENTO_VISITA'];
+
+    const confirmarCancelamento = (id, cardEl) => {
+        openModal(`
+            <div class="text-center py-4">
+                <div class="w-14 h-14 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center mx-auto mb-4">
+                    <svg class="w-7 h-7 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                </div>
+                <h3 class="text-lg font-bold text-white mb-2">Cancelar Solicitação</h3>
+                <p class="text-sm text-slate-400 mb-6">Tem certeza que deseja cancelar esta solicitação? Esta ação não pode ser desfeita.</p>
+                <div class="flex gap-3 justify-center">
+                    <button id="btn-confirm-cancel" class="px-6 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold text-sm transition-colors">Sim, cancelar</button>
+                    <button id="btn-dismiss-cancel" class="px-6 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-slate-300 font-bold text-sm transition-colors">Voltar</button>
+                </div>
+            </div>
+        `);
+
+        document.getElementById('btn-dismiss-cancel').onclick = closeModal;
+        document.getElementById('btn-confirm-cancel').onclick = async () => {
+            const btn = document.getElementById('btn-confirm-cancel');
+            btn.disabled = true;
+            btn.textContent = 'Cancelando...';
+            try {
+                await SolicitacoesService.cancelar(id);
+                closeModal();
+                showNotification('Solicitação cancelada com sucesso.', 'success');
+                // Atualiza o card visualmente sem recarregar a lista inteira
+                const statusObj = formatStatus('CANCELADO');
+                const badgeEl = cardEl.querySelector('.text-\\[10px\\]');
+                if (badgeEl) {
+                    badgeEl.className = `text-[10px] uppercase font-bold px-2 py-0.5 rounded-md border ${statusObj.color}`;
+                    badgeEl.textContent = statusObj.label;
+                }
+                cardEl.querySelector('.flex.gap-2.mt-3')?.remove();
+                // Atualiza o item no estado local
+                const idx = state.history.items.findIndex(i => i.id === id);
+                if (idx !== -1) state.history.items[idx].status = 'CANCELADO';
+            } catch (err) {
+                showNotification(err.message, 'error');
+                btn.disabled = false;
+                btn.textContent = 'Sim, cancelar';
+            }
+        };
+    };
+
+    const openEditarModal = async (id) => {
+        openModal(`
+            <div class="flex flex-col items-center justify-center py-10">
+                <div class="h-8 w-8 border-2 border-purple-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+                <p class="text-slate-400 text-sm">Carregando dados...</p>
+            </div>
+        `);
+
+        try {
+            const detalhes = await SolicitacoesService.obterDetalhes(id);
+            const contentContainer = document.getElementById('modal-content');
+            if (!contentContainer) return;
+
+            const tipoOpts = TIPOS_VISTORIA.map(t =>
+                `<option value="${t}" ${detalhes.tipo_vistoria === t ? 'selected' : ''}>${t.replace(/_/g, ' ')}</option>`
+            ).join('');
+
+            let anexosHtml = '<p class="text-xs text-slate-500 italic">Nenhum anexo</p>';
+            if (detalhes.anexos?.length) {
+                anexosHtml = detalhes.anexos.map(a => `
+                    <a href="${a.link || '#'}" target="${a.link ? '_blank' : '_self'}" class="text-xs flex items-center gap-2 p-2 bg-slate-800/50 rounded hover:bg-slate-700 text-cyan-400 transition-colors border border-slate-700/50">
+                        <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path></svg>
+                        ${a.file_path.split('_SOLICIT_')[0] || 'Anexo'}
+                    </a>
+                `).join('');
+            }
+
+            contentContainer.innerHTML = `
+                <div class="text-left">
+                    <h3 class="text-xl font-bold text-white mb-1">Editar Solicitação</h3>
+                    <p class="text-xs text-slate-400 mb-5">${detalhes.imovel.cod_imovel} · ${detalhes.cliente.nome}</p>
+
+                    <div class="space-y-4 max-h-[60vh] overflow-y-auto custom-scrollbar pr-2">
+                        <div>
+                            <label class="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Tipo de Vistoria</label>
+                            <select id="edit-tipo" class="w-full bg-slate-800 border border-slate-700 text-white text-sm rounded-xl px-3 py-2 focus:outline-none focus:border-purple-500">
+                                ${tipoOpts}
+                            </select>
+                        </div>
+                        <div>
+                            <label class="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Observação</label>
+                            <textarea id="edit-obs" rows="3" class="w-full bg-slate-800 border border-slate-700 text-white text-sm rounded-xl px-3 py-2 focus:outline-none focus:border-purple-500 resize-none">${detalhes.observacao || ''}</textarea>
+                        </div>
+                        <div>
+                            <label class="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-2">Anexos Existentes</label>
+                            <div class="flex flex-col gap-1.5">${anexosHtml}</div>
+                        </div>
+                        <div>
+                            <label class="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Adicionar Novos Anexos</label>
+                            <input id="edit-files" type="file" multiple class="w-full text-sm text-slate-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:bg-slate-700 file:text-slate-200 file:text-xs hover:file:bg-slate-600 cursor-pointer" />
+                        </div>
+                    </div>
+
+                    <div class="flex gap-3 mt-6">
+                        <button id="btn-salvar-edicao" class="flex-1 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-sm transition-colors">Salvar</button>
+                        <button id="btn-fechar-edicao" class="flex-1 py-2.5 rounded-xl bg-slate-700 hover:bg-slate-600 text-slate-300 font-bold text-sm transition-colors">Fechar</button>
+                    </div>
+                </div>
+            `;
+
+            document.getElementById('btn-fechar-edicao').onclick = closeModal;
+            document.getElementById('btn-salvar-edicao').onclick = async () => {
+                const btn = document.getElementById('btn-salvar-edicao');
+                btn.disabled = true;
+                btn.textContent = 'Salvando...';
+
+                try {
+                    const fd = new FormData();
+                    fd.append('tipo_vistoria', document.getElementById('edit-tipo').value);
+                    const obs = document.getElementById('edit-obs').value;
+                    if (obs !== null) fd.append('observacao', obs);
+                    const files = document.getElementById('edit-files').files;
+                    for (const f of files) fd.append('arquivos', f);
+
+                    await SolicitacoesService.editar(id, fd);
+                    closeModal();
+                    showNotification('Solicitação atualizada com sucesso.', 'success');
+                    // Recarrega o histórico do início para refletir as mudanças
+                    state.history.items = [];
+                    state.history.page = 1;
+                    state.history.hasMore = true;
+                    $('#historico-grid').innerHTML = '';
+                    loadHistoryPage();
+                } catch (err) {
+                    showNotification(err.message, 'error');
+                    btn.disabled = false;
+                    btn.textContent = 'Salvar';
+                }
+            };
+        } catch (err) {
+            showNotification(err.message, 'error');
+            closeModal();
+        }
     };
 
 

@@ -284,6 +284,12 @@ class SolicitacaoLinkCreate(BaseModel):
     origem: str = "LINK_CLIENTE"
     observacao: Optional[str] = None
     
+# Payload para editar uma solicitação existente (status PENDENTE)
+class SolicitacaoUpdate(BaseModel):
+    tipo_vistoria: Optional[TipoVistoriaEnum] = None
+    observacao: Optional[str] = None
+    vistoriadores_ids: Optional[List[UUID]] = None
+
 # Resposta ao gerar o link/solicitação
 class SolicitacaoLinkResponse(BaseModel):
     solicitacao_id: UUID

@@ -3,7 +3,9 @@
     "allow": [
       "Bash(grep -E \"\\\\.\\(html|js\\)$\")",
       "Bash(find /c/Users/reali/Documents/Web-Agendamentos -type f \\\\\\(-name *.js -o -name *.ts \\\\\\) -path */backend/* -o -path */api/* -o -path */server/*)",
-      "Bash(grep -rn \"valor.*vistoria\\\\|vistoria.*valor\\\\|vistoriador\" /c/Users/reali/Documents/Web-Agendamentos/frontend/assets/*.js)"
+      "Bash(grep -rn \"valor.*vistoria\\\\|vistoria.*valor\\\\|vistoriador\" /c/Users/reali/Documents/Web-Agendamentos/frontend/assets/*.js)",
+      "Bash(xargs grep:*)",
+      "Bash(grep -B 5 -A 50 \"solicitacoes\\\\|pendentes\" /c/Users/reali/Documents/Web-Agendamentos/frontend/assets/admin_modules/*.js)"
     ]
   }
 }

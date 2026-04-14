@@ -48,5 +48,36 @@ export const SolicitacoesService = {
      */
     obterDetalhes: async (id) => {
         return authFetch(`/minhas-solicitacoes/${id}`);
+    },
+
+    /**
+     * Cancela uma solicitação (apenas PENDENTE_ADMIN ou PENDENTE_CLIENTE)
+     * @param {string} id UUID da solicitação
+     */
+    cancelar: async (id) => {
+        return authFetch(`/minhas-solicitacoes/${id}/cancelar`, { method: 'PATCH' });
+    },
+
+    /**
+     * Edita os campos de uma solicitação (apenas PENDENTE_ADMIN ou PENDENTE_CLIENTE)
+     * @param {string} id UUID da solicitação
+     * @param {FormData} formData Campos a atualizar (tipo_vistoria, observacao, vistoriadores_ids, arquivos)
+     */
+    editar: async (id, formData) => {
+        const token = window.getToken ? window.getToken() : localStorage.getItem('engentoria_vist_token');
+        if (!token) throw new Error("Sessão expirada. Faça login novamente.");
+
+        const response = await fetch(`${BASE_URL}/minhas-solicitacoes/${id}`, {
+            method: 'PATCH',
+            headers: { 'Authorization': `Bearer ${token}` },
+            body: formData
+        });
+
+        if (!response.ok) {
+            const err = await response.json().catch(() => ({}));
+            throw new Error(err.detail || "Erro ao comunicar com o servidor");
+        }
+
+        return response.json();
     }
 };

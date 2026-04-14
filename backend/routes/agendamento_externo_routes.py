@@ -328,6 +328,113 @@ async def marcar_agendada(solicitacao_id: UUID, agenda_id: UUID, db: Session = D
     db.commit()
     return
 
+STATUSES_EDITAVEIS = {"PENDENTE_ADMIN", "PENDENTE_CLIENTE"}
+
+@router_protected.patch("/minhas-solicitacoes/{solicitacao_id}/cancelar", response_model=schemas.SolicitacaoAgendamentoDisplay)
+async def cancelar_solicitacao(
+    solicitacao_id: UUID,
+    current_user=Depends(auth.get_current_active_user_or_imobiliaria),
+    db: Session = Depends(get_db)
+):
+    """Cancela uma solicitação que ainda não foi agendada."""
+    query = db.query(models.SolicitacaoAgendamento).options(
+        joinedload(models.SolicitacaoAgendamento.cliente),
+        joinedload(models.SolicitacaoAgendamento.imovel),
+        joinedload(models.SolicitacaoAgendamento.imobiliaria),
+        joinedload(models.SolicitacaoAgendamento.anexos)
+    ).filter(models.SolicitacaoAgendamento.id == solicitacao_id)
+
+    if isinstance(current_user, models.GrupoImobiliaria):
+        query = query.join(models.Imobiliaria).filter(
+            models.Imobiliaria.grupo_id == current_user.id
+        )
+
+    solicitacao = query.first()
+
+    if not solicitacao:
+        raise HTTPException(status_code=404, detail="Solicitação não encontrada.")
+
+    if solicitacao.status not in STATUSES_EDITAVEIS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Não é possível cancelar uma solicitação com status '{solicitacao.status}'."
+        )
+
+    solicitacao.status = "CANCELADO"
+    db.commit()
+    db.refresh(solicitacao)
+    return solicitacao
+
+
+@router_protected.patch("/minhas-solicitacoes/{solicitacao_id}", response_model=schemas.SolicitacaoAgendamentoDisplay)
+async def editar_solicitacao(
+    solicitacao_id: UUID,
+    tipo_vistoria: Optional[str] = Form(None),
+    observacao: Optional[str] = Form(None),
+    vistoriadores_ids: Optional[str] = Form(None),
+    arquivos: List[UploadFile] = File(default=[]),
+    current_user=Depends(auth.get_current_active_user_or_imobiliaria),
+    db: Session = Depends(get_db)
+):
+    """Edita os campos de uma solicitação que ainda não foi agendada."""
+    query = db.query(models.SolicitacaoAgendamento).options(
+        joinedload(models.SolicitacaoAgendamento.cliente),
+        joinedload(models.SolicitacaoAgendamento.imovel),
+        joinedload(models.SolicitacaoAgendamento.imobiliaria),
+        joinedload(models.SolicitacaoAgendamento.anexos)
+    ).filter(models.SolicitacaoAgendamento.id == solicitacao_id)
+
+    if isinstance(current_user, models.GrupoImobiliaria):
+        query = query.join(models.Imobiliaria).filter(
+            models.Imobiliaria.grupo_id == current_user.id
+        )
+
+    solicitacao = query.first()
+
+    if not solicitacao:
+        raise HTTPException(status_code=404, detail="Solicitação não encontrada.")
+
+    if solicitacao.status not in STATUSES_EDITAVEIS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Não é possível editar uma solicitação com status '{solicitacao.status}'."
+        )
+
+    if tipo_vistoria is not None:
+        solicitacao.tipo_vistoria = tipo_vistoria
+    if observacao is not None:
+        solicitacao.observacao = observacao
+    if vistoriadores_ids is not None:
+        if vistoriadores_ids.strip():
+            solicitacao.vistoriadores_permitidos = [v.strip() for v in vistoriadores_ids.split(",") if v.strip()]
+        else:
+            solicitacao.vistoriadores_permitidos = None
+
+    for arquivo in arquivos:
+        if arquivo.filename:
+            nome, extensao = os.path.splitext(arquivo.filename)
+            nome_sanitizado = sanitize_filename(nome)
+            nome_arquivo = f"{nome_sanitizado}_SOLICIT_{uuid.uuid4()}{extensao}"
+
+            conteudo = await arquivo.read()
+            res = supabase.storage.from_("documentos").upload(nome_arquivo, conteudo, {"content-type": arquivo.content_type})
+
+            if not getattr(res, "error", None):
+                novo_doc = models.DocumentoSolicitacao(
+                    solicitacao_id=solicitacao.id,
+                    file_path=nome_arquivo
+                )
+                db.add(novo_doc)
+
+    db.commit()
+    db.refresh(solicitacao)
+
+    for anexo in solicitacao.anexos:
+        res = supabase.storage.from_('documentos').create_signed_url(anexo.file_path, 3600)
+        anexo.link = res.get('signedURL') if res and 'signedURL' in res else None
+
+    return solicitacao
+
 # =================================================================
 # --- Rotas Públicas (Serving HTML & API) ---
 # =================================================================
