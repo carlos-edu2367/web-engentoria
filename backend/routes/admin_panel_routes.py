@@ -344,15 +344,8 @@ def _calculate_valor_final_vistoria(
 
     # --- REGRAS DE TIPO ---
     if tipo_vistoria == 'ENTRADA':
-        # Entrada tem regra específica de preço por m², ignorando o valor base do imóvel
-        tamanho = float(imovel.tamanho or 0)
-        mobilia = str(imovel.mobiliado).lower() if imovel.mobiliado else "sem_mobilia"
-        
-        if mobilia == 'mobiliado':
-            valor_base_calculado = tamanho * 1.25
-        else:
-            valor_base_calculado = tamanho * 1.00
-            
+        # Entrada usa o valor cadastrado da imobiliária por m² conforme mobília do imóvel
+        valor_base_calculado = valor_base_imovel
         valor_minimo_aplicavel = 50.00
 
     elif tipo_vistoria == 'AVERIGUACAO':
@@ -401,16 +394,11 @@ def _calculate_valor_comissao_vistoriador(
          
     if usa_regras_entrada:
         # --- TABELA ENTRADA ---
+        # Mobiliado: R$ 1,25/m² | Sem mobília / Semi-mobiliado: R$ 1,00/m²
         if mobiliado_status == 'mobiliado':
-            if tamanho_m2 < 50: valor_base = 65.00
-            elif 50 <= tamanho_m2 < 100: valor_base = tamanho_m2 * 1.25
-            elif 100 <= tamanho_m2 <= 125: valor_base = 125.00
-            else: valor_base = tamanho_m2 * 1.00
-        else: # sem ou semi
-            if tamanho_m2 < 50: valor_base = 50.00
-            elif 50 <= tamanho_m2 < 100: valor_base = tamanho_m2 * 1.00
-            elif 100 <= tamanho_m2 <= 120: valor_base = 100.00
-            else: valor_base = tamanho_m2 * 0.85
+            valor_base = tamanho_m2 * 1.25
+        else:  # sem_mobilia ou semi_mobiliado
+            valor_base = tamanho_m2 * 1.00
     else:
         # --- TABELA SAÍDA ---
         if mobiliado_status == 'mobiliado':
