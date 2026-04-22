@@ -898,7 +898,7 @@ def add_horario_avulso(horario: schemas.HorarioAvulsoCreate, db: Session = Depen
 
 @router.post("/agenda/gerar", summary="Regerar agenda: Limpa livres e recria com base nos horários fixos")
 def generate_agenda(
-    semanas: int = 4,
+    semanas: int = 8,
     db: Session = Depends(get_db),
     current_user = Depends(auth.get_current_admin_user)
 ):

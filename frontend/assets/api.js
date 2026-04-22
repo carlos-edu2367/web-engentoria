@@ -213,7 +213,7 @@ export const api = {
 
     // Agenda
     getAgendaEvents: (start, end) => apiFetch(`/agenda/all?start=${start}&end=${end}`),
-    generateAgenda: () => apiFetch('/agenda/gerar?semanas=4', 'POST'), 
+    generateAgenda: () => apiFetch('/agenda/gerar?semanas=8', 'POST'), 
     scheduleVistoria: (data) => apiFetch('/agenda/agendar', 'POST', data),
     updateVistoria: (id, data) => apiFetch(`/agenda/${id}`, 'PUT', data),
     cancelarVistoria: (id) => apiFetch(`/agenda/${id}/cancelar`, 'PUT'),
