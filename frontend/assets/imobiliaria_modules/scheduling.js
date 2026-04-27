@@ -307,8 +307,8 @@ export const renderSchedulingPage = async (container) => {
                                 </select>
                             </div>
                             <div>
-                                <label class="block text-sm text-slate-300 mb-2">Anexos <span class="text-emerald-400 text-xs">(Obrigatório, documento/vistoria inicial)</span></label>
-                                <input type="file" id="form_arquivos" required multiple accept=".pdf,image/*" class="w-full input-glass rounded-xl px-4 py-2.5 bg-slate-900/60 border border-slate-600/50 file:bg-emerald-600/20 file:text-emerald-300 file:border file:border-emerald-400/30 file:rounded-lg file:px-3 file:py-1 hover:border-emerald-400/50 transition-all duration-300" />
+                                <label class="block text-sm text-slate-300 mb-2">Anexos <span class="text-emerald-400 text-xs">(Opcional, documento/vistoria inicial)</span></label>
+                                <input type="file" id="form_arquivos" multiple accept=".pdf,image/*" class="w-full input-glass rounded-xl px-4 py-2.5 bg-slate-900/60 border border-slate-600/50 file:bg-emerald-600/20 file:text-emerald-300 file:border file:border-emerald-400/30 file:rounded-lg file:px-3 file:py-1 hover:border-emerald-400/50 transition-all duration-300" />
                             </div>
                         </div>
                         <div>
@@ -962,10 +962,6 @@ export const renderSchedulingPage = async (container) => {
             if (!state.wizard.clienteId || !state.wizard.imovelId) return showNotification('Dados inconsistentes.', 'error');
             
             const files = $('#form_arquivos').files;
-            
-            if (!files || files.length === 0) {
-                return showNotification('É obrigatório anexar pelo menos um arquivo (documento ou foto).', 'warning');
-            }
 
             const btn = $('#btn-submit-solicitacao');
             const originalText = btn?.innerHTML || 'Enviar Solicitação →';
