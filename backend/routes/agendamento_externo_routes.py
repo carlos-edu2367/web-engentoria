@@ -242,7 +242,7 @@ async def criar_solicitacao(
     origem: str = Form("LINK_CLIENTE"),
     observacao: Optional[str] = Form(None),
     vistoriadores_ids: Optional[str] = Form(None),
-    arquivos: List[UploadFile] = File(default=[]),
+    arquivos: Optional[List[UploadFile]] = File(None),
     request: Request = None,
     db: Session = Depends(get_db)
 ):
@@ -283,21 +283,22 @@ async def criar_solicitacao(
     db.commit()
     db.refresh(nova_solicitacao)
     
-    for arquivo in arquivos:
-        if arquivo.filename:
-            nome, extensao = os.path.splitext(arquivo.filename)
-            nome_sanitizado = sanitize_filename(nome)
-            nome_arquivo = f"{nome_sanitizado}_SOLICIT_{uuid.uuid4()}{extensao}"
-            
-            conteudo = await arquivo.read()
-            res = supabase.storage.from_("documentos").upload(nome_arquivo, conteudo, {"content-type": arquivo.content_type})
-            
-            if not getattr(res, "error", None):
-                novo_doc = models.DocumentoSolicitacao(
-                    solicitacao_id=nova_solicitacao.id,
-                    file_path=nome_arquivo
-                )
-                db.add(novo_doc)
+    if arquivos:
+        for arquivo in arquivos:
+            if arquivo.filename:
+                nome, extensao = os.path.splitext(arquivo.filename)
+                nome_sanitizado = sanitize_filename(nome)
+                nome_arquivo = f"{nome_sanitizado}_SOLICIT_{uuid.uuid4()}{extensao}"
+                
+                conteudo = await arquivo.read()
+                res = supabase.storage.from_("documentos").upload(nome_arquivo, conteudo, {"content-type": arquivo.content_type})
+                
+                if not getattr(res, "error", None):
+                    novo_doc = models.DocumentoSolicitacao(
+                        solicitacao_id=nova_solicitacao.id,
+                        file_path=nome_arquivo
+                    )
+                    db.add(novo_doc)
     
     db.commit()
     
@@ -372,7 +373,7 @@ async def editar_solicitacao(
     tipo_vistoria: Optional[str] = Form(None),
     observacao: Optional[str] = Form(None),
     vistoriadores_ids: Optional[str] = Form(None),
-    arquivos: List[UploadFile] = File(default=[]),
+    arquivos: Optional[List[UploadFile]] = File(None),
     current_user=Depends(auth.get_current_active_user_or_imobiliaria),
     db: Session = Depends(get_db)
 ):
@@ -410,21 +411,22 @@ async def editar_solicitacao(
         else:
             solicitacao.vistoriadores_permitidos = None
 
-    for arquivo in arquivos:
-        if arquivo.filename:
-            nome, extensao = os.path.splitext(arquivo.filename)
-            nome_sanitizado = sanitize_filename(nome)
-            nome_arquivo = f"{nome_sanitizado}_SOLICIT_{uuid.uuid4()}{extensao}"
+    if arquivos:
+        for arquivo in arquivos:
+            if arquivo.filename:
+                nome, extensao = os.path.splitext(arquivo.filename)
+                nome_sanitizado = sanitize_filename(nome)
+                nome_arquivo = f"{nome_sanitizado}_SOLICIT_{uuid.uuid4()}{extensao}"
 
-            conteudo = await arquivo.read()
-            res = supabase.storage.from_("documentos").upload(nome_arquivo, conteudo, {"content-type": arquivo.content_type})
+                conteudo = await arquivo.read()
+                res = supabase.storage.from_("documentos").upload(nome_arquivo, conteudo, {"content-type": arquivo.content_type})
 
-            if not getattr(res, "error", None):
-                novo_doc = models.DocumentoSolicitacao(
-                    solicitacao_id=solicitacao.id,
-                    file_path=nome_arquivo
-                )
-                db.add(novo_doc)
+                if not getattr(res, "error", None):
+                    novo_doc = models.DocumentoSolicitacao(
+                        solicitacao_id=solicitacao.id,
+                        file_path=nome_arquivo
+                    )
+                    db.add(novo_doc)
 
     db.commit()
     db.refresh(solicitacao)

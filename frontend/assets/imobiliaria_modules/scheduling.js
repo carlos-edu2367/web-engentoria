@@ -811,11 +811,16 @@ export const renderSchedulingPage = async (container) => {
 
                 try {
                     const fd = new FormData();
-                    fd.append('tipo_vistoria', document.getElementById('edit-tipo').value);
+                    const tipoVal = document.getElementById('edit-tipo').value;
+                    if (tipoVal) fd.append('tipo_vistoria', tipoVal);
+                    
                     const obs = document.getElementById('edit-obs').value;
-                    if (obs !== null) fd.append('observacao', obs);
+                    if (obs !== null && obs !== undefined) fd.append('observacao', obs.trim());
+                    
                     const files = document.getElementById('edit-files').files;
-                    for (const f of files) fd.append('arquivos', f);
+                    if (files && files.length > 0) {
+                        for (const f of files) fd.append('arquivos', f);
+                    }
 
                     await SolicitacoesService.editar(id, fd);
                     closeModal();
@@ -969,13 +974,28 @@ export const renderSchedulingPage = async (container) => {
                 btn.innerHTML = 'Enviando...';
             }
 
+            // Hardening: Prevenir envio acidental de strings "null" ou "undefined" para o backend
+            if (!state.wizard.clienteId || state.wizard.clienteId === 'null' || state.wizard.clienteId === 'undefined') {
+                if (btn) { btn.disabled = false; btn.innerHTML = originalText; }
+                return showNotification('Erro de validação: Cliente inválido. Por favor, selecione novamente.', 'error');
+            }
+            if (!state.wizard.imovelId || state.wizard.imovelId === 'null' || state.wizard.imovelId === 'undefined') {
+                if (btn) { btn.disabled = false; btn.innerHTML = originalText; }
+                return showNotification('Erro de validação: Imóvel inválido. Por favor, selecione novamente.', 'error');
+            }
+
             const fd = new FormData();
             fd.append('cliente_id', state.wizard.clienteId);
             fd.append('imovel_id', state.wizard.imovelId);
             fd.append('tipo_vistoria', $('#form_tipo_vistoria').value);
             fd.append('origem', 'DIRETO_IMOBILIARIA');
-            if ($('#form_observacao').value.trim()) fd.append('observacao', $('#form_observacao').value.trim());
-            for (let i = 0; i < files.length; i++) fd.append('arquivos', files[i]);
+            
+            const obsValue = $('#form_observacao').value.trim();
+            if (obsValue) fd.append('observacao', obsValue);
+            
+            for (let i = 0; i < files.length; i++) {
+                fd.append('arquivos', files[i]);
+            }
 
             try {
                 await api.createSolicitacao(fd);
