@@ -308,7 +308,7 @@ export const renderSchedulingPage = async (container) => {
                             </div>
                             <div>
                                 <label class="block text-sm text-slate-300 mb-2">Anexos <span class="text-emerald-400 text-xs">(Opcional, documento/vistoria inicial)</span></label>
-                                <input type="file" id="form_arquivos" multiple accept=".pdf,image/*" class="w-full input-glass rounded-xl px-4 py-2.5 bg-slate-900/60 border border-slate-600/50 file:bg-emerald-600/20 file:text-emerald-300 file:border file:border-emerald-400/30 file:rounded-lg file:px-3 file:py-1 hover:border-emerald-400/50 transition-all duration-300" />
+                                <input type="file" id="form_arquivos" multiple accept=".pdf,.zip,.rar,.docx,image/*" class="w-full input-glass rounded-xl px-4 py-2.5 bg-slate-900/60 border border-slate-600/50 file:bg-emerald-600/20 file:text-emerald-300 file:border file:border-emerald-400/30 file:rounded-lg file:px-3 file:py-1 hover:border-emerald-400/50 transition-all duration-300" />
                             </div>
                         </div>
                         <div>
@@ -989,7 +989,13 @@ export const renderSchedulingPage = async (container) => {
             const obsValue = $('#form_observacao').value.trim();
             if (obsValue) fd.append('observacao', obsValue);
             
+            const MAX_FILE_MB = 100;
+            const MAX_FILE_BYTES = MAX_FILE_MB * 1024 * 1024;
             for (let i = 0; i < files.length; i++) {
+                if (files[i].size > MAX_FILE_BYTES) {
+                    if (btn) { btn.disabled = false; btn.innerHTML = originalText; }
+                    return showNotification(`Arquivo '${files[i].name}' ultrapassa o limite de ${MAX_FILE_MB}MB.`, 'error');
+                }
                 fd.append('arquivos', files[i]);
             }
 

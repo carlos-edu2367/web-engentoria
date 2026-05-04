@@ -730,10 +730,10 @@ async def add_documento_agendamento(id_agendamento: str = Form(...),
     
     try:
         conteudo = await file.read()
-        MAX_MB = 50
+        MAX_MB = 100
 
         if len(conteudo) > MAX_MB * 1024 * 1024:
-                raise HTTPException(status_code=400, detail="Imagem ultrapassa o tamanho máximo: 50mb")
+                raise HTTPException(status_code=400, detail="Imagem ultrapassa o tamanho máximo: 100mb")
         
         res = supabase.storage.from_("documentos").upload(nome_arquivo, 
                                                           conteudo,
@@ -875,10 +875,10 @@ async def add_doc_info(id_info: str = Form(...),
     
     try:
         conteudo = await file.read()
-        MAX_MB = 50
+        MAX_MB = 100
 
         if len(conteudo) > MAX_MB * 1024 * 1024:
-                raise HTTPException(status_code=400, detail="Imagem ultrapassa o tamanho máximo: 50mb")
+                raise HTTPException(status_code=400, detail="Imagem ultrapassa o tamanho máximo: 100mb")
         
         res = supabase.storage.from_("documentos").upload(nome_arquivo, 
                                                           conteudo,

@@ -291,6 +291,9 @@ async def criar_solicitacao(
                 nome_arquivo = f"{nome_sanitizado}_SOLICIT_{uuid.uuid4()}{extensao}"
                 
                 conteudo = await arquivo.read()
+                MAX_MB = 100
+                if len(conteudo) > MAX_MB * 1024 * 1024:
+                    raise HTTPException(status_code=400, detail=f"Arquivo '{arquivo.filename}' ultrapassa o tamanho máximo de {MAX_MB}MB")
                 res = supabase.storage.from_("documentos").upload(nome_arquivo, conteudo, {"content-type": arquivo.content_type})
                 
                 if not getattr(res, "error", None):
@@ -419,6 +422,9 @@ async def editar_solicitacao(
                 nome_arquivo = f"{nome_sanitizado}_SOLICIT_{uuid.uuid4()}{extensao}"
 
                 conteudo = await arquivo.read()
+                MAX_MB = 100
+                if len(conteudo) > MAX_MB * 1024 * 1024:
+                    raise HTTPException(status_code=400, detail=f"Arquivo '{arquivo.filename}' ultrapassa o tamanho máximo de {MAX_MB}MB")
                 res = supabase.storage.from_("documentos").upload(nome_arquivo, conteudo, {"content-type": arquivo.content_type})
 
                 if not getattr(res, "error", None):
