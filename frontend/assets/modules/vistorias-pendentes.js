@@ -98,6 +98,25 @@ async function abrirModalDetalhes(solicitacaoId) {
         const isMobiliado = fullData.imovel?.mobiliado ? fullData.imovel.mobiliado.replace('_', ' ') : 'N/A';
         const temAnexos = fullData.anexos && fullData.anexos.length > 0;
 
+        // --- Helper: monta link wa.me com mensagem pré-preenchida ---
+        const buildWaLink = (tel, nome, endereco, tipo) => {
+            if (!tel) return null;
+            const digits = tel.replace(/\D/g, '');
+            if (!digits || digits.length < 8) return null;
+            const number = digits.startsWith('55') ? digits : `55${digits}`;
+            const msg = encodeURIComponent(
+                `Olá ${nome}, tudo bem? 👋\n\nEstamos entrando em contato referente à vistoria *${(tipo || '').replace(/_/g, ' ')}* do imóvel *${endereco}*.\n\nPodemos confirmar os detalhes?`
+            );
+            return `https://wa.me/${number}?text=${msg}`;
+        };
+        const waLink = buildWaLink(
+            fullData.cliente?.telefone1,
+            fullData.cliente?.nome,
+            fullData.imovel?.endereco,
+            fullData.tipo_vistoria
+        );
+        const waIconSvg = `<svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.117.554 4.102 1.523 5.823L.057 23.57a.75.75 0 00.92.92l5.747-1.466A11.943 11.943 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.75a9.693 9.693 0 01-4.944-1.354l-.355-.21-3.671.937.952-3.574-.23-.368A9.692 9.692 0 012.25 12C2.25 6.615 6.615 2.25 12 2.25S21.75 6.615 21.75 12 17.385 21.75 12 21.75z"/></svg>`;
+
         // Renderizador de anexos (suporta tanto array de strings quanto array de objetos)
         let anexosHTML = '';
         if (temAnexos) {
@@ -178,7 +197,16 @@ async function abrirModalDetalhes(solicitacaoId) {
                 </li>
                 <li class="flex items-center gap-3">
                     <svg class="w-4 h-4 text-slate-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"></path></svg>
-                    <span class="text-sm text-slate-400">${telefones}</span>
+                    ${waLink
+                        ? `<a href="${waLink}" target="_blank" rel="noopener noreferrer"
+                              class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold
+                                     bg-[#25D366]/10 text-[#25D366] border border-[#25D366]/30
+                                     hover:bg-[#25D366]/20 hover:border-[#25D366]/60 transition-all duration-200"
+                              title="Abrir WhatsApp">
+                              ${waIconSvg} ${telefones}
+                           </a>`
+                        : `<span class="text-sm text-slate-400">${telefones}</span>`
+                    }
                 </li>
             </ul>
         </div>
@@ -296,6 +324,14 @@ async function abrirModalDetalhes(solicitacaoId) {
         <button id="btn-fechar-detalhes" class="px-6 py-3.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl transition-all duration-200 border border-slate-600 hover:text-white">
             Voltar
         </button>
+        ${waLink ? `
+        <a id="btn-whatsapp-cliente" href="${waLink}" target="_blank" rel="noopener noreferrer"
+           class="px-6 py-3.5 flex items-center justify-center gap-2 font-bold rounded-xl transition-all duration-300
+                  bg-[#25D366] hover:bg-[#1ebe5d] text-white shadow-lg shadow-[#25D366]/20
+                  hover:shadow-[#25D366]/40 hover:-translate-y-0.5 active:translate-y-0 border border-[#25D366]/50">
+            ${waIconSvg}
+            Contatar no WhatsApp
+        </a>` : ''}
         <button id="btn-ir-agenda" class="px-8 py-3.5 bg-gradient-to-r from-emerald-600 to-green-500 hover:from-emerald-500 hover:to-green-400 text-white font-black rounded-xl transition-all duration-300 shadow-[0_0_20px_rgba(16,185,129,0.3)] hover:shadow-[0_0_30px_rgba(16,185,129,0.5)] transform hover:-translate-y-1 flex items-center justify-center gap-2 border border-emerald-400/50">
             Agendar Vistoria
             <svg class="w-5 h-5 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>

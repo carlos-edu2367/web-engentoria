@@ -605,6 +605,25 @@ export const renderSchedulingPage = async (container) => {
             const contentContainer = document.getElementById('modal-content');
             if(!contentContainer) return;
 
+            // --- Helper: monta link wa.me com mensagem pré-preenchida ---
+            const formatWhatsappLink = (telefone, clienteNome, enderecoImovel, tipoVistoria) => {
+                if (!telefone) return null;
+                const digits = telefone.replace(/\D/g, '');
+                if (!digits || digits.length < 8) return null;
+                const number = digits.startsWith('55') ? digits : `55${digits}`;
+                const msg = encodeURIComponent(
+                    `Olá ${clienteNome}, tudo bem? 👋\n\nEstamos entrando em contato referente à vistoria *${tipoVistoria.replace(/_/g,' ')}* do imóvel *${enderecoImovel}*.\n\nPodemos confirmar os detalhes?`
+                );
+                return `https://wa.me/${number}?text=${msg}`;
+            };
+
+            const waLink = formatWhatsappLink(
+                detalhes.cliente.telefone1,
+                detalhes.cliente.nome,
+                detalhes.imovel.endereco,
+                detalhes.tipo_vistoria
+            );
+
             // Tratamento de anexos (links seguros via backend ou url pública se aplicável)
             let anexosHtml = '<p class="text-xs text-slate-500 italic">Nenhum anexo</p>';
             if (detalhes.anexos && detalhes.anexos.length > 0) {
@@ -618,16 +637,38 @@ export const renderSchedulingPage = async (container) => {
                 </div>`;
             }
 
-            // Lógica do botão de agenda
+            // Botão de agenda
             let btnAgendaHtml = '';
             if (detalhes.agenda_id) {
                 btnAgendaHtml = `
-                    <button type="button" onclick="window.visualizarNaAgenda('${detalhes.agenda_id}')" class="w-full mt-4 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 px-4 rounded-xl flex justify-center items-center gap-2 transition-colors shadow-lg shadow-emerald-900/20">
+                    <button type="button" onclick="window.visualizarNaAgenda('${detalhes.agenda_id}')" class="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 px-4 rounded-xl flex justify-center items-center gap-2 transition-colors shadow-lg shadow-emerald-900/20">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
                         Visualizar na Agenda
                     </button>
                 `;
             }
+
+            // Botão WhatsApp — CTA principal
+            const waIconSvg = `<svg class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.117.554 4.102 1.523 5.823L.057 23.57a.75.75 0 00.92.92l5.747-1.466A11.943 11.943 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.75a9.693 9.693 0 01-4.944-1.354l-.355-.21-3.671.937.952-3.574-.23-.368A9.692 9.692 0 012.25 12C2.25 6.615 6.615 2.25 12 2.25S21.75 6.615 21.75 12 17.385 21.75 12 21.75z"/></svg>`;
+
+            const btnWhatsappHtml = waLink ? `
+                <a href="${waLink}" target="_blank" rel="noopener noreferrer"
+                   class="flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-xl font-bold text-sm text-white transition-all duration-300
+                          bg-[#25D366] hover:bg-[#1ebe5d] shadow-lg shadow-[#25D366]/20 hover:shadow-[#25D366]/40 hover:-translate-y-0.5 active:translate-y-0">
+                    ${waIconSvg}
+                    Contatar no WhatsApp
+                </a>
+            ` : '';
+
+            // Botão inline compacto no card do cliente
+            const inlineWaBtnHtml = waLink
+                ? `<a href="${waLink}" target="_blank" rel="noopener noreferrer"
+                      title="Abrir WhatsApp" class="inline-flex items-center gap-1.5 mt-2 px-2.5 py-1 rounded-lg text-xs font-semibold
+                      bg-[#25D366]/10 text-[#25D366] border border-[#25D366]/30 hover:bg-[#25D366]/20 hover:border-[#25D366]/60 transition-all duration-200">
+                      <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.117.554 4.102 1.523 5.823L.057 23.57a.75.75 0 00.92.92l5.747-1.466A11.943 11.943 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.75a9.693 9.693 0 01-4.944-1.354l-.355-.21-3.671.937.952-3.574-.23-.368A9.692 9.692 0 012.25 12C2.25 6.615 6.615 2.25 12 2.25S21.75 6.615 21.75 12 17.385 21.75 12 21.75z"/></svg>
+                      ${detalhes.cliente.telefone1}
+                   </a>`
+                : `<p class="text-xs text-slate-500 mt-2 italic">Sem telefone cadastrado</p>`;
 
             contentContainer.innerHTML = `
                 <div class="text-left">
@@ -657,7 +698,7 @@ export const renderSchedulingPage = async (container) => {
                                 <span class="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Cliente</span>
                                 <p class="text-sm font-bold text-slate-200">${detalhes.cliente.nome}</p>
                                 <p class="text-xs text-slate-400 mt-1 truncate" title="${detalhes.cliente.email}">${detalhes.cliente.email}</p>
-                                <p class="text-xs text-slate-400">${detalhes.cliente.telefone1 || '--'}</p>
+                                ${inlineWaBtnHtml}
                             </div>
                             <div class="bg-slate-900/50 p-4 rounded-xl border border-slate-700/50 flex flex-col justify-center items-center text-center">
                                 <span class="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-2">Natureza</span>
@@ -681,8 +722,13 @@ export const renderSchedulingPage = async (container) => {
                             </div>
                         </div>
                     </div>
-                    
-                    ${btnAgendaHtml}
+
+                    <!-- Área de ações -->
+                    ${(btnWhatsappHtml || btnAgendaHtml) ? `
+                    <div class="flex gap-3 mt-5 pt-4 border-t border-slate-700/50">
+                        ${btnWhatsappHtml}
+                        ${btnAgendaHtml}
+                    </div>` : ''}
                 </div>
             `;
         } catch (error) {
