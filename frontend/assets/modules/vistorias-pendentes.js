@@ -99,13 +99,22 @@ async function abrirModalDetalhes(solicitacaoId) {
         const temAnexos = fullData.anexos && fullData.anexos.length > 0;
 
         // --- Helper: monta link wa.me com mensagem pré-preenchida ---
-        const buildWaLink = (tel, nome, endereco, tipo) => {
+        const buildWaLink = (tel, nome, endereco, tipo, imobiliariaNome) => {
             if (!tel) return null;
             const digits = tel.replace(/\D/g, '');
             if (!digits || digits.length < 8) return null;
             const number = digits.startsWith('55') ? digits : `55${digits}`;
             const msg = encodeURIComponent(
-                `Olá ${nome}, tudo bem? 👋\n\nEstamos entrando em contato referente à vistoria *${(tipo || '').replace(/_/g, ' ')}* do imóvel *${endereco}*.\n\nPodemos confirmar os detalhes?`
+                `Olá, tudo bem?  \n` +
+                `Somos da empresa ENGENTORIA , parceiro da empresa ${imobiliariaNome || '                 '}. Estou enviando esta mensagem para realizar o agendamento da vistoria.  ` +
+                `Para que a vistoria possa ser executada, essa deverá ser acompanhado por uma única pessoa, temos 15 minutos de tolerância de atraso, (Caso não compareça dentro do prazo, o vistoriador deixará o local). ` +
+                `O imóvel deverá está livre de qualquer tipo de pertence do locatário ( até mesmo para imóveis mobiliados) ou entulhos, deverá está com o fornecimento de água e energia, não poderá está passando por qualquer tipo de reparo e nem limpeza.  ` +
+                `Se for  vistoria de conferência todas as divergências deverá está reparadas, uma vez que o vistoriador não poderá  aguardar a finalização dos reparos. ` +
+                `Ressaltamos ainda que a   pintura só será analisada após 24 h de finalização, pois a mesma deverá está totalmente seca. ` +
+                `Laudo disponível no próximo dia útil, após a realização da vistoria. Duração da vistoria de aproximadamente 3 h. ` +
+                `Caso haja o descumprimento de alguns dos critérios, a vistoria será  cancelada pelo vistoriador responsável, e ficará de responsabilidade do locatário o pagamento de R$ 100,00 ( cem reais), referente ao descolamento do mesmo, o laudo será encaminhado por e-mail até o proximo dia útil da realização da vistoria . ` +
+                `Por favor, nos informar dia e período de interesse para que possamos está encaminhamos os horários disponíveis.\n\n` +
+                `Engentoria - Vistorias Imobiliárias.`
             );
             return `https://wa.me/${number}?text=${msg}`;
         };
@@ -113,7 +122,8 @@ async function abrirModalDetalhes(solicitacaoId) {
             fullData.cliente?.telefone1,
             fullData.cliente?.nome,
             fullData.imovel?.endereco,
-            fullData.tipo_vistoria
+            fullData.tipo_vistoria,
+            fullData.imobiliaria?.nome || fullData.imovel?.imobiliaria?.nome
         );
         const waIconSvg = `<svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.117.554 4.102 1.523 5.823L.057 23.57a.75.75 0 00.92.92l5.747-1.466A11.943 11.943 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.75a9.693 9.693 0 01-4.944-1.354l-.355-.21-3.671.937.952-3.574-.23-.368A9.692 9.692 0 012.25 12C2.25 6.615 6.615 2.25 12 2.25S21.75 6.615 21.75 12 17.385 21.75 12 21.75z"/></svg>`;
 
