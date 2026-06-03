@@ -407,6 +407,14 @@ async function renderStep4() {
                     <textarea id="observacao_vistoriador" class="w-full bg-slate-900/80 border border-slate-600 rounded-xl px-4 py-3 text-white text-sm focus:ring-2 focus:ring-cyan-500 outline-none resize-none h-12 shadow-inner transition-all placeholder-slate-600" placeholder="Ex: Chave na portaria..."></textarea>
                 </div>
             </div>
+
+            <div id="nome_proprietario_container" class="${wizardState.tipo === 'ENTRADA' ? '' : 'hidden'} mt-4">
+                <label for="nome_proprietario" class="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 flex justify-between">
+                    <span>Nome do Proprietário</span>
+                    <span class="font-normal opacity-50 normal-case">Vistoria de Entrada</span>
+                </label>
+                <input type="text" id="nome_proprietario" value="${sanitizeHTML(wizardState.nome_proprietario || '')}" placeholder="Nome completo do proprietário do imóvel" class="w-full bg-slate-900/80 border border-slate-600 rounded-xl px-4 py-3 text-white text-sm focus:ring-2 focus:ring-emerald-500 outline-none shadow-inner transition-all placeholder-slate-600">
+            </div>
             
             ${wizardState.observacao_privada ? `
                 <div class="mt-5 p-4 bg-slate-800/50 border border-slate-700/50 rounded-2xl relative overflow-hidden">
@@ -451,6 +459,15 @@ async function renderStep4() {
         });
     }
 
+    // Show/hide nome_proprietario based on tipo_vistoria selection
+    const tipoVistoriaEl = document.getElementById('tipo_vistoria');
+    const nomeProprietarioContainer = document.getElementById('nome_proprietario_container');
+    if (tipoVistoriaEl && nomeProprietarioContainer && !isExternalRequest) {
+        tipoVistoriaEl.addEventListener('change', () => {
+            nomeProprietarioContainer.classList.toggle('hidden', tipoVistoriaEl.value !== 'ENTRADA');
+        });
+    }
+
     document.getElementById('back-wizard').onclick = () => { 
         // Usa a flag correta para cancelar ou retornar passo
         if (wizardState.is_external) {
@@ -470,15 +487,17 @@ async function renderStep4() {
         confirmBtn.innerHTML = '<svg class="w-6 h-6 animate-spin mx-auto text-white" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>';
 
         const observacao = document.getElementById('observacao_vistoriador').value;
+        const nomeProprietarioEl = document.getElementById('nome_proprietario');
         const data = {
             horario_id: wizardState.horario_id,
             imovel_id: wizardState.imovel_id,
-            imobiliaria_id: wizardState.imobiliaria_id, 
+            imobiliaria_id: wizardState.imobiliaria_id,
             tipo: document.getElementById('tipo_vistoria').value,
             force_single_slot: document.getElementById('force-single')?.checked || false,
-            observacao_vistoriador: observacao
+            observacao_vistoriador: observacao,
+            nome_proprietario: nomeProprietarioEl?.value?.trim() || null
         };
-        
+
         if (wizardState.observacao_privada) {
             data.observacao_privada = wizardState.observacao_privada;
         }
@@ -549,6 +568,10 @@ function renderNewClienteForm() {
                         <input type="tel" name="telefone2" class="w-full bg-slate-900/80 border border-slate-600 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-cyan-500 outline-none transition-all shadow-inner">
                     </div>
                 </div>
+                <div>
+                    <label class="block text-[10px] text-slate-400 uppercase font-bold tracking-widest mb-1.5">CPF do Inquilino <span class="text-emerald-400 normal-case font-normal">(Opcional)</span></label>
+                    <input type="text" name="cpf" placeholder="000.000.000-00" class="w-full bg-slate-900/80 border border-slate-600 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-cyan-500 outline-none transition-all shadow-inner">
+                </div>
                 <div class="flex justify-between pt-6 border-t border-slate-700/60 mt-6">
                     <button type="button" id="back-to-wizard" class="px-8 py-3.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl transition-colors border border-slate-600 shadow-lg hover:text-white">Cancelar</button>
                     <button type="submit" class="px-8 py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl transition-all shadow-lg shadow-emerald-500/30 transform hover:-translate-y-1">Gravar Cliente</button>
@@ -568,7 +591,8 @@ function renderNewClienteForm() {
 
         const data = {
             nome: form.nome.value, email: form.email.value,
-            telefone1: form.telefone1.value, telefone2: form.telefone2.value
+            telefone1: form.telefone1.value, telefone2: form.telefone2.value,
+            cpf: form.cpf?.value?.trim() || null
         };
         try {
             const novoCliente = await api.createCliente(data);
@@ -710,10 +734,11 @@ export function startAgendamentoWizard(horario, calendarInstance, onSuccessCallb
         wizardState.imovel_completo = initialData.imovel || {}; 
         
         wizardState.tipo = initialData.tipo_vistoria || 'ENTRADA';
+        wizardState.nome_proprietario = initialData.nome_proprietario || '';
         wizardState.observacao_privada = initialData.observacao ? `Solicitação externa. Obs original: ${initialData.observacao}` : 'Agendamento via solicitação externa pendente.';
-        
+
         // Pulo forçado: ignora a UI dos passos 1, 2 e 3
-        wizardState.step = 4; 
+        wizardState.step = 4;
     }
 
     calendarRef = calendarInstance;

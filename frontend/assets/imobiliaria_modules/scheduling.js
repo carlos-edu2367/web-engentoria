@@ -235,6 +235,7 @@ export const renderSchedulingPage = async (container) => {
                                 <div><label class="block text-xs text-slate-400 mb-1">Nome Completo *</label><input type="text" id="wiz_add_cli_nome" class="w-full input-glass rounded-xl px-4 py-3"></div>
                                 <div><label class="block text-xs text-slate-400 mb-1">E-mail *</label><input type="email" id="wiz_add_cli_email" class="w-full input-glass rounded-xl px-4 py-3"></div>
                                 <div><label class="block text-xs text-slate-400 mb-1">Telefone</label><input type="text" id="wiz_add_cli_tel1" class="w-full input-glass rounded-xl px-4 py-3"></div>
+                                <div><label class="block text-xs text-slate-400 mb-1">CPF do Inquilino <span class="text-emerald-400">(Opcional)</span></label><input type="text" id="wiz_add_cli_cpf" class="w-full input-glass rounded-xl px-4 py-3" placeholder="000.000.000-00"></div>
                             </div>
                             <div class="flex justify-end pt-4"><button type="button" id="btn-save-next-1" data-action="wiz-create-cli" class="bg-gradient-to-r from-purple-600 to-blue-600 text-white font-bold py-3 px-8 rounded-xl">Salvar e Continuar &rarr;</button></div>
                         </div>
@@ -316,6 +317,10 @@ export const renderSchedulingPage = async (container) => {
                         <div>
                             <label class="block text-sm text-slate-300 mb-2">Observações para a Logística</label>
                             <textarea id="form_observacao" rows="3" class="w-full input-glass rounded-xl px-4 py-3 bg-slate-900/60 border border-slate-600/50 focus:border-cyan-400/60 focus:ring-2 focus:ring-cyan-400/20 transition-all duration-300" placeholder="Ex: Chaves na portaria..."></textarea>
+                        </div>
+                        <div id="container_nome_proprietario" class="hidden">
+                            <label class="block text-sm text-slate-300 mb-2">Nome do Proprietário <span class="text-emerald-400 text-xs">(Vistoria de Entrada)</span></label>
+                            <input type="text" id="form_nome_proprietario" class="w-full input-glass rounded-xl px-4 py-3 bg-slate-900/60 border border-slate-600/50 focus:border-emerald-400/60 focus:ring-2 focus:ring-emerald-400/20 transition-all duration-300" placeholder="Nome completo do proprietário do imóvel">
                         </div>
                     </div>
                     <div class="flex justify-between items-center mt-8 pt-6 border-t border-slate-700/50">
@@ -963,6 +968,17 @@ export const renderSchedulingPage = async (container) => {
         // FORMULÁRIO DE SOLICITAÇÃO FINAL
         $('#solicitacao-form').addEventListener('submit', handleFinalSubmit);
 
+        // MOSTRAR/ESCONDER campo nome_proprietario conforme tipo_vistoria
+        const tipoSelect = $('#form_tipo_vistoria');
+        if (tipoSelect) {
+            const toggleNomeProp = () => {
+                const container = $('#container_nome_proprietario');
+                if (container) container.classList.toggle('hidden', tipoSelect.value !== 'ENTRADA');
+            };
+            tipoSelect.addEventListener('change', toggleNomeProp);
+            toggleNomeProp(); // Estado inicial
+        }
+
         // INFINITE SCROLL DO HISTÓRICO
         const historicoScroll = $('#historico-scroll-container');
         if (historicoScroll) {
@@ -978,10 +994,12 @@ export const renderSchedulingPage = async (container) => {
         const btn = e.target.closest('button');
         btn.disabled = true; btn.innerHTML = 'Salvando...';
         try {
+            const cpfVal = $('#wiz_add_cli_cpf')?.value.trim() || null;
             const payload = {
                 nome: $('#wiz_add_cli_nome').value.trim(),
                 email: $('#wiz_add_cli_email').value.trim(),
                 telefone1: $('#wiz_add_cli_tel1').value.trim() || null,
+                cpf: cpfVal || null,
                 saldo_devedor_total: 0
             };
             if(!payload.nome || !payload.email) throw new Error("Preencha Nome e E-mail.");
@@ -1069,7 +1087,10 @@ export const renderSchedulingPage = async (container) => {
             
             const obsValue = $('#form_observacao').value.trim();
             if (obsValue) fd.append('observacao', obsValue);
-            
+
+            const nomeProprietarioValue = $('#form_nome_proprietario')?.value.trim();
+            if (nomeProprietarioValue) fd.append('nome_proprietario', nomeProprietarioValue);
+
             const MAX_FILE_MB = 100;
             const MAX_FILE_BYTES = MAX_FILE_MB * 1024 * 1024;
             for (let i = 0; i < files.length; i++) {

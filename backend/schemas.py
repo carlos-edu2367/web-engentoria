@@ -67,6 +67,7 @@ class ClienteBase(BaseModel):
     email: EmailStr
     telefone1: Optional[str] = None
     telefone2: Optional[str] = None
+    cpf: Optional[str] = None
 
 class ClienteCreate(ClienteBase):
     saldo_devedor_total: float = 0.0
@@ -185,6 +186,7 @@ class AgendaCreate(BaseModel):
     observacao_vistoriador: Optional[str] = None
     force_single_slot: Optional[bool] = False
     solicitacao_id: Optional[UUID] = None
+    nome_proprietario: Optional[str] = None
 
 class AgendaUpdate(BaseModel):
     cod_imovel: Optional[str] = None
@@ -198,6 +200,7 @@ class AgendaUpdate(BaseModel):
     valor_vistoriador: Optional[float] = None
     observacao_privada: Optional[str] = None
     observacao_vistoriador: Optional[str] = None
+    nome_proprietario: Optional[str] = None
 
 class AgendaObservacaoUpdate(BaseModel):
     observacao_privada: str
@@ -222,6 +225,7 @@ class AgendaDisplay(AgendaBase):
     observacao_vistoriador: Optional[str] = None
     valor_final_vistoria: Optional[float] = 0
     valor_vistoriador: Optional[float] = 0
+    nome_proprietario: Optional[str] = None
     vistoriador: UsuarioDisplay | None
     imovel: Optional[ImovelDisplay] = None
 
@@ -236,6 +240,7 @@ class AgendaVistoriadorDisplay(AgendaBase):
     observacao_vistoriador: Optional[str] = None
     valor_final_vistoria: Optional[float] = 0
     valor_vistoriador: Optional[float] = 0
+    nome_proprietario: Optional[str] = None
     vistoriador: UsuarioDisplay | None
     imovel: Optional[ImovelDisplay] = None
 
@@ -283,6 +288,7 @@ class SolicitacaoLinkCreate(BaseModel):
     vistoriadores_ids: Optional[List[UUID]] = None
     origem: str = "LINK_CLIENTE"
     observacao: Optional[str] = None
+    nome_proprietario: Optional[str] = None
     
 # Payload para editar uma solicitação existente (status PENDENTE)
 class SolicitacaoUpdate(BaseModel):
@@ -297,6 +303,7 @@ class SolicitacaoLinkResponse(BaseModel):
     link_completo: Optional[str] = None # URL montada para facilitar
     expires_at: Optional[datetime] = None
     status: str
+    nome_proprietario: Optional[str] = None
 
 # Schema de Listagem para o Admin (com dados populados)
 class SolicitacaoAgendamentoDisplay(BaseModel):
@@ -306,9 +313,10 @@ class SolicitacaoAgendamentoDisplay(BaseModel):
     status: str
     tipo_vistoria: str
     observacao: Optional[str] = None
+    nome_proprietario: Optional[str] = None
     created_at: datetime
     expires_at: Optional[datetime] = None
-    
+
     cliente: ClienteDisplay
     imovel: ImovelDisplay
     imobiliaria: ImobiliariaDisplay
@@ -619,10 +627,11 @@ class SolicitacaoAgendamentoDisplay(BaseModel):
     status: str
     tipo_vistoria: str
     observacao: Optional[str] = None
+    nome_proprietario: Optional[str] = None
     created_at: datetime
     expires_at: Optional[datetime] = None
     agenda_id: Optional[UUID] = None
-    
+
     cliente: ClienteDisplay
     imovel: ImovelDisplay
     imobiliaria: ImobiliariaDisplay

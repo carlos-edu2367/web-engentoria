@@ -64,6 +64,7 @@ class Cliente(Base):
     email = Column(TEXT, nullable=False, index=True)
     telefone1 = Column(TEXT, nullable=True)
     telefone2 = Column(TEXT, nullable=True)
+    cpf = Column(TEXT, nullable=True)
     saldo_devedor_total = Column(Numeric(10, 2), default=0.0)
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
     updated_at = Column(TIMESTAMP(timezone=True), default=func.now(), onupdate=func.now())
@@ -131,10 +132,11 @@ class Agenda(Base):
     observacao_vistoriador = Column(Text, nullable=True)
     valor_final_vistoria = Column(Numeric(10, 2), nullable=True)
     valor_vistoriador = Column(Numeric(10, 2), nullable=True)
+    nome_proprietario = Column(TEXT, nullable=True) # Preenchido automaticamente a partir da solicitação
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
     updated_at = Column(TIMESTAMP(timezone=True), default=func.now(), onupdate=func.now())
     is_deleted = Column(Boolean, default=False, nullable=False, index=True)
-    
+
     # Relacionamentos
     imovel = relationship("Imovel", back_populates="agendamentos")
     vistoriador = relationship("Usuario", back_populates="vistorias")
@@ -161,6 +163,7 @@ class SolicitacaoAgendamento(Base):
     vistoriadores_permitidos = Column(JSON, nullable=True) # Lista de IDs [uuid1, uuid2] ou NULL para todos
     origem = Column(String, nullable=False, default="LINK_CLIENTE") # Novo campo (LINK_CLIENTE ou DIRETO_IMOBILIARIA)
     observacao = Column(Text, nullable=True) # Novo campo
+    nome_proprietario = Column(TEXT, nullable=True) # Nome do proprietário (para vistoria de entrada)
     
     # Controle de Estado
     status = Column(String, default="PENDENTE_CLIENTE", nullable=False) # PENDENTE_CLIENTE, PENDENTE_ADMIN, AGENDADO, EXPIRADO, CANCELADO

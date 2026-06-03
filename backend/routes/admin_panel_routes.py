@@ -1082,16 +1082,21 @@ def schedule_vistoria(agendamento: schemas.AgendaCreate, db: Session = Depends(g
     db_agenda_1.valor_final_vistoria = valor_final if valor_final is not None else 0
     db_agenda_1.valor_vistoriador = valor_comissao if valor_comissao is not None else 0
     db_agenda_1.observacao_vistoriador = agendamento.observacao_vistoriador
+    db_agenda_1.nome_proprietario = agendamento.nome_proprietario
 
     if agendamento.solicitacao_id:
         solicitacao = db.query(models.SolicitacaoAgendamento).options(
             joinedload(models.SolicitacaoAgendamento.anexos)
         ).filter(models.SolicitacaoAgendamento.id == agendamento.solicitacao_id).first()
-        
+
         if solicitacao:
             solicitacao.status = "AGENDADO"
             solicitacao.agenda_id = db_agenda_1.id
-            
+
+            # Preenche nome_proprietario a partir da solicitação se não informado manualmente
+            if not db_agenda_1.nome_proprietario and solicitacao.nome_proprietario:
+                db_agenda_1.nome_proprietario = solicitacao.nome_proprietario
+
             for anexo in solicitacao.anexos:
                 novo_doc = models.DocumentoAgenda(
                     file_path=anexo.file_path,
@@ -1172,9 +1177,12 @@ def update_vistoria(
 
     if "observacao_privada" in update_payload:
         db_agenda.observacao_privada = update_payload["observacao_privada"]
-    
+
     if "observacao_vistoriador" in update_payload:
         db_agenda.observacao_vistoriador = update_payload["observacao_vistoriador"]
+
+    if "nome_proprietario" in update_payload:
+        db_agenda.nome_proprietario = update_payload["nome_proprietario"]
 
     db.commit()
     db.refresh(db_agenda)
@@ -2461,9 +2469,9 @@ async def add_documento(agendamento_id: str = Form(...),
     
     try:
         conteudo = await file.read()
-        MAX_MB = 100
-
-        if len(conteudo) > MAX_MB * 1024 * 1024:
+        MAX_MB = 100
+
+        if len(conteudo) > MAX_MB * 1024 * 1024:
                 raise HTTPException(status_code=400, detail="Imagem ultrapassa o tamanho máximo: 100mb")
         
         res = supabase.storage.from_("documentos").upload(nome_arquivo, 
@@ -2605,9 +2613,9 @@ async def enviar_documento_mensal(id_info: str = Form(...),
     
     try:
         conteudo = await file.read()
-        MAX_MB = 100
-
-        if len(conteudo) > MAX_MB * 1024 * 1024:
+        MAX_MB = 100
+
+        if len(conteudo) > MAX_MB * 1024 * 1024:
                 raise HTTPException(status_code=400, detail="Imagem ultrapassa o tamanho máximo: 100mb")
         
         res = supabase.storage.from_("documentos").upload(nome_arquivo, 

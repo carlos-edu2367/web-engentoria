@@ -20,3 +20,8 @@ supabase>=2.0.0
 requests
 apscheduler
 google-generativeai
+
+# Dependências de teste
+pytest
+httpx
+pytest-asyncio

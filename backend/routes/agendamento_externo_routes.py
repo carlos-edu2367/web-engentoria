@@ -241,6 +241,7 @@ async def criar_solicitacao(
     tipo_vistoria: str = Form(...),
     origem: str = Form("LINK_CLIENTE"),
     observacao: Optional[str] = Form(None),
+    nome_proprietario: Optional[str] = Form(None),
     vistoriadores_ids: Optional[str] = Form(None),
     arquivos: Optional[List[UploadFile]] = File(None),
     request: Request = None,
@@ -275,6 +276,7 @@ async def criar_solicitacao(
         vistoriadores_permitidos=lista_vistoriadores,
         origem=origem,
         observacao=observacao,
+        nome_proprietario=nome_proprietario if nome_proprietario and nome_proprietario.strip() else None,
         status=status_solicitacao,
         expires_at=expires_at
     )
@@ -318,7 +320,8 @@ async def criar_solicitacao(
         "token": token,
         "link_completo": link_completo,
         "expires_at": nova_solicitacao.expires_at,
-        "status": nova_solicitacao.status
+        "status": nova_solicitacao.status,
+        "nome_proprietario": nova_solicitacao.nome_proprietario,
     }
 
 @router_protected.put("/marcar_agendada")
@@ -375,6 +378,7 @@ async def editar_solicitacao(
     solicitacao_id: UUID,
     tipo_vistoria: Optional[str] = Form(None),
     observacao: Optional[str] = Form(None),
+    nome_proprietario: Optional[str] = Form(None),
     vistoriadores_ids: Optional[str] = Form(None),
     arquivos: Optional[List[UploadFile]] = File(None),
     current_user=Depends(auth.get_current_active_user_or_imobiliaria),
@@ -408,6 +412,8 @@ async def editar_solicitacao(
         solicitacao.tipo_vistoria = tipo_vistoria
     if observacao is not None:
         solicitacao.observacao = observacao
+    if nome_proprietario is not None:
+        solicitacao.nome_proprietario = nome_proprietario.strip() or None
     if vistoriadores_ids is not None:
         if vistoriadores_ids.strip():
             solicitacao.vistoriadores_permitidos = [v.strip() for v in vistoriadores_ids.split(",") if v.strip()]
@@ -482,16 +488,16 @@ def validar_token(token: str, db: Session) -> models.SolicitacaoAgendamento:
         joinedload(models.SolicitacaoAgendamento.cliente),
         joinedload(models.SolicitacaoAgendamento.imobiliaria).joinedload(models.Imobiliaria.grupo)
     ).filter(models.SolicitacaoAgendamento.token == token).first()
-    
+
     if not solicitacao:
         raise HTTPException(status_code=404, detail="Link inválido ou não encontrado.")
-    
-    if solicitacao.status != "PENDENTE":
+
+    if solicitacao.status != "PENDENTE_CLIENTE":
         raise HTTPException(status_code=400, detail="Este link já foi utilizado ou cancelado.")
-        
+
     if solicitacao.expires_at and solicitacao.expires_at < datetime.utcnow():
         raise HTTPException(status_code=400, detail="Este link expirou. Solicite um novo à imobiliária.")
-        
+
     return solicitacao
 
 @router_public.get("/{token}/info", response_model=schemas.PublicAgendamentoInfo)
@@ -794,6 +800,7 @@ def confirmar_agendamento(
     slot_escolhido.observacao_vistoriador = "Agendamento Externo (Principal)"
     slot_escolhido.valor_final_vistoria = valores["valor_final_vistoria"]
     slot_escolhido.valor_vistoriador = valores["valor_vistoriador"]
+    slot_escolhido.nome_proprietario = solicitacao.nome_proprietario
     
     # Slot 2 (Apenas se encontrou um slot físico seguinte)
     if slot_seguinte:
