@@ -115,9 +115,11 @@ export const renderSchedulingPage = async (container) => {
 
     const getImobiliariaIdFromState = () => {
         if (state.imobiliarias?.length > 0) return state.imobiliarias[0].id;
-        if (state.imoveis?.length > 0 && state.imoveis[0].imobiliaria) return state.imoveis[0].imobiliaria.id; 
-        return undefined; 
+        if (state.imoveis?.length > 0 && state.imoveis[0].imobiliaria) return state.imoveis[0].imobiliaria.id;
+        return undefined;
     };
+
+    const isWizardInProgress = () => state.wizard.clienteId !== null || state.wizard.step > 1;
 
     // Helpers de formatação
     const formatStatus = (status) => {
@@ -372,7 +374,30 @@ export const renderSchedulingPage = async (container) => {
     // 5. CONTROLADORES E LÓGICA DE RENDERIZAÇÃO DINÂMICA
     // =========================================================================
     
-    const switchTab = (tabId) => {
+    const showLeaveWizardConfirm = (onConfirm) => {
+        openModal(`
+            <div class="text-center py-4">
+                <div class="w-14 h-14 rounded-full bg-yellow-500/10 border border-yellow-500/20 flex items-center justify-center mx-auto mb-4">
+                    <svg class="w-7 h-7 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+                </div>
+                <h3 class="text-lg font-bold text-white mb-2">Sair do agendamento?</h3>
+                <p class="text-sm text-slate-400 mb-2 px-2">Você já preencheu dados nesta solicitação, mas ainda não a finalizou.</p>
+                <p class="text-sm text-red-400 font-semibold mb-6 px-2">Se sair agora, a solicitação <strong>não será criada</strong> e os dados preenchidos serão perdidos.</p>
+                <div class="flex flex-col gap-3">
+                    <button id="btn-leave-cancel" class="w-full px-6 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-blue-600 text-white font-bold text-sm transition-colors shadow-lg shadow-purple-500/20">Continuar preenchendo</button>
+                    <button id="btn-leave-confirm" class="w-full px-6 py-2.5 rounded-xl bg-slate-700 hover:bg-slate-600 text-slate-400 font-semibold text-sm transition-colors">Sair assim mesmo</button>
+                </div>
+            </div>
+        `);
+        document.getElementById('btn-leave-cancel').onclick = closeModal;
+        document.getElementById('btn-leave-confirm').onclick = () => { closeModal(); onConfirm(); };
+    };
+
+    const switchTab = (tabId, force = false) => {
+        if (!force && state.currentTab === 'agendamento' && tabId !== 'agendamento' && isWizardInProgress()) {
+            showLeaveWizardConfirm(() => switchTab(tabId, true));
+            return;
+        }
         state.currentTab = tabId;
         $$('.tab-content').forEach(el => el.classList.add('hidden', 'anim-slide-up'));
         $$('.tab-btn').forEach(btn => {
@@ -1058,6 +1083,7 @@ export const renderSchedulingPage = async (container) => {
             try {
                 await api.createSolicitacao(fd);
                 showNotification('Enviado com sucesso!', 'success');
+                window.removeEventListener('beforeunload', handleBeforeUnload);
                 e.target.reset();
                 state.wizard = { step: 1, clienteId: null, clienteObj: null, imovelId: null, imovelObj: null };
                 updateWizardUI();
@@ -1230,9 +1256,17 @@ export const renderSchedulingPage = async (container) => {
     // =========================================================================
     // 10. INICIALIZAÇÃO
     // =========================================================================
+    const handleBeforeUnload = (e) => {
+        if (isWizardInProgress()) {
+            e.preventDefault();
+            e.returnValue = '';
+        }
+    };
+
     const init = async () => {
         renderBaseLayout();
         bindEvents();
+        window.addEventListener('beforeunload', handleBeforeUnload);
 
         try {
             const [resClientes, resImoveis, resImobiliarias] = await Promise.all([ 
