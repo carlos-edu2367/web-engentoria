@@ -83,7 +83,6 @@ export const api = {
     getImobiliarias: () => apiFetch(`${API_URL}/sub-imobiliarias`),
 
     // --- GESTÃO DE CLIENTES (edição) ---
-    getMeusClientes: (page = 1, search = '') => apiFetch(`${API_URL}/meus-clientes?skip=${(page-1)*10}&limit=10&search=${encodeURIComponent(search)}`),
     updateCliente: (id, data) => apiFetch(`${API_URL}/clientes/${id}`, { method: 'PUT', body: data }),
 
     // --- AGENDAMENTO EXTERNO ---

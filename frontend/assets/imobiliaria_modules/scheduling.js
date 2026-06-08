@@ -501,11 +501,19 @@ export const renderSchedulingPage = async (container) => {
         
         if(!p.length) return grid.innerHTML = `<div class="col-span-full py-10 text-center text-slate-500 glass-card rounded-xl">Nenhum encontrado.</div>`;
         grid.innerHTML = p.map((c,i) => `
-            <div class="glass-card glass-hover rounded-2xl p-5 anim-slide-up" style="animation-delay:${i*40}ms">
+            <div class="glass-card rounded-2xl p-5 anim-slide-up flex flex-col" style="animation-delay:${i*40}ms">
                 <div class="w-10 h-10 rounded-full bg-purple-900 border border-purple-500 flex items-center justify-center text-white font-bold mb-3">${(c.nome||'C').charAt(0).toUpperCase()}</div>
-                <h4 class="font-bold text-white truncate">${c.nome}</h4><p class="text-sm text-slate-400">${c.email||'--'}</p>
+                <h4 class="font-bold text-white truncate">${c.nome}</h4>
+                <p class="text-sm text-slate-400 truncate">${c.email||'--'}</p>
+                <p class="text-xs text-slate-500 mt-1 font-mono">${c.telefone1||'Sem telefone'}</p>
+                <div class="mt-4 pt-3 border-t border-slate-700/50 flex justify-end">
+                    <button data-action="edit-cliente" data-id="${c.id}" class="inline-flex items-center gap-1.5 text-xs font-semibold py-1.5 px-3 rounded-lg bg-purple-600/20 hover:bg-purple-600/40 text-purple-300 border border-purple-500/30 transition-colors">
+                        <svg class="w-3.5 h-3.5 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
+                        Editar
+                    </button>
+                </div>
             </div>`).join('');
-            
+
         renderPagination(list.length, state.clientesPage, 'pagination-clientes', p => { state.clientesPage=p; renderClientesGrid(); });
     };
 
@@ -963,6 +971,7 @@ export const renderSchedulingPage = async (container) => {
             else if (action === 'wiz-create-imo') handleCreateImovelWizard(e);
             else if (action === 'open-modal-cliente') openAddClienteModal();
             else if (action === 'open-modal-imovel') openAddImovelModal();
+            else if (action === 'edit-cliente') openEditClienteModal(e.target.closest('[data-action]').dataset.id);
         });
 
         // FORMULÁRIO DE SOLICITAÇÃO FINAL
@@ -1239,6 +1248,52 @@ export const renderSchedulingPage = async (container) => {
                 showNotification('Salvo!','success'); closeModal(); 
                 state.clientes = extractList(await safeGetClientes()); renderClientesGrid(); setupSearchableDropdowns(); 
             } catch(err){ showNotification(err.message,'error'); }
+        };
+    };
+
+    const openEditClienteModal = (id) => {
+        const cliente = state.clientes.find(c => c.id === id);
+        if (!cliente) return showNotification('Cliente não encontrado.', 'error');
+
+        const esc = (v) => (v || '').replace(/"/g, '&quot;');
+
+        openModal(`
+            <div class="text-left"><h3 class="text-2xl font-bold text-white mb-4">Editar Cliente</h3>
+            <form id="m-cli-edit-form" class="space-y-4">
+                <div><label class="block text-xs text-slate-400 mb-1">Nome *</label><input type="text" id="m_cli_edit_nome" required class="w-full input-glass rounded-xl p-3" value="${esc(cliente.nome)}"></div>
+                <div><label class="block text-xs text-slate-400 mb-1">E-mail *</label><input type="email" id="m_cli_edit_email" required class="w-full input-glass rounded-xl p-3" value="${esc(cliente.email)}"></div>
+                <div><label class="block text-xs text-slate-400 mb-1">Telefone</label><input type="text" id="m_cli_edit_tel1" class="w-full input-glass rounded-xl p-3" value="${esc(cliente.telefone1)}"></div>
+                <div><label class="block text-xs text-slate-400 mb-1">Telefone secundário <span class="text-slate-600">(opcional)</span></label><input type="text" id="m_cli_edit_tel2" class="w-full input-glass rounded-xl p-3" value="${esc(cliente.telefone2)}"></div>
+                <div class="flex justify-end gap-2 pt-4"><button type="button" class="btn-cancel px-4 py-2 text-slate-300">Cancelar</button><button type="submit" class="bg-purple-600 text-white px-6 py-2 rounded-xl">Salvar</button></div>
+            </form></div>`);
+
+        document.querySelector('.btn-cancel').onclick = closeModal;
+        document.getElementById('m-cli-edit-form').onsubmit = async (e) => {
+            e.preventDefault();
+            const submitBtn = e.target.querySelector('button[type="submit"]');
+            submitBtn.disabled = true; submitBtn.textContent = 'Salvando...';
+            try {
+                const payload = {
+                    nome: e.target.m_cli_edit_nome.value.trim(),
+                    email: e.target.m_cli_edit_email.value.trim(),
+                    telefone1: e.target.m_cli_edit_tel1.value.trim() || null,
+                    telefone2: e.target.m_cli_edit_tel2.value.trim() || null,
+                };
+                if (!payload.nome || !payload.email) throw new Error('Preencha Nome e E-mail.');
+
+                const atualizado = await api.updateCliente(id, payload);
+                showNotification('Cliente atualizado!', 'success');
+                closeModal();
+
+                // Atualiza estado local e re-renderiza sem refazer fetch completo
+                const idx = state.clientes.findIndex(c => c.id === id);
+                if (idx !== -1) state.clientes[idx] = { ...state.clientes[idx], ...atualizado };
+                renderClientesGrid();
+                setupSearchableDropdowns();
+            } catch (err) {
+                showNotification(err.message, 'error');
+                submitBtn.disabled = false; submitBtn.textContent = 'Salvar';
+            }
         };
     };
 

@@ -1276,32 +1276,6 @@ def _query_clientes_do_grupo(db: Session, grupo_id):
     )
 
 
-@router.get("/meus-clientes", response_model=schemas.MeusClientesResponse)
-def listar_meus_clientes(
-    search: str = Query("", description="Buscar por nome ou e-mail"),
-    skip: int = Query(0, ge=0),
-    limit: int = Query(10, ge=1, le=100),
-    db: Session = Depends(get_db),
-    current_user: models.GrupoImobiliaria = Depends(auth.get_current_active_imobiliaria_group),
-):
-    """Lista, com busca e paginação, os clientes pertencentes ao grupo logado."""
-    base_query = _query_clientes_do_grupo(db, current_user.id)
-
-    if search:
-        termo = f"%{search}%"
-        base_query = base_query.filter(
-            or_(models.Cliente.nome.ilike(termo), models.Cliente.email.ilike(termo))
-        )
-
-    total = base_query.with_entities(func.count(func.distinct(models.Cliente.id))).scalar() or 0
-
-    clientes = (
-        base_query.order_by(models.Cliente.nome.asc()).offset(skip).limit(limit).all()
-    )
-
-    return schemas.MeusClientesResponse(clientes=clientes, total=total)
-
-
 @router.put("/clientes/{cliente_id}", response_model=schemas.ClienteDisplay)
 def atualizar_cliente(
     cliente_id: str,

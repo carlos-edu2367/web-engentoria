@@ -9,26 +9,30 @@ Um cliente "pertence" ao grupo logado se existe ao menos um `Imovel` (não delet
 vinculado a esse cliente cuja imobiliária pertence ao grupo. Reutiliza o padrão de
 `agendamento_externo_routes.get_clientes_agendamento`.
 
+> **Decisão de UX (revisada):** não criar aba/página dedicada de Clientes. A edição
+> foi integrada à aba **Clientes já existente dentro da ferramenta de Agendamento**
+> (Hub de Gestão e Vistorias → aba "Clientes"), que já lista os clientes do grupo de
+> forma isolada via `GET /agendamento-externo/clientes`.
+
 ## Backend (`backend/`)
 1. `schemas.py`
    - `ClienteUpdate`: `nome`, `email` (EmailStr), `telefone1`, `telefone2` (apenas estes;
      `cpf` e `saldo_devedor_total` ficam fora de escopo — financeiro/sensível).
-   - `MeusClientesResponse`: `clientes: List[ClienteDisplay]`, `total: int`.
 2. `routes/imobiliaria_routes.py`
    - Helper `_query_clientes_do_grupo(db, grupo_id)` aplicando o join Imovel/Imobiliaria.
-   - `GET /imobiliaria/meus-clientes?search=&skip=&limit=` → lista paginada dos clientes do grupo.
    - `PUT /imobiliaria/clientes/{cliente_id}` (body `ClienteUpdate`):
      - 400 se UUID inválido.
-     - 404/403 se o cliente não pertence ao grupo (não vaza existência → 404).
+     - 404 se o cliente não pertence ao grupo (não vaza existência).
      - 409 se o novo email já pertence a outro cliente ativo.
      - Atualiza e retorna `ClienteDisplay`.
 
 ## Frontend (`frontend/`)
-3. `assets/imobiliaria_modules/api-imob.js`: `getMeusClientes(page, search)`, `updateCliente(id, data)`.
-4. `assets/imobiliaria_modules/clientes.js` (novo): página de listagem + busca + paginação
-   + modal de edição (nome, email, telefone1, telefone2). Estilo idêntico a `laudos.js`.
-5. `assets/imobiliaria_modules/router.js`: `case 'clientes'`.
-6. `imobiliaria-dashboard.html`: item de menu "Clientes" na sidebar (`#clientes`).
+3. `assets/imobiliaria_modules/api-imob.js`: `updateCliente(id, data)`.
+4. `assets/imobiliaria_modules/scheduling.js`:
+   - `renderClientesGrid`: cada card de cliente ganha botão **Editar** (`data-action="edit-cliente"`).
+   - `openEditClienteModal(id)`: modal pré-preenchido (nome, email, telefone1, telefone2),
+     salva via `api.updateCliente` e atualiza o estado/listagem local.
+   - Delegação do clique no handler de `[data-action]`.
 
 ## Riscos / pontos de atenção
 - **Clientes compartilhados**: se um cliente tem imóveis em grupos distintos, ambos podem

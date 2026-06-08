@@ -87,10 +87,6 @@ class ClienteUpdate(BaseModel):
     telefone1: Optional[str] = None
     telefone2: Optional[str] = None
 
-class MeusClientesResponse(BaseModel):
-    clientes: List[ClienteDisplay]
-    total: int
-
 # =================================================================
 # --- Schemas de Imobiliária e Grupos ---
 # =================================================================
