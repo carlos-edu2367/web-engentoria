@@ -1249,3 +1249,115 @@ def search_clientes(
         or_(models.Cliente.nome.ilike(f"%{search}%"), models.Cliente.email.ilike(f"%{search}%")),
         models.Cliente.is_deleted == False
     ).limit(10).all()
+
+
+# =================================================================
+# --- Gestão de Clientes do Grupo (edição multi-tenant) ---
+# =================================================================
+
+def _query_clientes_do_grupo(db: Session, grupo_id):
+    """
+    Query base dos clientes que pertencem ao grupo logado.
+
+    Um cliente pertence ao grupo quando possui ao menos um imóvel (não deletado)
+    em uma imobiliária do grupo. Mesmo padrão de isolamento usado em
+    agendamento_externo_routes.get_clientes_agendamento.
+    """
+    return (
+        db.query(models.Cliente)
+        .join(models.Imovel, models.Imovel.cliente_id == models.Cliente.id)
+        .join(models.Imobiliaria, models.Imovel.imobiliaria_id == models.Imobiliaria.id)
+        .filter(
+            models.Cliente.is_deleted == False,
+            models.Imovel.is_deleted == False,
+            models.Imobiliaria.grupo_id == grupo_id,
+        )
+        .distinct()
+    )
+
+
+@router.get("/meus-clientes", response_model=schemas.MeusClientesResponse)
+def listar_meus_clientes(
+    search: str = Query("", description="Buscar por nome ou e-mail"),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(10, ge=1, le=100),
+    db: Session = Depends(get_db),
+    current_user: models.GrupoImobiliaria = Depends(auth.get_current_active_imobiliaria_group),
+):
+    """Lista, com busca e paginação, os clientes pertencentes ao grupo logado."""
+    base_query = _query_clientes_do_grupo(db, current_user.id)
+
+    if search:
+        termo = f"%{search}%"
+        base_query = base_query.filter(
+            or_(models.Cliente.nome.ilike(termo), models.Cliente.email.ilike(termo))
+        )
+
+    total = base_query.with_entities(func.count(func.distinct(models.Cliente.id))).scalar() or 0
+
+    clientes = (
+        base_query.order_by(models.Cliente.nome.asc()).offset(skip).limit(limit).all()
+    )
+
+    return schemas.MeusClientesResponse(clientes=clientes, total=total)
+
+
+@router.put("/clientes/{cliente_id}", response_model=schemas.ClienteDisplay)
+def atualizar_cliente(
+    cliente_id: str,
+    dados: schemas.ClienteUpdate,
+    db: Session = Depends(get_db),
+    current_user: models.GrupoImobiliaria = Depends(auth.get_current_active_imobiliaria_group),
+):
+    """
+    Atualiza os dados de contato (nome, e-mail, telefone) de um cliente do grupo.
+
+    O grupo só pode editar clientes que lhe pertencem (regra multi-tenant). Caso o
+    cliente não exista ou não pertença ao grupo, responde 404 para não vazar a
+    existência de clientes de outros tenants.
+    """
+    try:
+        cliente_uuid = UUID(cliente_id)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="ID inválido")
+
+    # Garante o isolamento: busca o cliente já restrito aos clientes do grupo.
+    cliente = (
+        _query_clientes_do_grupo(db, current_user.id)
+        .filter(models.Cliente.id == cliente_uuid)
+        .first()
+    )
+    if not cliente:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cliente não encontrado")
+
+    # Impede colisão de e-mail com outro cliente ativo.
+    if dados.email != cliente.email:
+        email_em_uso = (
+            db.query(models.Cliente)
+            .filter(
+                models.Cliente.email == dados.email,
+                models.Cliente.id != cliente.id,
+                models.Cliente.is_deleted == False,
+            )
+            .first()
+        )
+        if email_em_uso:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Já existe um cliente com o e-mail {dados.email}.",
+            )
+
+    cliente.nome = dados.nome
+    cliente.email = dados.email
+    cliente.telefone1 = dados.telefone1
+    cliente.telefone2 = dados.telefone2
+
+    try:
+        db.commit()
+        db.refresh(cliente)
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Erro ao atualizar cliente {cliente_id}: {e}")
+        raise HTTPException(status_code=500, detail="Erro ao atualizar cliente")
+
+    return cliente

@@ -75,9 +75,21 @@ class ClienteCreate(ClienteBase):
 class ClienteDisplay(ClienteBase):
     id: UUID
     saldo_devedor_total: float
-    
+
     class Config:
         from_attributes = True
+
+# Edição de cliente pela imobiliária: somente dados de contato.
+# cpf e saldo_devedor_total ficam de fora propositalmente (financeiro/sensível).
+class ClienteUpdate(BaseModel):
+    nome: str = Field(..., min_length=1)
+    email: EmailStr
+    telefone1: Optional[str] = None
+    telefone2: Optional[str] = None
+
+class MeusClientesResponse(BaseModel):
+    clientes: List[ClienteDisplay]
+    total: int
 
 # =================================================================
 # --- Schemas de Imobiliária e Grupos ---

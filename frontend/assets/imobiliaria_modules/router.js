@@ -1,6 +1,7 @@
 // frontend/assets/imobiliaria_modules/router.js
 import { renderDashboard } from './dashboard.js';
 import { renderLaudosPage } from './laudos.js';
+import { renderClientesPage } from './clientes.js';
 import { renderSchedulingPage } from './scheduling.js';
 import { renderReportsPage } from './reports.js';
 import { showNotification } from './utils.js';
@@ -25,7 +26,7 @@ export const initRouter = (navLinks, pageContent) => {
             link.classList.remove('bg-gray-800', 'text-white');
             const icon = link.querySelector('svg');
             if(icon) {
-                icon.classList.remove('text-green-400', 'text-blue-400', 'text-yellow-400', 'text-purple-400');
+                icon.classList.remove('text-green-400', 'text-blue-400', 'text-emerald-400', 'text-yellow-400', 'text-purple-400');
                 icon.classList.add('text-gray-500');
             }
 
@@ -37,6 +38,7 @@ export const initRouter = (navLinks, pageContent) => {
                     // Restaura cor original baseada no contexto do link (lógica simples baseada no href)
                     if(pageId === 'dashboard') icon.classList.add('text-green-400');
                     if(pageId === 'laudos') icon.classList.add('text-blue-400');
+                    if(pageId === 'clientes') icon.classList.add('text-emerald-400');
                     if(pageId === 'relatorios') icon.classList.add('text-yellow-400');
                     if(pageId === 'agendar') icon.classList.add('text-purple-400');
                 }
@@ -58,6 +60,7 @@ export const initRouter = (navLinks, pageContent) => {
             switch (pageId) {
                 case 'dashboard': await renderDashboard(pageContent); break;
                 case 'laudos': await renderLaudosPage(pageContent); break;
+                case 'clientes': await renderClientesPage(pageContent); break;
                 case 'relatorios': await renderReportsPage(pageContent); break;
                 case 'agendar': await renderSchedulingPage(pageContent); break;
                 default: await renderDashboard(pageContent);

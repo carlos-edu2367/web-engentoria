@@ -79,8 +79,12 @@ export const api = {
 
     // --- CADASTROS & SUPORTE ---
     getImoveis: (search = '') => apiFetch(`${API_URL}/imoveis?search=${search}`),
-    getClientes: (search = '') => apiFetch(`${API_URL}/clientes?search=${search}`), 
+    getClientes: (search = '') => apiFetch(`${API_URL}/clientes?search=${search}`),
     getImobiliarias: () => apiFetch(`${API_URL}/sub-imobiliarias`),
+
+    // --- GESTÃO DE CLIENTES (edição) ---
+    getMeusClientes: (page = 1, search = '') => apiFetch(`${API_URL}/meus-clientes?skip=${(page-1)*10}&limit=10&search=${encodeURIComponent(search)}`),
+    updateCliente: (id, data) => apiFetch(`${API_URL}/clientes/${id}`, { method: 'PUT', body: data }),
 
     // --- AGENDAMENTO EXTERNO ---
     createSolicitacao: (formData) => apiFetch(`${EXT_SCHEDULING_URL}/solicitacao`, {
