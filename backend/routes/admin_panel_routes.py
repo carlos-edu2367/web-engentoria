@@ -858,8 +858,17 @@ def add_horario_fixo(horario: schemas.HorarioFixoCreate, db: Session = Depends(g
     db_vistoriador = db.query(models.Usuario).filter(models.Usuario.id == horario.vistoriador_id, models.Usuario.tipo == 'vistoriador').first()
     if not db_vistoriador:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vistoriador não encontrado.")
-    existing_horario = db.query(models.HorarioFixo).filter(models.HorarioFixo.vistoriador_id == horario.vistoriador_id, models.HorarioFixo.dia_semana == horario.dia_semana, models.HorarioFixo.horario == horario.horario).first()
+    existing_horario = db.query(models.HorarioFixo).filter(
+        models.HorarioFixo.vistoriador_id == horario.vistoriador_id,
+        models.HorarioFixo.dia_semana == horario.dia_semana,
+        models.HorarioFixo.horario == horario.horario
+    ).first()
     if existing_horario:
+        if existing_horario.is_deleted:
+            existing_horario.is_deleted = False
+            db.commit()
+            db.refresh(existing_horario)
+            return existing_horario
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Este horário fixo já existe para o vistoriador.")
     db_horario = models.HorarioFixo(**horario.model_dump())
     db.add(db_horario)
