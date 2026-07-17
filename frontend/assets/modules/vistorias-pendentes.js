@@ -304,6 +304,10 @@ async function abrirModalDetalhes(solicitacaoId) {
                         </span>
                     </div>
                     
+                    ${fullData.tipo_vistoria === 'ENTRADA' ? `
+                        <p class="text-[11px] text-slate-500 font-medium">Proprietário: <span class="text-slate-300 font-semibold">${safeStr(fullData.nome_proprietario)}</span></p>
+                    ` : ''}
+
                     ${fullData.origem ? `
                         <p class="text-[11px] text-slate-500 font-medium">Origem: <span class="text-slate-400">${sanitizeHTML(fullData.origem)}</span></p>
                     ` : ''}
