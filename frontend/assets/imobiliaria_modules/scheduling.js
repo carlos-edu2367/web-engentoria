@@ -1,6 +1,7 @@
 import { api } from './api-imob.js';
 import { SolicitacoesService } from './solicitacoesService.js';
 import { openModal, closeModal, showNotification } from './utils.js';
+import { resolveWizardIds } from './wizard-state.js';
 
 export const renderSchedulingPage = async (container) => {
     
@@ -1067,30 +1068,30 @@ export const renderSchedulingPage = async (container) => {
         e.preventDefault();
         
         const performSubmission = async () => {
-            if (!state.wizard.clienteId || !state.wizard.imovelId) return showNotification('Dados inconsistentes.', 'error');
-            
+            const { clienteId, imovelId } = resolveWizardIds({
+                hiddenClienteId: $('#wiz_cliente_id')?.value,
+                hiddenImovelId: $('#wiz_imovel_id')?.value,
+                stateClienteId: state.wizard.clienteId,
+                stateImovelId: state.wizard.imovelId
+            });
+
+            if (!clienteId || !imovelId) return showNotification('Dados inconsistentes.', 'error');
+
+            state.wizard.clienteId = clienteId;
+            state.wizard.imovelId = imovelId;
+
             const files = $('#form_arquivos').files;
 
             const btn = $('#btn-submit-solicitacao');
             const originalText = btn?.innerHTML || 'Enviar Solicitação →';
             if (btn) {
-                btn.disabled = true; 
+                btn.disabled = true;
                 btn.innerHTML = 'Enviando...';
             }
 
-            // Hardening: Prevenir envio acidental de strings "null" ou "undefined" para o backend
-            if (!state.wizard.clienteId || state.wizard.clienteId === 'null' || state.wizard.clienteId === 'undefined') {
-                if (btn) { btn.disabled = false; btn.innerHTML = originalText; }
-                return showNotification('Erro de validação: Cliente inválido. Por favor, selecione novamente.', 'error');
-            }
-            if (!state.wizard.imovelId || state.wizard.imovelId === 'null' || state.wizard.imovelId === 'undefined') {
-                if (btn) { btn.disabled = false; btn.innerHTML = originalText; }
-                return showNotification('Erro de validação: Imóvel inválido. Por favor, selecione novamente.', 'error');
-            }
-
             const fd = new FormData();
-            fd.append('cliente_id', state.wizard.clienteId);
-            fd.append('imovel_id', state.wizard.imovelId);
+            fd.append('cliente_id', clienteId);
+            fd.append('imovel_id', imovelId);
             fd.append('tipo_vistoria', $('#form_tipo_vistoria').value);
             fd.append('origem', 'DIRETO_IMOBILIARIA');
             
