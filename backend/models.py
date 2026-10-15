@@ -407,6 +407,7 @@ class Laudo(Base):
     imobiliaria = relationship("Imobiliaria", back_populates="laudos")
     categorias = relationship("CategoriaLaudo", back_populates="laudo", cascade="all, delete-orphan")
     vistoriador = relationship("Usuario", back_populates="laudos")
+    analise_nc = relationship("AnaliseNaoConformidade", back_populates="laudo", uselist=False, cascade="all, delete-orphan")
 
     def __init__(self, agenda_id, imovel_id, imobiliaria_id, user_id):
         self.agenda_id = agenda_id
@@ -454,3 +455,60 @@ class ImagemCategoria(Base):
     def __init__(self, categoria_id, file_path):
         self.categoria_id = categoria_id
         self.file_path = file_path
+
+# --- Configuração de Inteligência Artificial (linha única, id=1) ---
+# Provider e modelo são editáveis pelo admin; as chaves de API ficam somente
+# em variáveis de ambiente (OLLAMA_API_KEY / OPENROUTER_API_KEY).
+class ConfiguracaoIA(Base):
+    __tablename__ = "configuracoes_ia"
+    id = Column(Integer, primary_key=True, default=1)
+    provider = Column(TEXT, nullable=False, default="ollama_cloud")  # 'ollama_cloud' | 'openrouter'
+    modelo = Column(TEXT, nullable=False, default="gemma4:31b")
+    habilitado = Column(Boolean, nullable=False, default=True)
+    updated_at = Column(TIMESTAMP(timezone=True), default=func.now(), onupdate=func.now())
+
+
+# --- Laudo de Não Conformidades (gerado por IA a partir do laudo de ENTRADA) ---
+class AnaliseNaoConformidade(Base):
+    __tablename__ = "analises_nao_conformidade"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    laudo_id = Column(UUID(as_uuid=True), ForeignKey("laudos.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    status = Column(TEXT, nullable=False, default="PENDENTE", index=True)  # PENDENTE | PROCESSANDO | CONCLUIDA | ERRO
+    execucao_id = Column(UUID(as_uuid=True), nullable=True)  # identifica a execução dona do resultado
+    fontes = Column(JSON, nullable=True)  # ex.: ["LAUDO_DIGITAL", "ARQUIVO_ANEXO"]
+    provider = Column(TEXT, nullable=True)
+    modelo = Column(TEXT, nullable=True)
+    prompt_versao = Column(TEXT, nullable=True)
+    tentativas = Column(Integer, nullable=False, default=0)
+    erro = Column(Text, nullable=True)
+    aviso = Column(Text, nullable=True)  # observação não fatal (ex.: anexo ilegível, laudo truncado)
+    tokens_entrada = Column(Integer, nullable=True)
+    tokens_saida = Column(Integer, nullable=True)
+    iniciado_em = Column(TIMESTAMP(timezone=True), nullable=True)
+    concluido_em = Column(TIMESTAMP(timezone=True), nullable=True)
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+    updated_at = Column(TIMESTAMP(timezone=True), default=func.now(), onupdate=func.now())
+
+    laudo = relationship("Laudo", back_populates="analise_nc")
+    itens = relationship("ItemNaoConformidade", back_populates="analise", cascade="all, delete-orphan",
+                         order_by="ItemNaoConformidade.ordem")
+
+
+class ItemNaoConformidade(Base):
+    __tablename__ = "itens_nao_conformidade"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    analise_id = Column(UUID(as_uuid=True), ForeignKey("analises_nao_conformidade.id", ondelete="CASCADE"), nullable=False, index=True)
+    tipo = Column(TEXT, nullable=False, default="NAO_CONFORMIDADE")  # NAO_CONFORMIDADE | NAO_VERIFICADO
+    ambiente = Column(TEXT, nullable=False)
+    item = Column(TEXT, nullable=False)
+    descricao = Column(Text, nullable=False)
+    categoria = Column(TEXT, nullable=False, default="OUTROS")
+    gravidade = Column(TEXT, nullable=False, default="MEDIA")  # CRITICA | ALTA | MEDIA | BAIXA
+    trecho_origem = Column(Text, nullable=True)
+    evidencia_validada = Column(Boolean, nullable=False, default=False)
+    origem = Column(TEXT, nullable=False, default="IA")  # IA | MANUAL
+    ordem = Column(Integer, nullable=False, default=0)
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+    updated_at = Column(TIMESTAMP(timezone=True), default=func.now(), onupdate=func.now())
+
+    analise = relationship("AnaliseNaoConformidade", back_populates="itens")

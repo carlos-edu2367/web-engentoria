@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 from fastapi.staticfiles import StaticFiles
 from starlette.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,6 +13,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from .routes import auth_routes, agenda_routes, suporte_routes, admin_routes, imobiliaria_routes, laudo_pdf_routes, agendamento_externo_routes
 from .routes import admin_panel_routes # Rota para o novo painel de admin
 from .routes import vistoria_valores_routes # Rota para manipulação de valores de vistorias
+from .routes import nao_conformidades_routes # Laudo de não conformidades (IA)
+from .ia.servico import varrer_analises_pendentes
 from . import models
 from .config import engine
 
@@ -26,6 +29,8 @@ scheduler = AsyncIOScheduler()
 async def lifespan(app: FastAPI):
     # Agenda o job
     scheduler.add_job(job_limpeza_diaria, CronTrigger(hour=3, minute=0))
+    # Retoma análises de não conformidades interrompidas (ex.: deploy) e re-tenta erros recuperáveis
+    scheduler.add_job(varrer_analises_pendentes, IntervalTrigger(minutes=5), max_instances=1, coalesce=True)
     scheduler.start()
     logger.info("Scheduler iniciado")
     
@@ -63,6 +68,8 @@ app.include_router(vistoria_valores_routes.router, prefix=api_prefix) # Rota par
 app.include_router(laudo_pdf_routes.router, prefix=api_prefix)
 app.include_router(agendamento_externo_routes.router_protected, prefix=api_prefix)
 app.include_router(agendamento_externo_routes.router_public, prefix=api_prefix)
+app.include_router(nao_conformidades_routes.router_admin, prefix=api_prefix)
+app.include_router(nao_conformidades_routes.router_imobiliaria, prefix=api_prefix)
 
 # --- SERVINDO O FRONTEND (Opcional, para desenvolvimento) ---
 # Monta a pasta 'assets' do frontend

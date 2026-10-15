@@ -1,5 +1,6 @@
 import { api } from '../api.js';
 import { showModal, hideModal, showAlert, renderPageContent, sanitizeHTML } from '../ui.js';
+import { renderNaoConformidades } from './nao-conformidades.js';
 
 /**
  * Função principal para inicializar o módulo de Laudos.
@@ -145,6 +146,7 @@ async function renderLaudoDetails(laudoId) {
             <div class="bg-gray-800/80 p-6 rounded-b-xl neon-border border-t-0">
                 ${obsHTML}
                 ${pdfHTML} <!-- <<< ADICIONADO AQUI -->
+                <div id="nao-conformidades-container"></div>
                 <h3 class="text-2xl font-bold text-white mb-6 border-b border-gray-700/50 pb-2">Itens Vistoriados</h3>
                 <div id="categorias-container" class="space-y-4">
                     ${data.categorias.map(cat => `
@@ -164,6 +166,9 @@ async function renderLaudoDetails(laudoId) {
             <!-- 3. Ações (Aprovar/Recusar) -->
             ${!data.aprovado ? actionsHTML : ''}
         `;
+
+        // Laudo de não conformidades (somente vistorias de entrada; o próprio módulo decide)
+        renderNaoConformidades(document.getElementById('nao-conformidades-container'), data.id);
 
         // Adiciona listeners
         document.querySelectorAll('.laudo-categoria').forEach(el => {
@@ -250,7 +255,8 @@ function showImageViewer(src) {
 function handleAprovar(laudoId) {
     const modalHTML = `
         <h2 class="text-2xl font-bold text-green-400 mb-4">Aprovar Laudo</h2>
-        <p class="text-gray-300 mb-6">Tem certeza que deseja aprovar este laudo? Esta ação não pode ser desfeita.</p>
+        <p class="text-gray-300 mb-3">Tem certeza que deseja aprovar este laudo? Esta ação não pode ser desfeita.</p>
+        <p class="text-gray-400 text-sm mb-6">Em vistorias de entrada, o laudo de não conformidades também é liberado para a imobiliária.</p>
         <div id="modal-error" class="text-red-400 text-sm hidden mb-4"></div>
         <div class="flex justify-end gap-4">
             <button id="btn-cancel" class="px-4 py-2 bg-gray-600 hover:bg-gray-500 rounded-lg transition">Cancelar</button>

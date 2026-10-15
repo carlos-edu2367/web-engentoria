@@ -110,6 +110,11 @@ function setupEventListeners() {
         if (btn) {
             const id = btn.dataset.id;
             await handleViewPDF(id, btn);
+            return;
+        }
+        const btnNc = e.target.closest('.view-nc-btn');
+        if (btnNc) {
+            await handleViewNaoConformidades(btnNc.dataset.id, btnNc);
         }
     });
 }
@@ -160,7 +165,13 @@ async function fetchAndDisplayLaudos(searchTerm = '') {
                     <td class="py-4 px-4 text-sm text-gray-500 font-mono">
                         ${l.cod_imovel}
                     </td>
-                    <td class="py-4 pr-6 text-right">
+                    <td class="py-4 pr-6 text-right whitespace-nowrap">
+                        ${l.qtd_nao_conformidades !== null && l.qtd_nao_conformidades !== undefined ? `
+                        <button data-id="${l.id}" title="Laudo de não conformidades"
+                            class="view-nc-btn inline-flex items-center gap-2 px-3 py-1.5 mr-2 rounded-lg text-sm font-medium ${l.qtd_nao_conformidades > 0 ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20 hover:bg-amber-500' : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500'} hover:text-white transition-all">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                            <span class="hidden sm:inline">Não conformidades (${Number(l.qtd_nao_conformidades)})</span>
+                        </button>` : ''}
                         <button data-id="${l.id}" 
                             class="view-pdf-btn inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20 hover:bg-blue-500 hover:text-white hover:border-blue-500 transition-all shadow-lg shadow-blue-900/0 hover:shadow-blue-900/30">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
@@ -206,6 +217,32 @@ async function handleViewPDF(id, btnElement) {
         showNotification('Erro ao abrir laudo: ' + e.message, 'error');
     } finally {
         // Restaura botão
+        btnElement.innerHTML = originalContent;
+        btnElement.disabled = false;
+    }
+}
+
+async function handleViewNaoConformidades(id, btnElement) {
+    const originalContent = btnElement.innerHTML;
+    btnElement.disabled = true;
+    btnElement.innerHTML = `<div class="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin"></div>`;
+    // Abre a aba antes da requisição para não ser bloqueada pelo navegador
+    const novaAba = window.open('', '_blank');
+
+    try {
+        const response = await api.getPdfNaoConformidades(id);
+        const url = window.URL.createObjectURL(await response.blob());
+        if (novaAba) {
+            novaAba.location.href = url;
+        } else {
+            window.open(url, '_blank');
+        }
+        setTimeout(() => window.URL.revokeObjectURL(url), 60000);
+    } catch (e) {
+        if (novaAba) novaAba.close();
+        console.error(e);
+        showNotification('Erro ao abrir laudo de não conformidades: ' + e.message, 'error');
+    } finally {
         btnElement.innerHTML = originalContent;
         btnElement.disabled = false;
     }

@@ -159,6 +159,37 @@ async function downloadApiFile(endpoint, params) {
     }
 }
 
+/**
+ * Busca um PDF autenticado e abre em uma nova aba.
+ * A aba é aberta antes do fetch para não ser bloqueada pelo navegador.
+ */
+async function openApiPdf(endpoint) {
+    const token = getToken(); // Função global de auth.js
+    if (!token) {
+        logout(); // Função global de auth.js
+        throw new Error("Token de autenticação não encontrado.");
+    }
+    const novaAba = window.open('', '_blank');
+    try {
+        const response = await fetch(`${API_BASE_URL_ADMIN}${endpoint}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.detail || `Erro ao abrir PDF (Status: ${response.status})`);
+        }
+        const url = window.URL.createObjectURL(await response.blob());
+        if (novaAba) {
+            novaAba.location.href = url;
+        } else {
+            window.open(url, '_blank');
+        }
+        setTimeout(() => window.URL.revokeObjectURL(url), 60000);
+    } catch (error) {
+        if (novaAba) novaAba.close();
+        throw error;
+    }
+}
 
 export const api = {
     // Dashboard
@@ -256,6 +287,19 @@ export const api = {
     updateLaudoStatus: (data) => apiFetch('/laudo/status', 'PUT', data),
     getLaudoCategoriaDetails: (id_categoria) => apiFetch(`/laudos/categoria/${id_categoria}`),
     getLaudoByAgendamento: (id_agendamento) => apiFetch(`/laudos/agendamento/${id_agendamento}`),
+
+    // --- LAUDO DE NÃO CONFORMIDADES (IA) ---
+    getNaoConformidades: (id_laudo) => apiFetch(`/laudo/${id_laudo}/nao-conformidades`),
+    gerarNaoConformidades: (id_laudo) => apiFetch(`/laudo/${id_laudo}/nao-conformidades/gerar`, 'POST'),
+    addItemNaoConformidade: (id_laudo, data) => apiFetch(`/laudo/${id_laudo}/nao-conformidades/itens`, 'POST', data),
+    updateItemNaoConformidade: (id_item, data) => apiFetch(`/nao-conformidades/itens/${id_item}`, 'PUT', data),
+    deleteItemNaoConformidade: (id_item) => apiFetch(`/nao-conformidades/itens/${id_item}`, 'DELETE'),
+    abrirPdfNaoConformidades: (id_laudo) => openApiPdf(`/laudo/${id_laudo}/nao-conformidades/pdf`),
+
+    // --- CONFIGURAÇÃO DE IA ---
+    getIAConfig: () => apiFetch('/ia/config'),
+    updateIAConfig: (data) => apiFetch('/ia/config', 'PUT', data),
+    testarIA: (data) => apiFetch('/ia/testar', 'POST', data),
     
     // --- NOVAS ROTAS DE IMPRODUTIVAS (PARTE 5) ---
     getImprodutivas: (skip = 0, limit = 50) => apiFetch(`/improdutivas/?skip=${skip}&limit=${limit}`),

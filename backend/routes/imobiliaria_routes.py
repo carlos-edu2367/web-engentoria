@@ -23,6 +23,7 @@ from uuid import UUID
 
 from .. import models, schemas, auth
 from ..config import get_db
+from ..ia.servico import qtd_nao_conformidades_por_laudo
 import unicodedata, re
 
 logger = logging.getLogger(__name__)
@@ -39,6 +40,8 @@ class LaudoAprovadoItem(BaseModel):
     endereco: str
     aprovado: bool
     file_path: Optional[str] = None
+    # None = laudo de não conformidades indisponível; 0+ = disponível com N não conformidades
+    qtd_nao_conformidades: Optional[int] = None
     
     class Config:
         from_attributes = True # Compatibilidade com Pydantic v2 (ou orm_mode=True para v1)
@@ -1045,7 +1048,8 @@ async def ver_status_laudo(id_agenda: str,
         raise HTTPException(status_code=400, detail="ID inválido")
     
     laudo = (session.query(models.Laudo)
-             .filter(models.Laudo.agenda_id == agenda_id)
+             .filter(models.Laudo.agenda_id == agenda_id,
+                     models.Laudo.imobiliaria_id.in_(get_imobiliaria_ids_from_group(user)))
              .first())
     if not laudo:
         raise HTTPException(status_code=404, detail="Nenhum laudo encontrado")
@@ -1067,7 +1071,8 @@ async def ver_laudo(id_laudo: str,
     
     laudo = (session.query(models.Laudo)
              .options(joinedload(models.Laudo.categorias))
-             .filter(models.Laudo.id == laudo_id)
+             .filter(models.Laudo.id == laudo_id,
+                     models.Laudo.imobiliaria_id.in_(get_imobiliaria_ids_from_group(user)))
              .first())
     if not laudo:
         raise HTTPException(status_code=404, detail="Laudo não encontrado")
@@ -1101,9 +1106,11 @@ async def ver_categoria(id_categoria: str,
         raise HTTPException(status_code=400, detail="ID inválido")
     
     categoria = (session.query(models.CategoriaLaudo)
+                 .join(models.CategoriaLaudo.laudo)
                  .options(joinedload(models.CategoriaLaudo.imagens),
                           joinedload(models.CategoriaLaudo.itens))
-                 .filter(models.CategoriaLaudo.id == categoria_id)
+                 .filter(models.CategoriaLaudo.id == categoria_id,
+                         models.Laudo.imobiliaria_id.in_(get_imobiliaria_ids_from_group(user)))
                  .first())
     if not categoria:
         raise HTTPException(status_code=404, detail="Categoria não encontrada")
@@ -1188,6 +1195,8 @@ async def listar_laudos_aprovados(
     # (Embora `LaudoAprovadoItem.from_orm(laudo)` devesse funcionar,
     # precisamos acessar laudo.imovel.*)
     
+    qtd_nc = qtd_nao_conformidades_por_laudo(session, [laudo.id for laudo in laudos])
+
     response_items = []
     for laudo in laudos:
         if laudo.imovel: # Garante que o imóvel foi carregado
@@ -1198,7 +1207,8 @@ async def listar_laudos_aprovados(
                     cod_imovel=laudo.imovel.cod_imovel,
                     endereco=laudo.imovel.endereco,
                     aprovado=laudo.aprovado,
-                    file_path=laudo.file_path
+                    file_path=laudo.file_path,
+                    qtd_nao_conformidades=qtd_nc.get(laudo.id)
                 )
             )
 

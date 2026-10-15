@@ -654,3 +654,55 @@ class PaginatedSolicitacoesResponse(BaseModel):
     page_size: int
     total_pages: int
     items: List[SolicitacaoAgendamentoDisplay]
+
+# =================================================================
+# --- Inteligência Artificial / Laudo de Não Conformidades ---
+# =================================================================
+
+class ProviderIAEnum(str, Enum):
+    OLLAMA_CLOUD = "ollama_cloud"
+    OPENROUTER = "openrouter"
+
+class CategoriaNCEnum(str, Enum):
+    HIDRAULICA = "HIDRAULICA"
+    ELETRICA = "ELETRICA"
+    ESQUADRIAS = "ESQUADRIAS"
+    GAS = "GAS"
+    SEGURANCA_ESTRUTURA = "SEGURANCA_ESTRUTURA"
+    EQUIPAMENTOS = "EQUIPAMENTOS"
+    OUTROS = "OUTROS"
+
+class GravidadeNCEnum(str, Enum):
+    CRITICA = "CRITICA"
+    ALTA = "ALTA"
+    MEDIA = "MEDIA"
+    BAIXA = "BAIXA"
+
+class TipoItemNCEnum(str, Enum):
+    NAO_CONFORMIDADE = "NAO_CONFORMIDADE"
+    NAO_VERIFICADO = "NAO_VERIFICADO"
+
+class ConfiguracaoIAUpdate(BaseModel):
+    provider: ProviderIAEnum
+    modelo: str = Field(..., min_length=1, max_length=200)
+    habilitado: bool = True
+
+class TesteIARequest(BaseModel):
+    provider: Optional[ProviderIAEnum] = None
+    modelo: Optional[str] = Field(None, max_length=200)
+
+class ItemNaoConformidadeCreate(BaseModel):
+    tipo: TipoItemNCEnum = TipoItemNCEnum.NAO_CONFORMIDADE
+    ambiente: str = Field(..., min_length=1, max_length=200)
+    item: str = Field(..., min_length=1, max_length=200)
+    descricao: str = Field(..., min_length=1, max_length=1000)
+    categoria: CategoriaNCEnum = CategoriaNCEnum.OUTROS
+    gravidade: GravidadeNCEnum = GravidadeNCEnum.MEDIA
+
+class ItemNaoConformidadeUpdate(BaseModel):
+    tipo: Optional[TipoItemNCEnum] = None
+    ambiente: Optional[str] = Field(None, min_length=1, max_length=200)
+    item: Optional[str] = Field(None, min_length=1, max_length=200)
+    descricao: Optional[str] = Field(None, min_length=1, max_length=1000)
+    categoria: Optional[CategoriaNCEnum] = None
+    gravidade: Optional[GravidadeNCEnum] = None

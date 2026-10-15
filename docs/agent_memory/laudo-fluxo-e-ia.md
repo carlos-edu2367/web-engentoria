@@ -12,9 +12,18 @@
 - `job_limpeza_diaria` (03:00) apaga `DocumentoAgenda` e `DocumentosInfoMensal` com mais de 40 dias. Não guardar documentos permanentes nessas tabelas.
 - Frontend admin "Gestão" = `gestao.html` + `assets/gestao.js` + `assets/modules/*`. `admin-dashboard.html` é o painel de TI (`UsuarioTI`).
 
-## Dívidas de autorização pré-existentes (não corrigidas)
-- `PUT /agenda/laudos/laudo/status` não confere o dono (`vistoriador_id`).
-- `GET /imobiliaria/laudo/{id}` e `GET /imobiliaria/categoria/{id}` não conferem o tenant (grupo).
+## Autorização (corrigido junto com o laudo de não conformidades)
+- `PUT /agenda/laudos/laudo/status` agora exige `vistoriador_id == current_user.id`.
+- `GET /imobiliaria/laudo/{id}`, `GET /imobiliaria/categoria/{id}` e `GET /imobiliaria/agenda/{id}/laudo` agora filtram pelas imobiliárias do grupo logado (404 fora do tenant).
+- Continua público: `GET /laudo/{id}/pdf` (não é usado pelo frontend web).
+- `DELETE /agenda/laudo/pdf/{id}` gravava `file_path = False`; agora grava `None`. Registros antigos podem ter `"false"`, e `servico.arquivo_anexado()` trata esse caso.
+
+## Laudo de não conformidades (implementado)
+- Gatilho: finalização de laudo cuja `agenda.tipo == 'ENTRADA'`, com `configuracoes_ia.habilitado`. Roda em `BackgroundTasks`, e o APScheduler faz uma varredura a cada 5 min.
+- Fila no banco: `analises_nao_conformidade.status` (PENDENTE, PROCESSANDO, CONCLUIDA ou ERRO). Claim atômico por UPDATE; `execucao_id` descarta resultados de execuções substituídas.
+- Erros não recuperáveis (sem chave, sem texto, PDF digitalizado) recebem `tentativas = MAX_TENTATIVAS` e não são re-tentados automaticamente.
+- A imobiliária vê o documento quando o laudo está aprovado e a análise está CONCLUIDA.
+- Testes rodam localmente com Postgres 16 (`service postgresql start`) e `DATABASE_URL`/`SECRET_KEY`/`SUPABASE_*` no ambiente. `test_cpf_nome_proprietario.py` já falhava no teardown (FK de `solicitacoes_agendamento`) antes desta feature.
 
 ## IA
 - Uso existente: `GET /admin-panel/dashboard/analise-ia` com `google-generativeai`, `GEMINI_API_KEY` e modelo fixo no código.

@@ -1,6 +1,6 @@
 # backend/routes/agenda_routes.py
 
-from fastapi import APIRouter, Depends, Query, HTTPException, Form, File, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, HTTPException, Form, File, UploadFile
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import extract
 from typing import List, Optional
@@ -15,6 +15,7 @@ from ..supabase_client import supabase, gerar_url_assinada, deletar_arquivo_supa
 
 from .. import models, schemas, auth
 from ..config import get_db
+from ..ia.servico import agendar_analise_ao_finalizar
 
 logger = logging.getLogger(__name__)
 
@@ -608,6 +609,7 @@ async def ver_categoria(id_categoria: str,
 @router.put("/laudos/laudo/status")
 async def atualizar_status_laudo(id_laudo: str,
                                  finalizado: bool,
+                                 background_tasks: BackgroundTasks,
                                  session: Session = Depends(get_db),
                                  current_user: models.Usuario = Depends(auth.get_current_active_vistoriador)):
     try:
@@ -615,7 +617,10 @@ async def atualizar_status_laudo(id_laudo: str,
     except:
         raise HTTPException(status_code=400, detail="ID inválido")
     
-    laudo = session.query(models.Laudo).filter(models.Laudo.id == laudo_id).first()
+    laudo = (session.query(models.Laudo)
+             .filter(models.Laudo.id == laudo_id,
+                     models.Laudo.vistoriador_id == current_user.id)
+             .first())
     if not laudo:
         raise HTTPException(status_code=404, detail="Laudo não encontrado")
     
@@ -623,11 +628,15 @@ async def atualizar_status_laudo(id_laudo: str,
     laudo.aprovado = False
     try:
         session.commit()
-        return
     except Exception as e:
         logger.error(f"Erro ao atualizar status do laudo: {e}")
         session.rollback()
         raise HTTPException(status_code=500, detail="Erro ao atualizar laudo")
+
+    # Laudo de ENTRADA finalizado: gera o laudo de não conformidades em background
+    if finalizado:
+        agendar_analise_ao_finalizar(session, laudo, background_tasks)
+    return
     
 @router.delete("/laudos/categoria/{id_categoria}")
 async def deletar_categoria(id_categoria: str,
@@ -818,7 +827,7 @@ async def deletar_pdf_laudo(id_laudo: str,
         raise HTTPException(status_code=400, detail="Não existe um pdf anexado")
     
     if deletar_arquivo_supabase(file_path=laudo.file_path, bucket="documentos"):
-        laudo.file_path = False
+        laudo.file_path = None
         session.commit()
         return
     else:

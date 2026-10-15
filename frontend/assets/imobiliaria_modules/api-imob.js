@@ -70,6 +70,8 @@ export const api = {
     getLaudos: (page, search = '') => apiFetch(`${API_URL}/laudos?skip=${(page-1)*10}&limit=10&search=${search}`),
     // Pega detalhes do laudo (incluindo URL assinada do PDF)
     getLaudoDetalhes: (idLaudo) => apiFetch(`${API_URL}/laudo/${idLaudo}`),
+    // PDF do laudo de não conformidades (retorna a Response crua para gerar o blob)
+    getPdfNaoConformidades: (idLaudo) => apiFetch(`${API_URL}/laudo/${idLaudo}/nao-conformidades/pdf`, { isBlob: true }),
 
     // --- RELATÓRIOS ---
     // Pega dados JSON para visualização

@@ -1,8 +1,55 @@
 # Plano: Laudo de Não Conformidades (IA) a partir do Laudo de Entrada
 
-> Status: **proposta — nada implementado ainda**.
+> Status: **implementado** (fases 1 a 3), com as decisões confirmadas em §0.
+> As seções 1 a 10 registram o estudo original; onde divergem de §0, **vale §0**.
 > Legenda: **[verificado]** = visto no código; **[externo]** = verificado em documentação
 > do provider; **[proposta]** = decisão de design a validar; **[aberto]** = depende do usuário.
+
+## 0. Decisões confirmadas e o que foi implementado
+
+**Decisões do usuário**
+1. O laudo de não conformidades **sai aprovado junto com o laudo de entrada**: não há aprovação separada. O admin pode revisar e editar os itens antes de aprovar o laudo.
+2. Só a **imobiliária** recebe o documento.
+3. Fontes: somente o que o **vistoriador** cria (laudo digital) ou anexa (PDF/DOCX) na dashboard dele. Não há upload avulso.
+4. Gera ao **finalizar** o laudo de entrada.
+5. Aviso no documento: **"Gerado com o auxílio de Inteligência Artificial."**
+6. Critério: não conformidade é qualquer coisa que atrapalhe o inquilino a usar o imóvel; itens estéticos não entram. Não há laudos reais para calibração, então o prompt usa esse critério com exemplos.
+7. As falhas de autorização pré-existentes de §2.3 foram corrigidas, menos a rota pública de PDF (ver "Fora do escopo").
+
+**Divergências em relação à proposta**
+- Sem endpoint e sem status de aprovação próprios (`APROVADA`, `aprovado_por`). A imobiliária vê o documento quando `laudo.aprovado` e `analise.status == CONCLUIDA`.
+- `configuracoes_ia` tem só `provider`, `modelo` e `habilitado`. Temperatura (0.1) e timeouts ficam como constantes em `backend/ia/providers.py`.
+- Itens removidos pelo admin são apagados (sem soft delete). Não há campo `pagina`.
+- Campo novo `aviso` na análise, para problemas não fatais: anexo ilegível ou digitalizado (a análise segue só com o laudo digital) e laudo truncado por tamanho.
+- O PDF é gerado sob demanda; nada é salvo no storage.
+
+**Arquivos**
+
+| Área | Arquivo |
+|---|---|
+| Modelos | `backend/models.py` (`ConfiguracaoIA`, `AnaliseNaoConformidade`, `ItemNaoConformidade`) |
+| Providers | `backend/ia/providers.py` |
+| Extração | `backend/ia/extracao.py` |
+| Prompt e análise | `backend/ia/nao_conformidades.py` |
+| Fila e persistência | `backend/ia/servico.py` |
+| PDF | `backend/ia/pdf_nao_conformidades.py` |
+| Rotas | `backend/routes/nao_conformidades_routes.py` |
+| Gatilho e correção de dono | `backend/routes/agenda_routes.py` |
+| Tenant e contador na listagem | `backend/routes/imobiliaria_routes.py` |
+| Admin (UI) | `frontend/assets/modules/nao-conformidades.js`, `modules/laudos.js`, `modules/configuracoes.js`, `api.js` |
+| Imobiliária (UI) | `frontend/assets/imobiliaria_modules/laudos.js`, `api-imob.js` |
+| Testes | `tests/test_ia_nao_conformidades_unit.py` (21), `tests/test_laudo_nao_conformidades.py` (14) |
+
+**Deploy**
+1. `pip install -r requirements.txt` (novas dependências: `pypdf` e `python-docx`).
+2. Variáveis de ambiente: `OLLAMA_API_KEY` e/ou `OPENROUTER_API_KEY`. Sem a chave do provider escolhido, a análise fica com status de erro e a tela de Configurações avisa.
+3. **Não há migração manual**: as três tabelas novas são criadas pelo `create_all` na subida.
+4. Em Gestão → Configurações → Inteligência Artificial, conferir provider e modelo e clicar em **Testar conexão**.
+
+**Fora do escopo / pendências**
+- `GET /laudo/{id}/pdf` continua público. Não é chamado pelo frontend web e pode ser usado por outro cliente; exigir login ali poderia quebrar esse cliente.
+- Sem OCR na v1: PDF digitalizado sem texto não é analisado (gera aviso ou erro).
+- Calibração de qualidade com laudos reais (§9) segue pendente por falta de amostras.
 
 ## 1. Objetivo
 
