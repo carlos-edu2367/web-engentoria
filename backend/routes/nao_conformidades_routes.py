@@ -22,7 +22,7 @@ from .. import models, schemas, auth
 from ..config import get_db
 from ..ia import servico
 from ..ia.pdf_nao_conformidades import gerar_pdf_nao_conformidades
-from ..ia.providers import PROVIDERS, ErroProviderIA, chave_configurada, criar_provider
+from ..ia.providers import PROVIDERS, ErroProviderIA, chave_configurada, criar_provider, listar_modelos
 
 logger = logging.getLogger(__name__)
 
@@ -196,6 +196,20 @@ def atualizar_config_ia(payload: schemas.ConfiguracaoIAUpdate, db: Session = Dep
     db.commit()
     db.refresh(config)
     return _resposta_config(config)
+
+
+@router_admin.get("/ia/modelos", summary="Lista os modelos disponíveis no provider (cache de 24h)")
+def listar_modelos_ia(provider: schemas.ProviderIAEnum, atualizar: bool = False):
+    try:
+        resultado = listar_modelos(provider.value, forcar=atualizar)
+    except ErroProviderIA as e:
+        raise HTTPException(status_code=502, detail=e.mensagem)
+    return {
+        "provider": resultado["provider"],
+        "modelos": resultado["modelos"],
+        "atualizado_em": int(resultado["atualizado_em"]),
+        "desatualizado": resultado["desatualizado"],
+    }
 
 
 @router_admin.post("/ia/testar", summary="Testa a conexão com o provider de IA")

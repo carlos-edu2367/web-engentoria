@@ -263,3 +263,93 @@ def test_gera_pdf_com_itens_e_aviso_de_ia():
 def test_gera_pdf_sem_itens():
     buffer = gerar_pdf_nao_conformidades({"codigo_imovel": "CT-1", "itens": []})
     assert "Nenhuma não conformidade funcional foi identificada" in _texto_pdf(buffer)
+
+
+# --- Lista de modelos (cache) ----------------------------------------------------
+
+from backend.ia import providers as prov
+
+
+class _RespostaHTTP:
+    def __init__(self, data, status=200):
+        self._data, self.status_code = data, status
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            import requests
+            raise requests.HTTPError(f"HTTP {self.status_code}")
+
+    def json(self):
+        return self._data
+
+
+OPENROUTER_MODELOS = {"data": [
+    {"id": "google/gemma-4-31b-it", "name": "Google: Gemma 4 31B", "context_length": 262144,
+     "architecture": {"input_modalities": ["text", "image"], "output_modalities": ["text"]},
+     "pricing": {"prompt": "0.00000012", "completion": "0.00000035"},
+     "supported_parameters": ["response_format", "reasoning"]},
+    {"id": "black-forest/flux", "name": "Flux", "architecture": {"output_modalities": ["image"]}},
+]}
+
+
+@pytest.fixture
+def cache_limpo():
+    prov._cache_modelos.clear()
+    yield
+    prov._cache_modelos.clear()
+
+
+def test_normaliza_openrouter_e_ignora_modelos_sem_texto():
+    modelos = prov._normalizar_openrouter(OPENROUTER_MODELOS)
+    assert [m["id"] for m in modelos] == ["google/gemma-4-31b-it"]
+    m = modelos[0]
+    assert m["contexto"] == 262144 and m["imagem"] is True
+    assert m["preco_entrada"] == 0.12 and m["preco_saida"] == 0.35
+    assert set(m["capacidades"]) == {"saida_estruturada", "raciocinio"}
+
+
+def test_normaliza_ollama():
+    modelos = prov._normalizar_ollama({"models": [
+        {"name": "gemma4:31b", "capabilities": ["completion", "vision", "thinking"]},
+        {"name": "gpt-oss:20b", "capabilities": ["completion"]},
+    ]})
+    assert modelos[0] == {"id": "gemma4:31b", "nome": "gemma4:31b", "contexto": None, "preco_entrada": None,
+                          "preco_saida": None, "capacidades": ["raciocinio"], "imagem": True}
+    assert modelos[1]["capacidades"] == [] and modelos[1]["imagem"] is False
+
+
+def test_lista_de_modelos_usa_cache_e_forca_atualizacao(monkeypatch, cache_limpo):
+    chamadas = []
+
+    def fake_get(url, headers=None, timeout=None):
+        chamadas.append(url)
+        return _RespostaHTTP(OPENROUTER_MODELOS)
+
+    monkeypatch.setattr(prov.requests, "get", fake_get)
+    r1 = prov.listar_modelos("openrouter")
+    r2 = prov.listar_modelos("openrouter")
+    assert len(chamadas) == 1 and r1["modelos"] == r2["modelos"] and r2["desatualizado"] is False
+    prov.listar_modelos("openrouter", forcar=True)
+    assert len(chamadas) == 2
+
+
+def test_lista_de_modelos_usa_cache_antigo_se_provider_falhar(monkeypatch, cache_limpo):
+    import requests
+    monkeypatch.setattr(prov.requests, "get", lambda *a, **k: _RespostaHTTP(OPENROUTER_MODELOS))
+    prov.listar_modelos("openrouter")
+
+    def falha(*a, **k):
+        raise requests.ConnectionError("fora do ar")
+
+    monkeypatch.setattr(prov.requests, "get", falha)
+    r = prov.listar_modelos("openrouter", forcar=True)
+    assert r["desatualizado"] is True and len(r["modelos"]) == 1
+
+    prov._cache_modelos.clear()
+    with pytest.raises(ErroProviderIA):
+        prov.listar_modelos("openrouter")
+
+
+def test_remove_bloco_de_raciocinio_da_resposta():
+    assert prov.limpar_resposta("<think>\nanalisando...\n</think>\n\nA agenda está ok.") == "A agenda está ok."
+    assert prov.limpar_resposta(None) == ""

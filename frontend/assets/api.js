@@ -300,6 +300,7 @@ export const api = {
     getIAConfig: () => apiFetch('/ia/config'),
     updateIAConfig: (data) => apiFetch('/ia/config', 'PUT', data),
     testarIA: (data) => apiFetch('/ia/testar', 'POST', data),
+    listarModelosIA: (provider, atualizar = false) => apiFetch(`/ia/modelos?provider=${encodeURIComponent(provider)}&atualizar=${atualizar}`),
     
     // --- NOVAS ROTAS DE IMPRODUTIVAS (PARTE 5) ---
     getImprodutivas: (skip = 0, limit = 50) => apiFetch(`/improdutivas/?skip=${skip}&limit=${limit}`),

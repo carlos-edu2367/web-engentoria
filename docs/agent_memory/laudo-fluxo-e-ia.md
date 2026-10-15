@@ -26,7 +26,11 @@
 - Testes rodam localmente com Postgres 16 (`service postgresql start`) e `DATABASE_URL`/`SECRET_KEY`/`SUPABASE_*` no ambiente. `test_cpf_nome_proprietario.py` já falhava no teardown (FK de `solicitacoes_agendamento`) antes desta feature.
 
 ## IA
-- Uso existente: `GET /admin-panel/dashboard/analise-ia` com `google-generativeai`, `GEMINI_API_KEY` e modelo fixo no código.
+- Configuração única em `configuracoes_ia` (provider + modelo), usada pelo laudo de não conformidades **e** pelo Insight IA da agenda (`GET /admin-panel/dashboard/analise-ia`). O flag `habilitado` vale só para a geração automática de NC.
+- O insight usava `google-generativeai` com `GEMINI_API_KEY` e modelo fixo; foi migrado para `backend/ia/providers.criar_provider`, e a dependência do Gemini saiu do `requirements.txt`. Erro de provider responde 502 (401/403 deslogam o admin no frontend).
+- Lista de modelos: `GET /admin-panel/ia/modelos?provider=&atualizar=` → `providers.listar_modelos` (cache em memória de 24h por provider; se o provider falhar, devolve o cache antigo com `desatualizado: true`). O frontend também guarda a lista por 24h no `localStorage` (`engentoria_ia_modelos_v1_<provider>`).
+- Endpoints públicos de listagem (sem chave): Ollama `GET https://ollama.com/api/tags` (`models[].name`, `capabilities`); OpenRouter `GET https://openrouter.ai/api/v1/models` (`data[].id`, `context_length`, `pricing` por token, `supported_parameters`).
+- `providers.limpar_resposta` remove blocos `<think>...</think>` que modelos com raciocínio às vezes incluem no conteúdo.
 - Ollama Cloud (docs.ollama.com/cloud): `POST https://ollama.com/api/chat`, `Authorization: Bearer $OLLAMA_API_KEY`, modelo `gemma4:31b` (o sufixo `-cloud` é só para o app/CLI), `format` aceita JSON Schema.
 - OpenRouter: `POST https://openrouter.ai/api/v1/chat/completions`, modelo `google/gemma-4-31b-it` (256K de contexto, texto e imagem).
 - Plano da feature de não conformidades: `docs/plans/laudo-nao-conformidades.md`.

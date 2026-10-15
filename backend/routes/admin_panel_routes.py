@@ -11,7 +11,6 @@ from decimal import Decimal
 from dateutil.relativedelta import relativedelta
 from typing import Optional
 import io
-import google.generativeai as genai
 import os
 from dotenv import load_dotenv
 import logging, os, uuid, unicodedata, re
@@ -49,6 +48,8 @@ from sendgrid.helpers.mail import Mail
 from ..config import get_db, settings
 from ..auth import get_password_hash, get_current_admin_user
 from ..email_utils import send_email
+from ..ia.servico import obter_config_ia
+from ..ia.providers import ErroProviderIA, criar_provider
 
 # Cria um novo roteador para o painel de administração
 # Todas as rotas aqui serão protegidas pela dependência 'get_current_admin_user'
@@ -3033,28 +3034,11 @@ def update_improdutiva(
 def analyze_schedule_with_ai(db: Session = Depends(get_db)):
     """
     Levanta a agenda dos próximos 3 dias, aplica regras de negócio e solicita
-    ao Gemini uma análise crítica operacional.
+    ao modelo de IA configurado (Configurações → Inteligência Artificial) uma
+    análise crítica operacional.
     """
-    
-    # 1. Configuração da API do Gemini
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        raise HTTPException(status_code=500, detail="GEMINI_API_KEY não configurada no ambiente.")
-    
-    genai.configure(api_key=api_key)
-    
-    # Tenta usar o modelo solicitado, com fallback para versões estáveis caso a preview não exista
-    model_name = "gemini-3-flash-preview"
-    # Nota: Se o modelo 'gemini-3...' não estiver disponível publicamente, 
-    # a biblioteca pode lançar erro. Recomenda-se usar 'gemini-2.0-flash-exp' ou 'gemini-1.5-flash'.
-    
-    try:
-        model = genai.GenerativeModel(model_name)
-    except Exception:
-        # Fallback silencioso para garantir funcionamento se o nome do modelo mudar
-        model = genai.GenerativeModel("gemini-1.5-flash")
 
-    # 2. Levantamento de Dados (Próximos 3 dias)
+    # 1. Levantamento de Dados (Próximos 3 dias)
     today = date.today()
     end_date = today + timedelta(days=3)
 
@@ -3071,7 +3055,7 @@ def analyze_schedule_with_ai(db: Session = Depends(get_db)):
     if not agendamentos:
         return {"message": "A agenda está vazia para os próximos 3 dias. Nenhuma análise necessária."}
 
-    # 3. Formatação dos Dados para o Prompt
+    # 2. Formatação dos Dados para o Prompt
     dados_agenda = []
     for ag in agendamentos:
         imovel_info = "N/A"
@@ -3097,7 +3081,7 @@ def analyze_schedule_with_ai(db: Session = Depends(get_db)):
     
     texto_agenda = "\n".join(dados_agenda)
 
-    # 4. Definição das Regras e Prompt
+    # 3. Definição das Regras e Prompt
     prompt = f"""
     Você é um gerente operacional experiente de uma empresa de vistorias imobiliárias.
     Analise a agenda dos próximos 3 dias abaixo e identifique possíveis problemas logísticos ou quebra de regras.
@@ -3117,13 +3101,21 @@ def analyze_schedule_with_ai(db: Session = Depends(get_db)):
     - Não use formatação markdown excessiva, apenas texto corrido.
     """
 
-    # 5. Envio para o Gemini
+    # 4. Envio para o provider/modelo configurado pelo admin
+    config = obter_config_ia(db)
     try:
-        response = model.generate_content(prompt)
-        mensagem_analise = response.text.strip()
-    except Exception as e:
-        logger.error(f"Erro ao consultar Gemini: {str(e)}")
-        raise HTTPException(status_code=500, detail="Erro ao processar análise inteligente.")
+        provider = criar_provider(config.provider, config.modelo, timeout=120)
+        resposta = provider.completar(
+            "Você é um gerente operacional experiente de uma empresa de vistorias imobiliárias. Responda em português do Brasil.",
+            prompt,
+        )
+        mensagem_analise = resposta.conteudo.strip()
+    except ErroProviderIA as e:
+        logger.error(f"Erro ao consultar IA ({config.provider}/{config.modelo}): {e.mensagem}")
+        # 502 (e não 401/403) para o frontend não interpretar como sessão expirada
+        raise HTTPException(status_code=502, detail=f"Erro ao processar análise inteligente: {e.mensagem}")
+    if not mensagem_analise:
+        raise HTTPException(status_code=502, detail="O modelo de IA retornou uma resposta vazia.")
 
     return {"message": mensagem_analise}
 

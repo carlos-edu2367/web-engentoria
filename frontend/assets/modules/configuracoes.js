@@ -2,6 +2,7 @@
 
 import { api } from '../api.js';
 import { renderPageContent, showAlert, sanitizeHTML } from '../ui.js';
+import { criarSeletorModelo } from './seletor-modelo-ia.js';
 
 /**
  * Renderiza a página de configurações com o formulário.
@@ -40,7 +41,7 @@ async function renderConfiguracoesPage(config) {
 
             <div id="ia-config-card" class="bg-gray-800/50 p-6 rounded-xl neon-border mt-8">
                 <h2 class="text-xl font-bold text-white mb-2">Inteligência Artificial</h2>
-                <p class="text-sm text-gray-400 mb-6">Usada para gerar o laudo de não conformidades a partir dos laudos de vistoria de entrada.</p>
+                <p class="text-sm text-gray-400 mb-6">Usada no laudo de não conformidades (laudos de entrada) e no Insight IA da agenda.</p>
                 <p class="text-gray-400 text-sm">Carregando...</p>
             </div>
         </div>
@@ -89,7 +90,7 @@ async function initIAConfig() {
     const campo = 'w-full bg-gray-700 rounded p-2 border border-gray-600 focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500';
     card.innerHTML = `
         <h2 class="text-xl font-bold text-white mb-2">Inteligência Artificial</h2>
-        <p class="text-sm text-gray-400 mb-6">Usada para gerar o laudo de não conformidades a partir dos laudos de vistoria de entrada.</p>
+        <p class="text-sm text-gray-400 mb-6">Usada no laudo de não conformidades (laudos de entrada) e no Insight IA da agenda.</p>
         <form id="form-ia" class="space-y-4">
             <label class="flex items-center gap-3 cursor-pointer">
                 <input type="checkbox" name="habilitado" class="w-5 h-5 accent-cyan-500">
@@ -104,8 +105,8 @@ async function initIAConfig() {
             </div>
             <div>
                 <label class="block text-sm mb-1 text-gray-400">Modelo</label>
-                <input name="modelo" required maxlength="200" class="${campo}">
-                <p class="text-xs text-gray-500 mt-1">Identificador do modelo no provider escolhido. O mesmo modelo pode ter nomes diferentes em cada provider.</p>
+                <div id="ia-seletor-modelo"></div>
+                <p class="text-xs text-gray-500 mt-1">Lista de modelos do provider escolhido. Ao trocar de provider, o modelo padrão dele é selecionado.</p>
             </div>
             <div id="ia-teste-resultado" class="hidden text-sm p-3 rounded-lg"></div>
             <div class="pt-2 flex flex-wrap justify-end gap-3">
@@ -119,7 +120,11 @@ async function initIAConfig() {
     const providers = Object.fromEntries(config.providers.map(p => [p.id, p]));
     form.habilitado.checked = config.habilitado;
     form.provider.value = config.provider;
-    form.modelo.value = config.modelo;
+    const seletorModelo = criarSeletorModelo(document.getElementById('ia-seletor-modelo'), {
+        provider: config.provider,
+        valor: config.modelo,
+        campoClasse: campo,
+    });
 
     const atualizarStatusChave = () => {
         const p = providers[form.provider.value];
@@ -131,7 +136,7 @@ async function initIAConfig() {
     };
     // Ao trocar de provider, sugere o modelo padrão dele (os ids de modelo diferem entre providers)
     form.provider.addEventListener('change', () => {
-        form.modelo.value = providers[form.provider.value].modelo_padrao;
+        seletorModelo.trocarProvider(form.provider.value, providers[form.provider.value].modelo_padrao);
         atualizarStatusChave();
     });
     atualizarStatusChave();
@@ -144,7 +149,7 @@ async function initIAConfig() {
         resultado.className = 'text-sm p-3 rounded-lg bg-gray-700/50 text-gray-300';
         resultado.textContent = 'Enviando uma mensagem de teste ao provider...';
         try {
-            const r = await api.testarIA({ provider: form.provider.value, modelo: form.modelo.value.trim() });
+            const r = await api.testarIA({ provider: form.provider.value, modelo: seletorModelo.valor.trim() });
             if (r.ok) {
                 resultado.className = 'text-sm p-3 rounded-lg bg-green-900/40 text-green-300';
                 resultado.textContent = `Conexão OK (${r.latencia_ms} ms). Resposta do modelo: "${r.resposta}"`;
@@ -164,12 +169,16 @@ async function initIAConfig() {
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
         const btn = form.querySelector('button[type="submit"]');
+        if (!seletorModelo.valor.trim()) {
+            showAlert('Selecione um modelo de IA.', 'error');
+            return;
+        }
         btn.disabled = true;
         btn.textContent = 'Salvando...';
         try {
             await api.updateIAConfig({
                 provider: form.provider.value,
-                modelo: form.modelo.value.trim(),
+                modelo: seletorModelo.valor.trim(),
                 habilitado: form.habilitado.checked,
             });
             showAlert('Configuração de IA salva com sucesso!', 'success');

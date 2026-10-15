@@ -46,6 +46,10 @@
 3. **Não há migração manual**: as três tabelas novas são criadas pelo `create_all` na subida.
 4. Em Gestão → Configurações → Inteligência Artificial, conferir provider e modelo e clicar em **Testar conexão**.
 
+**Evolução posterior: configuração de IA compartilhada**
+- O Insight IA da agenda passou a usar o mesmo provider e modelo de `configuracoes_ia`. O SDK do Gemini e a `GEMINI_API_KEY` deixaram de ser usados.
+- Em Configurações, o modelo é escolhido num seletor com busca, alimentado pela lista do provider (`GET /admin-panel/ia/modelos`), com cache de 24h no servidor e no navegador. Também é possível usar um ID fora da lista.
+
 **Fora do escopo / pendências**
 - `GET /laudo/{id}/pdf` continua público. Não é chamado pelo frontend web e pode ser usado por outro cliente; exigir login ali poderia quebrar esse cliente.
 - Sem OCR na v1: PDF digitalizado sem texto não é analisado (gera aviso ou erro).
