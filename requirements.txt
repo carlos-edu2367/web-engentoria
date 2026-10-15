@@ -1,6 +1,6 @@
 fastapi
 uvicorn[standard]
-sqlalchemy
+sqlalchemy>=2.0,<2.1  # 2.1 troca o driver padrão de postgresql:// para psycopg (v3) e quebra o deploy
 asyncpg
 psycopg2-binary
 python-dotenv
