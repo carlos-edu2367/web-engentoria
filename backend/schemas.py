@@ -1,6 +1,6 @@
 # backend/schemas.py
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from typing import Optional, List, Dict, Any
 from uuid import UUID
 from datetime import date, datetime
@@ -73,8 +73,16 @@ class ClienteCreate(ClienteBase):
     saldo_devedor_total: float = 0.0
 
 class ClienteDisplay(ClienteBase):
+    # Na leitura não revalida o e-mail: um cadastro antigo com e-mail fora do
+    # padrão derrubava a listagem inteira da imobiliária (erro 500).
+    email: str
     id: UUID
-    saldo_devedor_total: float
+    saldo_devedor_total: float = 0.0
+
+    @field_validator("saldo_devedor_total", mode="before")
+    @classmethod
+    def _saldo_nulo_vira_zero(cls, v):
+        return 0.0 if v is None else v
 
     class Config:
         from_attributes = True
@@ -150,6 +158,10 @@ class ImovelCreate(ImovelBase):
     imobiliaria_id: UUID
 
 class ImovelDisplay(ImovelBase):
+    # Na leitura aceita o que está gravado: imóvel com tamanho 0 ou sem
+    # mobília definida derrubava a listagem inteira da imobiliária (erro 500).
+    tamanho: float
+    mobiliado: Optional[str] = None
     id: UUID
     valor: float
     cliente: ClienteDisplay

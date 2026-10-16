@@ -1340,11 +1340,9 @@ export const renderSchedulingPage = async (container) => {
         }
     };
 
-    const init = async () => {
-        renderBaseLayout();
-        bindEvents();
-        window.addEventListener('beforeunload', handleBeforeUnload);
+    let loaderOriginal = '';
 
+    const loadData = async () => {
         try {
             const [resClientes, resImoveis, resImobiliarias] = await Promise.all([ 
                 safeGetClientes(), safeGetImoveis(),
@@ -1368,7 +1366,25 @@ export const renderSchedulingPage = async (container) => {
             
             $('#loading-overlay').classList.add('hidden');
             $('#tabs-container').classList.remove('hidden');
-        } catch (error) { showNotification("Falha na sincronização dos dados.", "error"); }
+        } catch (error) {
+            showNotification("Falha na sincronização dos dados.", "error");
+            // Sem isso o loader ficava girando para sempre, sem saída para o usuário.
+            $('#loading-overlay').innerHTML = `
+                <p class="text-red-400 font-semibold text-sm">Não foi possível carregar clientes e imóveis.</p>
+                <button type="button" id="btn-retry-sync" class="bg-slate-800 text-white font-semibold py-2.5 px-6 rounded-xl border border-slate-700 hover:border-purple-500">Tentar novamente</button>`;
+            $('#btn-retry-sync').onclick = () => {
+                $('#loading-overlay').innerHTML = loaderOriginal;
+                loadData();
+            };
+        }
+    };
+
+    const init = async () => {
+        renderBaseLayout();
+        bindEvents();
+        window.addEventListener('beforeunload', handleBeforeUnload);
+        loaderOriginal = $('#loading-overlay').innerHTML;
+        await loadData();
     };
 
     await init();
