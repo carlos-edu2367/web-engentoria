@@ -8,7 +8,7 @@
 - O PDF do laudo digital é gerado sob demanda em `GET /laudo/{id}/pdf` (`laudo_pdf_routes.py`, reportlab, rota pública).
 
 ## Restrições
-- `create_all` não adiciona colunas a tabelas existentes. Para isso é preciso SQL manual em `backend/migrations/`. Tabelas novas são criadas automaticamente.
+- `create_all` não adiciona colunas a tabelas existentes. Para isso, crie uma migration SQL em `backend/migrations/` (aplicada automaticamente no deploy, ver `backend/migrar.py`). Tabelas novas são criadas automaticamente.
 - `job_limpeza_diaria` (03:00) apaga `DocumentoAgenda` e `DocumentosInfoMensal` com mais de 40 dias. Não guardar documentos permanentes nessas tabelas.
 - Frontend admin "Gestão" = `gestao.html` + `assets/gestao.js` + `assets/modules/*`. `admin-dashboard.html` é o painel de TI (`UsuarioTI`).
 

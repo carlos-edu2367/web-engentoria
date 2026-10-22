@@ -3,7 +3,7 @@
 ## Modelo
 - O login principal continua sendo `GrupoImobiliaria` (e-mail/senha do grupo). Ganhou `acesso_financeiro` e `acesso_vistorias` (DEFAULT TRUE: logins antigos ficam com as duas).
 - Usuários adicionais: `UsuarioImobiliaria` (`usuarios_imobiliaria`), com `grupo_id`, login próprio e as mesmas duas flags. Exclusão é definitiva (libera o e-mail).
-- As colunas novas em `grupos_imobiliarias` são aplicadas na subida em `backend/main.py` (`ADD COLUMN IF NOT EXISTS`), porque o model já as lê. Cópia manual em `backend/migrations/usuarios_imobiliaria.sql`.
+- As colunas novas em `grupos_imobiliarias` vêm da migration `backend/migrations/0002_usuarios_imobiliaria.sql`, aplicada no deploy.
 
 ## Autenticação
 - `auth.get_user` também procura em `UsuarioImobiliaria` (grupo não deletado). O e-mail é único entre todas as tabelas de login.

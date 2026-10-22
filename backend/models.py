@@ -20,7 +20,7 @@ class GrupoImobiliaria(Base):
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
     updated_at = Column(TIMESTAMP(timezone=True), default=func.now(), onupdate=func.now())
     is_deleted = Column(Boolean, default=False, nullable=False)
-    # Permissões do login principal do grupo (ver migrations/usuarios_imobiliaria.sql)
+    # Permissões do login principal do grupo (migrations/0002_usuarios_imobiliaria.sql)
     acesso_financeiro = Column(Boolean, default=True, server_default=true(), nullable=False)
     acesso_vistorias = Column(Boolean, default=True, server_default=true(), nullable=False)
 

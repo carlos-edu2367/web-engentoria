@@ -1,10 +1,7 @@
 -- Migração: usuários adicionais por grupo de imobiliárias e permissões
+-- Aplicada automaticamente na subida da API (backend/migrar.py).
 --
--- A tabela usuarios_imobiliaria é criada pelo create_all() na subida da API.
--- As colunas abaixo, em uma tabela que já existe, também são aplicadas
--- automaticamente na subida (backend/main.py), porque sem elas o login das
--- imobiliárias quebra. O script fica aqui para execução manual, se preferir.
---
+-- A tabela usuarios_imobiliaria é criada pelo create_all().
 -- Os logins já existentes ficam com as duas permissões marcadas (DEFAULT TRUE).
 
 ALTER TABLE grupos_imobiliarias
