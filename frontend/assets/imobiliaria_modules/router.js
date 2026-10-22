@@ -4,8 +4,12 @@ import { renderLaudosPage } from './laudos.js';
 import { renderSchedulingPage } from './scheduling.js';
 import { renderReportsPage } from './reports.js';
 import { showNotification } from './utils.js';
+import { carregarSessao, temPermissao } from './sessao.js';
 
-export const initRouter = (navLinks, pageContent) => {
+// Permissão exigida por página (o dashboard mostra só as partes permitidas)
+const PERMISSAO_PAGINA = { laudos: 'vistorias', relatorios: 'financeiro', agendar: 'vistorias' };
+
+export const initRouter = async (navLinks, pageContent) => {
     
     // Verificação de Segurança Inicial
     // Impede "piscar" a tela de carregamento se o usuário não estiver logado
@@ -15,9 +19,23 @@ export const initRouter = (navLinks, pageContent) => {
         return;
     }
 
+    try {
+        const sessao = await carregarSessao();
+        document.getElementById('usuario-logado').textContent = sessao.nome;
+    } catch (error) {
+        console.error(error);
+        pageContent.innerHTML = `<p class="text-red-400 text-center mt-10">Não foi possível carregar seu usuário. Recarregue a página.</p>`;
+        return;
+    }
+    // Esconde o que o usuário não pode acessar
+    document.querySelectorAll('[data-permissao]').forEach(el => {
+        if (!temPermissao(el.dataset.permissao)) el.classList.add('hidden');
+    });
+
     const loadPage = async (pageId) => {
         // Compatibilidade com links antigos ou bookmarks
         if (pageId === 'overview' || !pageId) pageId = 'dashboard';
+        if (PERMISSAO_PAGINA[pageId] && !temPermissao(PERMISSAO_PAGINA[pageId])) pageId = 'dashboard';
 
         // Atualiza navegação
         navLinks.forEach(link => {

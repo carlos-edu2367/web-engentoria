@@ -26,6 +26,9 @@ async function apiFetch(url, options = {}) {
     const response = await fetch(url, { ...options, headers });
     
     if (response.status === 401 || response.status === 403) {
+        // 403 por falta de permissão do usuário: mostra o erro sem deslogar
+        const err = await response.json().catch(() => ({}));
+        if (err.detail?.code === 'permissao_negada') throw new Error(err.detail.message);
         if(window.logout) window.logout();
         throw new Error("Acesso negado.");
     }
@@ -47,6 +50,9 @@ async function apiFetch(url, options = {}) {
 }
 
 export const api = {
+    // --- SESSÃO ---
+    getMe: () => apiFetch(`${API_URL}/me`),
+
     // --- DASHBOARD & METRICS ---
     getDashboardStats: () => apiFetch(`${API_URL}/dashboard-stats`),
 

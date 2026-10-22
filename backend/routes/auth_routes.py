@@ -33,8 +33,11 @@ def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db:
 
     if isinstance(user, models.UsuarioTI):
         dashboard_type = "ti"
-    elif isinstance(user, models.GrupoImobiliaria):
+    elif isinstance(user, (models.GrupoImobiliaria, models.UsuarioImobiliaria)):
         dashboard_type = "imobiliaria"
+        grupo = auth.resolver_login_imobiliaria(user)
+        user_info["grupo"] = grupo.nome
+        user_info["permissoes"] = grupo.permissoes
     elif isinstance(user, models.Usuario):
         if user.tipo == 'admin':
             dashboard_type = "admin"

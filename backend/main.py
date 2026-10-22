@@ -8,6 +8,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 from fastapi.staticfiles import StaticFiles
 from starlette.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 
 # Importo os roteadores que criei
 from .routes import auth_routes, agenda_routes, suporte_routes, admin_routes, imobiliaria_routes, laudo_pdf_routes, agendamento_externo_routes
@@ -45,6 +46,14 @@ app = FastAPI(
     version="2.0" # Versão atualizada para refletir as novas funcionalidades
 )
 models.Base.metadata.create_all(bind=engine)
+
+# create_all não adiciona colunas em tabelas existentes. Estas são aplicadas aqui
+# (idempotente) porque o model já as lê: sem elas o login das imobiliárias quebra.
+# Mesmo conteúdo de backend/migrations/usuarios_imobiliaria.sql.
+with engine.begin() as conn:
+    conn.execute(text("ALTER TABLE grupos_imobiliarias ADD COLUMN IF NOT EXISTS acesso_financeiro BOOLEAN NOT NULL DEFAULT TRUE"))
+    conn.execute(text("ALTER TABLE grupos_imobiliarias ADD COLUMN IF NOT EXISTS acesso_vistorias BOOLEAN NOT NULL DEFAULT TRUE"))
+
 # Configuração do CORS para permitir todas as origens
 origins = ["*"] 
 

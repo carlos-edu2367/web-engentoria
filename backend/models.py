@@ -4,7 +4,7 @@ from sqlalchemy import (Boolean, Column, ForeignKey, String, DateTime,
                         Date, Numeric, Text, Integer)
 from sqlalchemy.dialects.postgresql import UUID, TIMESTAMP, TEXT, JSON
 from sqlalchemy.orm import relationship
-from sqlalchemy.sql import func
+from sqlalchemy.sql import func, true
 import uuid
 
 # Importo a Base que declarei no config.py
@@ -20,8 +20,40 @@ class GrupoImobiliaria(Base):
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
     updated_at = Column(TIMESTAMP(timezone=True), default=func.now(), onupdate=func.now())
     is_deleted = Column(Boolean, default=False, nullable=False)
-    
+    # Permissões do login principal do grupo (ver migrations/usuarios_imobiliaria.sql)
+    acesso_financeiro = Column(Boolean, default=True, server_default=true(), nullable=False)
+    acesso_vistorias = Column(Boolean, default=True, server_default=true(), nullable=False)
+
     imobiliarias = relationship("Imobiliaria", back_populates="grupo")
+    usuarios = relationship("UsuarioImobiliaria", back_populates="grupo", cascade="all, delete-orphan", order_by="UsuarioImobiliaria.nome")
+
+    # Usuário adicional logado na requisição atual (None = login principal do grupo).
+    # Atributo transitório, preenchido por auth.get_current_user; não é coluna.
+    usuario_logado = None
+
+    @property
+    def permissoes(self):
+        """Permissões de quem está logado: o próprio grupo ou o usuário adicional."""
+        origem = self.usuario_logado or self
+        return {
+            "financeiro": bool(origem.acesso_financeiro),
+            "vistorias": bool(origem.acesso_vistorias),
+        }
+
+# --- Usuários adicionais de um grupo de imobiliárias ---
+class UsuarioImobiliaria(Base):
+    __tablename__ = "usuarios_imobiliaria"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    grupo_id = Column(UUID(as_uuid=True), ForeignKey("grupos_imobiliarias.id", ondelete="CASCADE"), nullable=False, index=True)
+    nome = Column(TEXT, nullable=False)
+    email = Column(TEXT, unique=True, nullable=False, index=True)
+    senha = Column(TEXT, nullable=False)
+    acesso_financeiro = Column(Boolean, default=True, server_default=true(), nullable=False)
+    acesso_vistorias = Column(Boolean, default=True, server_default=true(), nullable=False)
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+    updated_at = Column(TIMESTAMP(timezone=True), default=func.now(), onupdate=func.now())
+
+    grupo = relationship("GrupoImobiliaria", back_populates="usuarios")
 
 # --- Modelo para a tabela de Usuários de TI (Gestores) ---
 class UsuarioTI(Base):

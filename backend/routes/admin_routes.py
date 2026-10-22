@@ -269,7 +269,8 @@ def create_imobiliaria_group(
 def get_all_imobiliaria_groups(db: Session = Depends(get_db)):
     """Retorna uma lista de todos os grupos de imobiliárias não deletados."""
     groups = db.query(models.GrupoImobiliaria).options(
-        joinedload(models.GrupoImobiliaria.imobiliarias)
+        joinedload(models.GrupoImobiliaria.imobiliarias),
+        joinedload(models.GrupoImobiliaria.usuarios)
     ).filter(
         models.GrupoImobiliaria.is_deleted == False
     ).order_by(models.GrupoImobiliaria.nome).all()
@@ -299,8 +300,14 @@ def update_imobiliaria_group(
         if existing_user and existing_user.id != group_id:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="O novo e-mail já está em uso.")
     
+    acesso_financeiro = db_group.acesso_financeiro if group_data.acesso_financeiro is None else group_data.acesso_financeiro
+    acesso_vistorias = db_group.acesso_vistorias if group_data.acesso_vistorias is None else group_data.acesso_vistorias
+    _validar_permissoes(acesso_financeiro, acesso_vistorias)
+
     db_group.nome = group_data.nome
     db_group.email = group_data.email
+    db_group.acesso_financeiro = acesso_financeiro
+    db_group.acesso_vistorias = acesso_vistorias
     if group_data.senha:
         db_group.senha = auth.get_password_hash(group_data.senha)
 
@@ -335,6 +342,99 @@ def soft_delete_imobiliaria_group(group_id: UUID, db: Session = Depends(get_db))
         )
 
     db_group.is_deleted = True
+    db.commit()
+    return None
+
+# --- Usuários adicionais dos grupos de imobiliárias ---
+
+def _validar_permissoes(acesso_financeiro: bool, acesso_vistorias: bool):
+    if not acesso_financeiro and not acesso_vistorias:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Marque ao menos uma permissão: Acesso financeiro ou Vistorias.")
+
+def _buscar_usuario_imobiliaria(db: Session, usuario_id: UUID) -> models.UsuarioImobiliaria:
+    usuario = db.query(models.UsuarioImobiliaria).join(models.GrupoImobiliaria).filter(
+        models.UsuarioImobiliaria.id == usuario_id,
+        models.GrupoImobiliaria.is_deleted == False
+    ).first()
+    if not usuario:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuário não encontrado.")
+    return usuario
+
+@router.post(
+    "/grupos-imobiliarias/{group_id}/usuarios",
+    response_model=schemas.UsuarioImobiliariaDisplay,
+    status_code=status.HTTP_201_CREATED,
+    summary="Cria um usuário adicional para o grupo"
+)
+def create_usuario_imobiliaria(
+    group_id: UUID,
+    usuario_data: schemas.UsuarioImobiliariaCreate,
+    db: Session = Depends(get_db)
+):
+    """Cria um novo login para o grupo, com as permissões escolhidas."""
+    db_group = db.query(models.GrupoImobiliaria).filter(
+        models.GrupoImobiliaria.id == group_id,
+        models.GrupoImobiliaria.is_deleted == False
+    ).first()
+    if not db_group:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Grupo não encontrado.")
+
+    _validar_permissoes(usuario_data.acesso_financeiro, usuario_data.acesso_vistorias)
+    if auth.get_user(db, email=usuario_data.email):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Este email já está cadastrado no sistema.")
+
+    usuario = models.UsuarioImobiliaria(
+        grupo_id=db_group.id,
+        nome=usuario_data.nome,
+        email=usuario_data.email,
+        senha=auth.get_password_hash(usuario_data.senha),
+        acesso_financeiro=usuario_data.acesso_financeiro,
+        acesso_vistorias=usuario_data.acesso_vistorias
+    )
+    db.add(usuario)
+    db.commit()
+    db.refresh(usuario)
+    return usuario
+
+@router.put(
+    "/grupos-imobiliarias/usuarios/{usuario_id}",
+    response_model=schemas.UsuarioImobiliariaDisplay,
+    summary="Atualiza um usuário adicional de grupo"
+)
+def update_usuario_imobiliaria(
+    usuario_id: UUID,
+    usuario_data: schemas.UsuarioImobiliariaUpdate,
+    db: Session = Depends(get_db)
+):
+    """Atualiza nome, e-mail, permissões e, opcionalmente, a senha."""
+    usuario = _buscar_usuario_imobiliaria(db, usuario_id)
+    _validar_permissoes(usuario_data.acesso_financeiro, usuario_data.acesso_vistorias)
+
+    if usuario_data.email != usuario.email:
+        existing_user = auth.get_user(db, email=usuario_data.email)
+        if existing_user and existing_user.id != usuario_id:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="O novo e-mail já está em uso.")
+
+    usuario.nome = usuario_data.nome
+    usuario.email = usuario_data.email
+    usuario.acesso_financeiro = usuario_data.acesso_financeiro
+    usuario.acesso_vistorias = usuario_data.acesso_vistorias
+    if usuario_data.senha:
+        usuario.senha = auth.get_password_hash(usuario_data.senha)
+
+    db.commit()
+    db.refresh(usuario)
+    return usuario
+
+@router.delete(
+    "/grupos-imobiliarias/usuarios/{usuario_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Remove um usuário adicional de grupo"
+)
+def delete_usuario_imobiliaria(usuario_id: UUID, db: Session = Depends(get_db)):
+    """Remove o login. Nada referencia o usuário, então a exclusão é definitiva (libera o e-mail)."""
+    usuario = _buscar_usuario_imobiliaria(db, usuario_id)
+    db.delete(usuario)
     db.commit()
     return None
 

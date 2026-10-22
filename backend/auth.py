@@ -182,6 +182,13 @@ def get_user(db: Session, email: str):
     user = db.query(models.GrupoImobiliaria).filter(models.GrupoImobiliaria.email == email, models.GrupoImobiliaria.is_deleted == False).first()
     if user:
         return user
+
+    user = db.query(models.UsuarioImobiliaria).join(models.GrupoImobiliaria).filter(
+        models.UsuarioImobiliaria.email == email,
+        models.GrupoImobiliaria.is_deleted == False
+    ).first()
+    if user:
+        return user
         
     user = db.query(models.UsuarioTI).filter(models.UsuarioTI.email == email).first()
     if user:
@@ -209,6 +216,21 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     user = get_user(db, email=token_data.email)
     if user is None:
         raise credentials_exception
+    return resolver_login_imobiliaria(user)
+
+def resolver_login_imobiliaria(user):
+    """
+    Usuários adicionais de um grupo agem como o próprio grupo: as rotas da imobiliária
+    usam current_user.id como grupo_id. Devolve o grupo com o usuário em usuario_logado,
+    de onde GrupoImobiliaria.permissoes lê as permissões.
+    """
+    if isinstance(user, models.UsuarioImobiliaria):
+        grupo = user.grupo
+        grupo.usuario_logado = user
+        return grupo
+    if isinstance(user, models.GrupoImobiliaria):
+        # A instância pode vir do identity map da sessão; limpa um valor anterior.
+        user.usuario_logado = None
     return user
 
 # Funções de dependência específicas para tipos de usuário
@@ -229,6 +251,23 @@ def get_current_active_imobiliaria_group(current_user: models.GrupoImobiliaria =
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Acesso negado: Requer login de Imobiliária.")
     return current_user
 
+def _exigir_permissao(current_user, permissao: str, descricao: str):
+    if isinstance(current_user, models.GrupoImobiliaria) and not current_user.permissoes[permissao]:
+        # detail com código: o frontend da imobiliária não desloga neste 403.
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"code": "permissao_negada", "message": f"Seu usuário não tem acesso {descricao}."},
+        )
+    return current_user
+
+def require_acesso_financeiro(current_user: models.GrupoImobiliaria = Depends(get_current_active_imobiliaria_group)):
+    """Fechamento mensal e relatórios financeiros."""
+    return _exigir_permissao(current_user, "financeiro", "financeiro")
+
+def require_acesso_vistorias(current_user: models.GrupoImobiliaria = Depends(get_current_active_imobiliaria_group)):
+    """Agenda, solicitações, laudos, clientes e imóveis."""
+    return _exigir_permissao(current_user, "vistorias", "às vistorias")
+
 def get_current_gestor_user(current_user: models.UsuarioTI = Depends(get_current_user)):
     if not isinstance(current_user, models.UsuarioTI) or current_user.nivel_acesso != 'gestor':
          raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Acesso negado: Requer privilégios de Gestor de TI.")
@@ -240,7 +279,7 @@ def get_current_active_user_or_imobiliaria(current_user = Depends(get_current_us
     Usado para funcionalidades compartilhadas como gerar links de agendamento.
     """
     if isinstance(current_user, models.GrupoImobiliaria):
-        return current_user
+        return _exigir_permissao(current_user, "vistorias", "às vistorias")
     
     if isinstance(current_user, models.Usuario):
         return current_user

@@ -35,7 +35,7 @@ router_admin = APIRouter(
 router_imobiliaria = APIRouter(
     prefix="/imobiliaria",
     tags=["Laudo de Não Conformidades"],
-    dependencies=[Depends(auth.get_current_active_imobiliaria_group)],
+    dependencies=[Depends(auth.require_acesso_vistorias)],
 )
 
 

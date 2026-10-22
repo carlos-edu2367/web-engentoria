@@ -203,7 +203,19 @@ def verify_and_create_infos(session: Session, current_user: models.GrupoImobilia
         raise RuntimeError(e)
 
 # --- Endpoints da API ---
-@router.get("/agenda", response_model=List[schemas.AgendaDisplay])
+@router.get("/me")
+def get_usuario_logado(current_user: models.GrupoImobiliaria = Depends(auth.get_current_active_imobiliaria_group)):
+    """Quem está logado e o que pode ver. O painel monta o menu a partir das permissões."""
+    usuario = current_user.usuario_logado or current_user
+    return {
+        "nome": usuario.nome,
+        "email": usuario.email,
+        "grupo": current_user.nome,
+        "usuario_principal": current_user.usuario_logado is None,
+        "permissoes": current_user.permissoes,
+    }
+
+@router.get("/agenda", response_model=List[schemas.AgendaDisplay], dependencies=[Depends(auth.require_acesso_vistorias)])
 def read_imobiliaria_agenda(start_date: date, end_date: date, db: Session = Depends(get_db), current_user: models.GrupoImobiliaria = Depends(auth.get_current_active_imobiliaria_group)):
     imobiliaria_ids = get_imobiliaria_ids_from_group(current_user)
     query = db.query(models.Agenda).join(models.Imovel).filter(
@@ -222,7 +234,7 @@ def read_imobiliaria_agenda(start_date: date, end_date: date, db: Session = Depe
     
     return vistorias
 
-@router.get("/dashboard-stats", response_model=schemas.DashboardStatsImobiliaria)
+@router.get("/dashboard-stats", response_model=schemas.DashboardStatsImobiliaria, dependencies=[Depends(auth.require_acesso_vistorias)])
 def get_dashboard_stats(db: Session = Depends(get_db), current_user: models.GrupoImobiliaria = Depends(auth.get_current_active_imobiliaria_group)):
     # Correção: Usar o mesmo filtro do relatório, pegando apenas imobiliárias NÃO deletadas.
     # Antes usava 'get_imobiliaria_ids_from_group' que pegava todas da relação, inclusive deletadas se não houvesse filtro.
@@ -289,7 +301,7 @@ def get_dashboard_stats(db: Session = Depends(get_db), current_user: models.Grup
         improdutivas_30d=schemas.StatsItem(total=improdutivas_current_30d, change=calculate_change(improdutivas_current_30d, improdutivas_previous_30d)),
         vistorias_mes_atual=vistorias_mes_atual, improdutivas_mes_atual=improdutivas_mes_atual, projecao_proximo_mes=projecao, monthly_breakdown=monthly_breakdown)
 
-@router.get("/relatorio-mensal")
+@router.get("/relatorio-mensal", dependencies=[Depends(auth.require_acesso_financeiro)])
 def get_monthly_report(mes: int = Query(..., ge=1, le=12), ano: int = Query(..., ge=2020), db: Session = Depends(get_db), current_user: models.GrupoImobiliaria = Depends(auth.get_current_active_imobiliaria_group)):
     return get_report_data(mes, ano, db, current_user)
 
@@ -654,7 +666,7 @@ def create_pdf_report(report_data: List): # Removido 'schemas.RelatorioMensal' p
     buffer.seek(0)
     return buffer
 
-@router.get("/relatorio-download")
+@router.get("/relatorio-download", dependencies=[Depends(auth.require_acesso_financeiro)])
 def download_monthly_report(
     mes: int = Query(..., ge=1, le=12),
     ano: int = Query(..., ge=2020),
@@ -705,7 +717,7 @@ def download_monthly_report(
 
 
 
-@router.post("/adicionar_documento_agendamento")
+@router.post("/adicionar_documento_agendamento", dependencies=[Depends(auth.require_acesso_vistorias)])
 async def add_documento_agendamento(id_agendamento: str = Form(...),
                                     file: UploadFile = File(...),
                                     session: Session = Depends(get_db),
@@ -755,7 +767,7 @@ async def add_documento_agendamento(id_agendamento: str = Form(...),
          session.rollback()
          raise HTTPException(status_code=500, detail="Erro no servidor ao adicionar imagem")
     
-@router.get("/listar_documentos_agenda/{id_agendamento}")
+@router.get("/listar_documentos_agenda/{id_agendamento}", dependencies=[Depends(auth.require_acesso_vistorias)])
 async def listar_documentos_agenda(id_agendamento: str, 
                                    session: Session = Depends(get_db),
                                     current_user: models.Usuario = Depends(auth.get_current_active_imobiliaria_group)):
@@ -783,7 +795,7 @@ async def listar_documentos_agenda(id_agendamento: str,
     }
 
 
-@router.delete("/deletar_documento/{id_documento}")
+@router.delete("/deletar_documento/{id_documento}", dependencies=[Depends(auth.require_acesso_vistorias)])
 async def deletar_documento(id_documento: str, 
                             session: Session = Depends(get_db),
                             current_user: models.GrupoImobiliaria = Depends(auth.get_current_active_imobiliaria_group)):
@@ -813,11 +825,16 @@ async def deletar_documento(id_documento: str,
         raise HTTPException(status_code=500, detail="Erro ao deletar arquivo")
 
 
-@router.get("/status_info_mensal/{mes}/{ano}")
+@router.get("/status_info_mensal/{mes}/{ano}", dependencies=[Depends(auth.require_acesso_financeiro)])
 async def status_info_mensal(mes: int, ano: int,
                             session: Session = Depends(get_db),
                             current_user: models.GrupoImobiliaria = Depends(auth.get_current_active_imobiliaria_group)):
-    
+    # Antes só o dashboard-stats (vistorias) criava a info; usuários só do financeiro não passam por ele.
+    try:
+        verify_and_create_infos(session=session, current_user=current_user)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Erro ao criar infos")
+
     info = (session.query(models.InfoMensal)
             .options(joinedload(models.InfoMensal.messages),
                      joinedload(models.InfoMensal.documentos))
@@ -850,7 +867,7 @@ async def status_info_mensal(mes: int, ano: int,
     }
 
 
-@router.post("/adicionar_documento_info")
+@router.post("/adicionar_documento_info", dependencies=[Depends(auth.require_acesso_financeiro)])
 async def add_doc_info(id_info: str = Form(...),
                         file: UploadFile = File(...),
                         session: Session = Depends(get_db),
@@ -899,7 +916,7 @@ async def add_doc_info(id_info: str = Form(...),
          raise HTTPException(status_code=500, detail="Erro no servidor ao adicionar imagem")
     
 
-@router.delete("/deletar_imagem_info/{id_doc}")
+@router.delete("/deletar_imagem_info/{id_doc}", dependencies=[Depends(auth.require_acesso_financeiro)])
 async def deletar_imagem_info(id_doc: str, 
                             session: Session = Depends(get_db),
                             current_user: models.GrupoImobiliaria = Depends(auth.get_current_active_imobiliaria_group)):
@@ -928,7 +945,7 @@ async def deletar_imagem_info(id_doc: str,
         logger.error(f"Erro ao deletar arquivo: {e}")
         raise HTTPException(status_code=500, detail="Erro ao deletar arquivo")
     
-@router.post("/enviar_mensagem_info/{id_info}")
+@router.post("/enviar_mensagem_info/{id_info}", dependencies=[Depends(auth.require_acesso_financeiro)])
 async def enviar_mensagem_info(id_info: str, mensagem: str,
                             session: Session = Depends(get_db),
                             current_user: models.GrupoImobiliaria = Depends(auth.get_current_active_imobiliaria_group)):
@@ -949,7 +966,7 @@ async def enviar_mensagem_info(id_info: str, mensagem: str,
     except Exception as e:
         raise HTTPException(status_code=500, detail="Erro ao enviar mensagem")
     
-@router.put("/aceitar_recusar_info/{id_info}")
+@router.put("/aceitar_recusar_info/{id_info}", dependencies=[Depends(auth.require_acesso_financeiro)])
 async def aceitar_recusar_info(
     id_info: str, 
     aceito: bool,
@@ -988,7 +1005,7 @@ async def aceitar_recusar_info(
     except Exception as e:
         raise HTTPException(status_code=500, detail="Erro ao atualizar status")
     
-@router.post("/adicionar_comentario_mural/{id_agenda}")
+@router.post("/adicionar_comentario_mural/{id_agenda}", dependencies=[Depends(auth.require_acesso_vistorias)])
 async def adc_comentario_mural( id_agenda: str, comentario: str,
                                 session: Session = Depends(get_db),
                                 current_user: models.GrupoImobiliaria = Depends(auth.get_current_active_imobiliaria_group)):
@@ -1011,7 +1028,7 @@ async def adc_comentario_mural( id_agenda: str, comentario: str,
         raise HTTPException(status_code=500, detail="Erro ao adicionar comentário")
     
 
-@router.get("/ver_comentarios/{id_agendamento}")
+@router.get("/ver_comentarios/{id_agendamento}", dependencies=[Depends(auth.require_acesso_vistorias)])
 async def ver_comentarios(  id_agendamento: str,
                             session: Session = Depends(get_db),
                             current_user: models.GrupoImobiliaria = Depends(auth.get_current_active_imobiliaria_group)):
@@ -1037,7 +1054,7 @@ async def ver_comentarios(  id_agendamento: str,
         } for c in comentarios]
     }
 
-@router.get("/agenda/{id_agenda}/laudo")
+@router.get("/agenda/{id_agenda}/laudo", dependencies=[Depends(auth.require_acesso_vistorias)])
 async def ver_status_laudo(id_agenda: str,
                            session: Session = Depends(get_db),
                            user: models.GrupoImobiliaria = Depends(auth.get_current_active_imobiliaria_group)):
@@ -1060,7 +1077,7 @@ async def ver_status_laudo(id_agenda: str,
         "aprovado": laudo.aprovado
     }
 
-@router.get("/laudo/{id_laudo}")
+@router.get("/laudo/{id_laudo}", dependencies=[Depends(auth.require_acesso_vistorias)])
 async def ver_laudo(id_laudo: str,
                     session: Session = Depends(get_db),
                     user: models.GrupoImobiliaria = Depends(auth.get_current_active_imobiliaria_group)):
@@ -1096,7 +1113,7 @@ async def ver_laudo(id_laudo: str,
         }for c in categorias]
     }
 
-@router.get("/categoria/{id_categoria}")
+@router.get("/categoria/{id_categoria}", dependencies=[Depends(auth.require_acesso_vistorias)])
 async def ver_categoria(id_categoria: str,
                     session: Session = Depends(get_db),
                     user: models.GrupoImobiliaria = Depends(auth.get_current_active_imobiliaria_group)):
@@ -1138,7 +1155,7 @@ async def ver_categoria(id_categoria: str,
     }
 
 
-@router.get("/laudos", response_model=LaudoAprovadoResponse)
+@router.get("/laudos", response_model=LaudoAprovadoResponse, dependencies=[Depends(auth.require_acesso_vistorias)])
 async def listar_laudos_aprovados(
     search: Optional[str] = Query(None, description="Buscar por código do imóvel ou endereço"),
     skip: int = Query(0, ge=0),
@@ -1215,7 +1232,7 @@ async def listar_laudos_aprovados(
     return LaudoAprovadoResponse(laudos=response_items, total=total)
 
 
-@router.get("/imoveis", response_model=List[schemas.ImovelDisplay])
+@router.get("/imoveis", response_model=List[schemas.ImovelDisplay], dependencies=[Depends(auth.require_acesso_vistorias)])
 def search_imoveis(
     search: str = "",
     db: Session = Depends(get_db),
@@ -1237,14 +1254,14 @@ def search_imoveis(
         models.Imovel.is_deleted == False
     ).limit(20).all()
 
-@router.get("/sub-imobiliarias", response_model=List[schemas.ImobiliariaDisplay])
+@router.get("/sub-imobiliarias", response_model=List[schemas.ImobiliariaDisplay], dependencies=[Depends(auth.require_acesso_vistorias)])
 def get_sub_imobiliarias(
     current_user: models.GrupoImobiliaria = Depends(auth.get_current_active_imobiliaria_group)
 ):
     """Retorna a lista de imobiliárias vinculadas ao grupo logado."""
     return current_user.imobiliarias
 
-@router.get("/clientes", response_model=List[schemas.ClienteDisplay])
+@router.get("/clientes", response_model=List[schemas.ClienteDisplay], dependencies=[Depends(auth.require_acesso_vistorias)])
 def search_clientes(
     search: str = "",
     db: Session = Depends(get_db),
@@ -1286,7 +1303,7 @@ def _query_clientes_do_grupo(db: Session, grupo_id):
     )
 
 
-@router.put("/clientes/{cliente_id}", response_model=schemas.ClienteDisplay)
+@router.put("/clientes/{cliente_id}", response_model=schemas.ClienteDisplay, dependencies=[Depends(auth.require_acesso_vistorias)])
 def atualizar_cliente(
     cliente_id: str,
     dados: schemas.ClienteUpdate,

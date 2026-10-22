@@ -1,6 +1,7 @@
 // frontend/assets/imobiliaria_modules/dashboard.js
 import { api } from './api-imob.js';
 import { openModal, showNotification } from './utils.js';
+import { temPermissao } from './sessao.js';
 
 let calendar;
 let chartInstance;
@@ -16,6 +17,9 @@ export const renderDashboard = async (container) => {
     
     // Ano atual real para gerar o range de opções (ex: 2024, 2025, 2026) independentemente da seleção
     const currentRealYear = today.getFullYear();
+    // Vistorias: indicadores, gráfico e agenda. Financeiro: fechamento mensal.
+    const verVistorias = temPermissao('vistorias');
+    const verFinanceiro = temPermissao('financeiro');
     // Estilos customizados para FullCalendar e Scrollbars injetados dinamicamente
     const customStyles = `
         <style>
@@ -87,7 +91,7 @@ export const renderDashboard = async (container) => {
                     <h1 class="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-cyan-300 to-emerald-300">
                         Painel de Controle
                     </h1>
-                    <p class="text-gray-400 text-sm mt-1">Visão geral de desempenho e agendamentos.</p>
+                    <p class="text-gray-400 text-sm mt-1">${verVistorias ? 'Visão geral de desempenho e agendamentos.' : 'Fechamento mensal.'}</p>
                 </div>
                 <div class="text-right hidden md:block">
                     <p class="text-gray-500 text-xs uppercase font-bold tracking-wider">Data Atual</p>
@@ -95,17 +99,23 @@ export const renderDashboard = async (container) => {
                 </div>
             </div>
 
+            ${!verVistorias && !verFinanceiro ? `
+            <p class="text-gray-400 text-center py-10">Seu usuário não tem permissões de acesso. Fale com a administração.</p>
+            ` : ''}
+
+            ${verVistorias ? `
             <!-- KPI Cards -->
             <div id="stats-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 ${renderStatSkeleton().repeat(4)}
             </div>
+            ` : ''}
 
             <!-- Main Grid: Charts & Agenda -->
             <!-- Aumentado para 850px para dar mais espaço à agenda -->
             <div class="grid grid-cols-1 xl:grid-cols-3 gap-6 h-auto xl:h-[850px]">
-                
+                ${verVistorias ? `
                 <!-- Coluna Esquerda: Gráfico + Agenda -->
-                <div class="xl:col-span-2 flex flex-col gap-6 h-full">
+                <div class="${verFinanceiro ? 'xl:col-span-2' : 'xl:col-span-3'} flex flex-col gap-6 h-full">
                     
                     <!-- Gráfico -->
                     <div class="bg-gray-900/50 border border-gray-700/50 rounded-2xl p-6 shadow-lg backdrop-blur-sm h-[280px] flex flex-col relative overflow-hidden group">
@@ -140,9 +150,10 @@ export const renderDashboard = async (container) => {
                         </div>
                     </div>
                 </div>
-
+                ` : ''}
+                ${verFinanceiro ? `
                 <!-- Coluna Direita: Fechamento Mensal -->
-                <div class="bg-gray-900/80 border border-gray-700/50 rounded-2xl flex flex-col h-[600px] xl:h-full shadow-2xl overflow-hidden relative">
+                <div class="${verVistorias ? '' : 'xl:col-span-3'} bg-gray-900/80 border border-gray-700/50 rounded-2xl flex flex-col h-[600px] xl:h-full shadow-2xl overflow-hidden relative">
                     
                     <!-- Chat Header -->
                     <div class="p-4 border-b border-gray-700/50 bg-gray-800/80 backdrop-blur-md z-20">
@@ -181,22 +192,27 @@ export const renderDashboard = async (container) => {
                         </div>
                     </div>
                 </div>
+                ` : ''}
             </div>
         </div>
     `;
 
-    // 1. Load Stats
-    loadDashboardStats();
+    if (verVistorias) {
+        // 1. Load Stats
+        loadDashboardStats();
 
-    // 2. Init Calendar
-    initCalendar();
+        // 2. Init Calendar
+        initCalendar();
+    }
 
-    // 3. Init Monthly Info
-    document.getElementById('btn-load-info').addEventListener('click', loadInfoMensal);
-    document.getElementById('info-month').addEventListener('change', loadInfoMensal);
-    document.getElementById('info-year').addEventListener('change', loadInfoMensal);
-    
-    loadInfoMensal();
+    if (verFinanceiro) {
+        // 3. Init Monthly Info
+        document.getElementById('btn-load-info').addEventListener('click', loadInfoMensal);
+        document.getElementById('info-month').addEventListener('change', loadInfoMensal);
+        document.getElementById('info-year').addEventListener('change', loadInfoMensal);
+
+        loadInfoMensal();
+    }
 };
 
 function generateYearOptions(centerYear, selectedYear) {

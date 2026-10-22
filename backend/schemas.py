@@ -125,10 +125,34 @@ class GrupoImobiliariaCreate(GrupoImobiliariaBase):
 
 class GrupoImobiliariaUpdate(GrupoImobiliariaBase):
     senha: Optional[str] = Field(None, min_length=6)
+    # None mantém a permissão atual do login principal
+    acesso_financeiro: Optional[bool] = None
+    acesso_vistorias: Optional[bool] = None
+
+# Usuários adicionais de um grupo (cada um com seu login e permissões)
+class UsuarioImobiliariaBase(BaseModel):
+    nome: str = Field(..., min_length=1)
+    email: EmailStr
+    acesso_financeiro: bool = True
+    acesso_vistorias: bool = True
+
+class UsuarioImobiliariaCreate(UsuarioImobiliariaBase):
+    senha: str = Field(..., min_length=6)
+
+class UsuarioImobiliariaUpdate(UsuarioImobiliariaBase):
+    senha: Optional[str] = Field(None, min_length=6)
+
+class UsuarioImobiliariaDisplay(UsuarioImobiliariaBase):
+    id: UUID
+    class Config:
+        from_attributes = True
 
 class GrupoImobiliariaDisplay(GrupoImobiliariaBase):
     id: UUID
+    acesso_financeiro: bool = True
+    acesso_vistorias: bool = True
     imobiliarias: List[ImobiliariaDisplay] = []
+    usuarios: List[UsuarioImobiliariaDisplay] = []
     class Config:
         from_attributes = True
         
