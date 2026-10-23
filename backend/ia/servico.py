@@ -20,7 +20,7 @@ from ..config import SessionLocal
 from . import extracao
 from .extracao import Bloco, ErroExtracao
 from .nao_conformidades import analisar_blocos, ErroAnalise, MAX_PARTES, PROMPT_VERSAO, ResultadoAnalise
-from .providers import PROVIDERS, PROVIDER_PADRAO, ErroProviderIA, criar_provider
+from .providers import PROVIDERS, PROVIDER_PADRAO, ErroProviderIA, criar_provider, listar_modelos
 
 logger = logging.getLogger(__name__)
 
@@ -351,4 +351,167 @@ def dados_pdf(laudo: models.Laudo, analise: models.AnaliseNaoConformidade) -> di
             "categoria": i.categoria,
             "gravidade": i.gravidade,
         } for i in itens_visiveis(analise)],
+    }
+
+
+# --- Uso da IA (painel do admin) ---------------------------------------------------
+
+def _precos_por_modelo(provider: str) -> Dict[str, Tuple[Optional[float], Optional[float]]]:
+    """{modelo: (US$/1M tokens de entrada, US$/1M de saída)} com os preços atuais do provider.
+    Vazio se o provider não cobra por token (Ollama Cloud) ou se a lista falhar."""
+    if provider != "openrouter":
+        return {}
+    try:
+        modelos = listar_modelos(provider)["modelos"]
+    except ErroProviderIA:
+        return {}
+    return {m["id"]: (m.get("preco_entrada"), m.get("preco_saida")) for m in modelos}
+
+
+def _custo_usd(precos, tokens_entrada: int, tokens_saida: int) -> Optional[float]:
+    if not precos or precos[0] is None or precos[1] is None:
+        return None
+    return round((tokens_entrada * precos[0] + tokens_saida * precos[1]) / 1_000_000, 6)
+
+
+def _media(soma, qtd) -> Optional[float]:
+    return round(soma / qtd, 1) if qtd else None
+
+
+def relatorio_uso(db: Session, desde: Optional[datetime], limite: int) -> dict:
+    """Resumo das análises feitas pela IA no período: quantidade, tokens, tempo, custo estimado
+    e a lista dos laudos (mais recentes primeiro).
+
+    Só a última execução de cada laudo fica registrada (regerar substitui os tokens anteriores)."""
+    data_ref = func.coalesce(Analise.concluido_em, Analise.updated_at, Analise.created_at)
+    filtros = [data_ref >= desde] if desde else []
+    # provider só é gravado quando a IA conclui; análises montadas à mão pelo admin ficam sem ele
+    concluida_ia = (Analise.status == "CONCLUIDA") & Analise.provider.isnot(None)
+
+    qtd_itens = (db.query(Item.analise_id,
+                          func.count(Item.id).filter(Item.tipo == "NAO_CONFORMIDADE").label("ncs"),
+                          func.count(Item.id).filter(Item.tipo == "NAO_VERIFICADO").label("nao_verificados"))
+                 .group_by(Item.analise_id)
+                 .subquery())
+
+    por_status = dict(db.query(Analise.status, func.count(Analise.id))
+                      .filter(*filtros).group_by(Analise.status).all())
+    manuais = (db.query(func.count(Analise.id))
+               .filter(*filtros, Analise.status == "CONCLUIDA", Analise.provider.is_(None))
+               .scalar())
+
+    duracao = func.extract("epoch", Analise.concluido_em - Analise.iniciado_em)
+    linhas_modelo = (db.query(Analise.provider, Analise.modelo,
+                              func.count(Analise.id),
+                              func.count(Analise.tokens_entrada),
+                              func.coalesce(func.sum(Analise.tokens_entrada), 0),
+                              func.coalesce(func.sum(Analise.tokens_saida), 0),
+                              func.max(func.coalesce(Analise.tokens_entrada, 0) + func.coalesce(Analise.tokens_saida, 0)),
+                              func.avg(duracao),
+                              func.coalesce(func.sum(qtd_itens.c.ncs), 0))
+                     .outerjoin(qtd_itens, qtd_itens.c.analise_id == Analise.id)
+                     .filter(*filtros, concluida_ia)
+                     .group_by(Analise.provider, Analise.modelo)
+                     .all())
+
+    precos = {p: _precos_por_modelo(p) for p in {linha[0] for linha in linhas_modelo}}
+    modelos = []
+    total_ncs = 0
+    for provider, modelo, qtd, com_tokens, soma_ent, soma_sai, maximo, dur, ncs in linhas_modelo:
+        ncs = int(ncs)
+        total_ncs += ncs
+        modelos.append({
+            "provider": provider,
+            "provider_nome": PROVIDERS.get(provider, {}).get("nome", provider),
+            "modelo": modelo,
+            "laudos": qtd,
+            "laudos_com_tokens": com_tokens,
+            "tokens_entrada": int(soma_ent),
+            "tokens_saida": int(soma_sai),
+            "media_tokens_entrada": _media(soma_ent, com_tokens),
+            "media_tokens_saida": _media(soma_sai, com_tokens),
+            "media_tokens_total": _media(soma_ent + soma_sai, com_tokens),
+            "max_tokens_total": int(maximo or 0),
+            "duracao_media_s": round(float(dur), 1) if dur is not None else None,
+            "media_nao_conformidades": _media(ncs, qtd),
+            "custo_estimado_usd": _custo_usd(precos[provider].get(modelo), soma_ent, soma_sai),
+        })
+    modelos.sort(key=lambda m: -m["laudos"])
+
+    geradas = sum(m["laudos"] for m in modelos)
+    com_tokens = sum(m["laudos_com_tokens"] for m in modelos)
+    soma_ent = sum(m["tokens_entrada"] for m in modelos)
+    soma_sai = sum(m["tokens_saida"] for m in modelos)
+    soma_dur = sum(m["duracao_media_s"] * m["laudos"] for m in modelos if m["duracao_media_s"] is not None)
+    qtd_dur = sum(m["laudos"] for m in modelos if m["duracao_media_s"] is not None)
+    custos = [m["custo_estimado_usd"] for m in modelos if m["custo_estimado_usd"] is not None]
+    erros = por_status.get("ERRO", 0)
+
+    analises = (db.query(Analise, qtd_itens.c.ncs, qtd_itens.c.nao_verificados)
+                .outerjoin(qtd_itens, qtd_itens.c.analise_id == Analise.id)
+                .options(joinedload(Analise.laudo).joinedload(models.Laudo.agenda),
+                         joinedload(Analise.laudo).joinedload(models.Laudo.imovel),
+                         joinedload(Analise.laudo).joinedload(models.Laudo.imobiliaria),
+                         joinedload(Analise.laudo).joinedload(models.Laudo.vistoriador))
+                .filter(*filtros)
+                .order_by(data_ref.desc())
+                .limit(limite)
+                .all())
+
+    laudos = []
+    for analise, ncs, nao_verificados in analises:
+        laudo = analise.laudo
+        duracao_s = None
+        if analise.status == "CONCLUIDA" and analise.provider and analise.concluido_em and analise.iniciado_em:
+            duracao_s = round((analise.concluido_em - analise.iniciado_em).total_seconds(), 1)
+        tokens = None
+        if analise.tokens_entrada is not None or analise.tokens_saida is not None:
+            tokens = (analise.tokens_entrada or 0) + (analise.tokens_saida or 0)
+        laudos.append({
+            "laudo_id": laudo.id,
+            "status": analise.status,
+            "gerado_por_ia": analise.provider is not None,
+            "provider": analise.provider,
+            "modelo": analise.modelo,
+            "tokens_entrada": analise.tokens_entrada,
+            "tokens_saida": analise.tokens_saida,
+            "tokens_total": tokens,
+            "duracao_s": duracao_s,
+            "tentativas": analise.tentativas,
+            "erro": analise.erro,
+            "aviso": analise.aviso,
+            "fontes": analise.fontes or [],
+            "qtd_nao_conformidades": ncs or 0,
+            "qtd_nao_verificados": nao_verificados or 0,
+            "concluido_em": analise.concluido_em,
+            "atualizado_em": analise.updated_at,
+            "codigo_imovel": laudo.imovel.cod_imovel if laudo.imovel else None,
+            "endereco": laudo.imovel.endereco if laudo.imovel else None,
+            "imobiliaria": laudo.imobiliaria.nome if laudo.imobiliaria else None,
+            "vistoriador": laudo.vistoriador.nome if laudo.vistoriador else None,
+            "data_vistoria": laudo.agenda.data if laudo.agenda else None,
+            "laudo_finalizado": laudo.finalizado,
+            "laudo_aprovado": laudo.aprovado,
+        })
+
+    return {
+        "resumo": {
+            "total_analises": sum(por_status.values()),
+            "geradas_ia": geradas,
+            "manuais": manuais,
+            "com_erro": erros,
+            "em_andamento": por_status.get("PENDENTE", 0) + por_status.get("PROCESSANDO", 0),
+            "taxa_erro": round(erros / (geradas + erros), 4) if geradas + erros else None,
+            "tokens_entrada": soma_ent,
+            "tokens_saida": soma_sai,
+            "media_tokens_entrada": _media(soma_ent, com_tokens),
+            "media_tokens_saida": _media(soma_sai, com_tokens),
+            "media_tokens_total": _media(soma_ent + soma_sai, com_tokens),
+            "duracao_media_s": round(soma_dur / qtd_dur, 1) if qtd_dur else None,
+            "media_nao_conformidades": _media(total_ncs, geradas),
+            "custo_estimado_usd": round(sum(custos), 6) if custos else None,
+        },
+        "modelos": modelos,
+        "laudos": laudos,
+        "limite": limite,
     }

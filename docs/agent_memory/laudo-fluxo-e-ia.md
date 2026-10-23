@@ -34,3 +34,10 @@
 - Ollama Cloud (docs.ollama.com/cloud): `POST https://ollama.com/api/chat`, `Authorization: Bearer $OLLAMA_API_KEY`, modelo `gemma4:31b` (o sufixo `-cloud` é só para o app/CLI), `format` aceita JSON Schema.
 - OpenRouter: `POST https://openrouter.ai/api/v1/chat/completions`, modelo `google/gemma-4-31b-it` (256K de contexto, texto e imagem).
 - Plano da feature de não conformidades: `docs/plans/laudo-nao-conformidades.md`.
+
+## Uso da IA (painel de Gestão → Sistema → "Uso da IA")
+- `GET /admin-panel/ia/uso?dias=30&limite=200` (`servico.relatorio_uso`): resumo, agregado por modelo e lista dos laudos com análise no período (`coalesce(concluido_em, updated_at, created_at)`). Frontend: `assets/modules/uso-ia.js`, rota `#uso-ia`.
+- "Gerado pela IA" = `status CONCLUIDA` com `provider` preenchido (o provider só é gravado quando a IA conclui; análise montada à mão pelo admin fica sem provider).
+- Só a última execução de cada laudo fica gravada: regerar substitui tokens/modelo. O Insight IA da agenda e o teste de conexão não são registrados em lugar nenhum.
+- Custo estimado: só OpenRouter, com os preços atuais de `listar_modelos` (cache de 24h); se a lista falhar, o custo sai `null`. Ollama Cloud é por assinatura (sem custo por token).
+- Testes completos: `test_cpf_nome_proprietario.py` quebra a fixture de sessão e derruba o resto em cascata; rode com `--ignore tests/test_cpf_nome_proprietario.py`.

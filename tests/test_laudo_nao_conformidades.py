@@ -434,3 +434,58 @@ def test_laudo_sem_conteudo_gera_erro_definitivo(api_client, vistoriador_token, 
     assert analise.status == "ERRO"
     assert analise.tentativas == servico.MAX_TENTATIVAS
     assert fake_provider.chamadas == 0
+
+
+# --- Uso da IA (painel do admin) -------------------------------------------------
+
+def test_uso_ia_lista_laudos_tokens_e_custo(api_client, admin_token, vistoriador_token, grupo_token, db,
+                                            laudo_entrada, fake_provider, config_ia, monkeypatch):
+    _finalizar(api_client, vistoriador_token, laudo_entrada.id)
+    modelo = f"teste/modelo-{uuid.uuid4().hex[:8]}"
+    analise = _analise(db, laudo_entrada.id)
+    assert analise.status == "CONCLUIDA"
+    analise.provider, analise.modelo = "openrouter", modelo
+    db.commit()
+
+    pedidos = []
+
+    def fake_listar(provider, forcar=False):
+        pedidos.append(provider)
+        return {"modelos": [{"id": modelo, "preco_entrada": 1.0, "preco_saida": 2.0}]}
+
+    monkeypatch.setattr(servico, "listar_modelos", fake_listar)
+
+    resp = api_client.get(f"{API}/admin-panel/ia/uso?dias=7", headers=_h(admin_token))
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["dias"] == 7
+    assert body["resumo"]["geradas_ia"] >= 1
+    assert pedidos == ["openrouter"]
+
+    por_modelo = next(m for m in body["modelos"] if m["modelo"] == modelo)
+    assert por_modelo["laudos"] == 1
+    assert por_modelo["provider_nome"] == "OpenRouter"
+    assert por_modelo["media_tokens_entrada"] == 50
+    assert por_modelo["media_tokens_saida"] == 10
+    assert por_modelo["media_nao_conformidades"] == 2
+    assert por_modelo["custo_estimado_usd"] == pytest.approx((50 * 1.0 + 10 * 2.0) / 1_000_000)
+
+    laudo = next(l for l in body["laudos"] if l["laudo_id"] == str(laudo_entrada.id))
+    assert laudo["status"] == "CONCLUIDA"
+    assert laudo["gerado_por_ia"] is True
+    assert laudo["tokens_total"] == 60
+    assert laudo["qtd_nao_conformidades"] == 2
+    assert laudo["codigo_imovel"] == laudo_entrada.imovel.cod_imovel
+    assert laudo["vistoriador"] == "Vistoriador Teste"
+
+    # Lista de preços indisponível: relatório sai sem custo, mas não falha
+    def falha(provider, forcar=False):
+        raise ErroProviderIA("fora do ar")
+
+    monkeypatch.setattr(servico, "listar_modelos", falha)
+    resp = api_client.get(f"{API}/admin-panel/ia/uso?dias=0", headers=_h(admin_token))
+    assert resp.status_code == 200, resp.text
+    assert next(m for m in resp.json()["modelos"] if m["modelo"] == modelo)["custo_estimado_usd"] is None
+
+    assert api_client.get(f"{API}/admin-panel/ia/uso", headers=_h(grupo_token)).status_code == 403
+    assert api_client.get(f"{API}/admin-panel/ia/uso?dias=-1", headers=_h(admin_token)).status_code == 422

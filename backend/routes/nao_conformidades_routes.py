@@ -10,9 +10,10 @@ Laudo de Não Conformidades (gerado por IA a partir do laudo de ENTRADA).
 import re
 import time
 import logging
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
 from sqlalchemy import func
@@ -230,6 +231,14 @@ def testar_config_ia(payload: schemas.TesteIARequest = None, db: Session = Depen
         "latencia_ms": int((time.monotonic() - inicio) * 1000),
         "resposta": (resposta.conteudo or "").strip()[:200],
     }
+
+
+@router_admin.get("/ia/uso", summary="Laudos gerados pela IA, tokens e custo estimado no período")
+def uso_ia(dias: int = Query(30, ge=0, le=3650, description="Últimos N dias; 0 = todo o período"),
+           limite: int = Query(200, ge=1, le=1000),
+           db: Session = Depends(get_db)):
+    desde = datetime.now(timezone.utc) - timedelta(days=dias) if dias else None
+    return {"dias": dias, **servico.relatorio_uso(db, desde, limite)}
 
 
 # --- Admin: laudo de não conformidades -------------------------------------------

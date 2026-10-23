@@ -17,6 +17,7 @@ import { initLaudos } from './modules/laudos.js';
 // NOVO MÓDULO DE IMPRODUTIVAS
 import { initImprodutivas } from './modules/improdutivas.js';
 import { initVistoriasPendentes } from './modules/vistorias-pendentes.js';
+import { initUsoIA } from './modules/uso-ia.js';
 
 // Estado global simples da aplicação (para caching)
 const AppState = {
@@ -39,6 +40,7 @@ const routes = {
     '#laudos': initLaudos,
     '#improdutivas': initImprodutivas, // NOVA ROTA
     '#relatorios': initRelatorios,
+    '#uso-ia': initUsoIA,
     '#configuracoes': initConfiguracoes,
     '#vistorias-pendentes': initVistoriasPendentes
 };
